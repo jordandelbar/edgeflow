@@ -1,0 +1,14 @@
+direction: down
+
+server: edgeflow-server
+device: edgeflow-device
+bundle: "download bundle atomically\n(model.onnx + preprocess.wasm + postprocess.wasm)"
+inference: edgeflow-inference
+active: "load new bundle\n(old bundle continues serving)"
+switch: "atomic switch\n(old bundle released)"
+
+server -> device: MQTT deploy instruction
+device -> bundle
+bundle -> inference: signal hot-swap
+inference -> active
+active -> switch

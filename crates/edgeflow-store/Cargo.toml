@@ -1,0 +1,16 @@
+[package]
+name = "edgeflow-store"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+edgeflow-core = { path = "../edgeflow-core" }
+sqlx = { workspace = true }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+async-trait = "0.1"

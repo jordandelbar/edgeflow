@@ -1,0 +1,22 @@
+direction: right
+
+clients: Clients {
+  browser: Browser / CLI
+  mlflow: MLflow Python client
+}
+
+server: edgeflow-server
+
+edge: Edge Device {
+  device: edgeflow-device
+  inference: edgeflow-inference
+  app: User Application\n(ROS node, robot SW, etc.)
+
+  device -> inference: IPC
+  inference -> app: HTTP
+}
+
+clients.browser -> server: REST /api/v1
+clients.mlflow -> server: REST /mlflow/...
+server -> edge.device: MQTT
+edge.device -> server: MQTT

@@ -1,0 +1,12 @@
+direction: down
+
+input: "POST /infer\n(raw input bytes)"
+pre: "preprocess.wasm\n(raw bytes → input tensors)"
+onnx: "ONNX model via ort\n(input tensors → output tensors)"
+post: "postprocess.wasm\n(output tensors → structured result)"
+output: "HTTP response\n(structured result bytes)"
+
+input -> pre
+pre -> onnx
+onnx -> post
+post -> output
