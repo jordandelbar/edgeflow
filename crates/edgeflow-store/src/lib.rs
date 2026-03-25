@@ -34,4 +34,8 @@ pub trait Store: Send + Sync {
     // Artifacts
     async fn list_artifacts(&self, run_id: &str, path: Option<&str>) -> Result<Vec<FileInfo>>;
     async fn artifact_root(&self, run_id: &str) -> Result<std::path::PathBuf>;
+
+    // Deployments
+    async fn create_deployment(&self, run_id: &str, target: &str) -> Result<Deployment>;
+    async fn get_latest_deployment(&self, target: &str) -> Result<Deployment>;
 }

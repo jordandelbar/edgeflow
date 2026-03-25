@@ -32,7 +32,7 @@ impl Store for SqliteStore {
         let now = chrono::Utc::now().timestamp_millis();
         let location = artifact_location
             .map(|s| s.to_string())
-            .unwrap_or_else(|| self.artifact_root.join(&id).display().to_string());
+            .unwrap_or_else(|| format!("mlflow-artifacts:/{}", id));
 
         sqlx::query(
             "INSERT INTO experiments (experiment_id, name, artifact_location, lifecycle_stage, creation_time, last_update_time)
@@ -158,7 +158,7 @@ impl Store for SqliteStore {
         let now = chrono::Utc::now().timestamp_millis();
         let start = start_time.unwrap_or(now);
         let exp = self.get_experiment(experiment_id).await?;
-        let artifact_uri = format!("{}/{}", exp.artifact_location, run_id);
+        let artifact_uri = format!("{}/{}/artifacts", exp.artifact_location, run_id);
 
         sqlx::query(
             "INSERT INTO runs (run_id, experiment_id, run_name, status, start_time, artifact_uri, lifecycle_stage)
@@ -368,6 +368,39 @@ impl Store for SqliteStore {
             .bind(run_id)
             .fetch_one(&self.pool)
             .await?;
-        Ok(PathBuf::from(row.get::<String, _>("artifact_uri")))
+        let uri: String = row.get("artifact_uri");
+        // Convert mlflow-artifacts:/<relative_path> to local path under artifact_root.
+        let rel = uri.strip_prefix("mlflow-artifacts:/").unwrap_or(&uri);
+        Ok(self.artifact_root.join(rel))
+    }
+
+    async fn create_deployment(&self, run_id: &str, target: &str) -> Result<Deployment> {
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().timestamp_millis();
+        sqlx::query(
+            "INSERT INTO deployments (deployment_id, target, run_id, created_at) VALUES (?, ?, ?, ?)"
+        )
+        .bind(&id).bind(target).bind(run_id).bind(now)
+        .execute(&self.pool).await?;
+
+        Ok(Deployment { deployment_id: id, target: target.to_string(), run_id: run_id.to_string(), created_at: now })
+    }
+
+    async fn get_latest_deployment(&self, target: &str) -> Result<Deployment> {
+        let row = sqlx::query(
+            "SELECT deployment_id, target, run_id, created_at FROM deployments
+             WHERE target = ? ORDER BY created_at DESC LIMIT 1"
+        )
+        .bind(target)
+        .fetch_one(&self.pool)
+        .await
+        .context("deployment not found")?;
+
+        Ok(Deployment {
+            deployment_id: row.get("deployment_id"),
+            target: row.get("target"),
+            run_id: row.get("run_id"),
+            created_at: row.get("created_at"),
+        })
     }
 }

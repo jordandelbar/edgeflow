@@ -1,0 +1,14 @@
+apiVersion: k3d.io/v1alpha5
+kind: Simple
+metadata:
+  name: edgeflow
+servers: 1
+agents: 0
+ports:
+  - port: 5000:30500
+    nodeFilters: [loadbalancer]
+  - port: 8080:30808
+    nodeFilters: [loadbalancer]
+options:
+  k3d:
+    wait: true

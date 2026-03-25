@@ -10,11 +10,15 @@ ADR-001: System Architecture
 Context
 -------
 
-Edgeflow aims to be an MLOps platform purpose-built for edge device fleets — robots, drones, industrial hardware, autonomous systems. The core problem it solves:
+Edgeflow aims to be an MLOps platform purpose-built for edge device fleets: robots, drones, industrial hardware,
+autonomous systems. The core problem it solves:
 
-    Teams deploying ML models to physical devices have no standard tooling to know what model version is running on which device, detect degradation in production, and safely roll back across a fleet.
+- Teams deploying ML models to physical devices have no standard tooling to know what model version is running
+  on which device, detect degradation in production, and safely roll back across a fleet.
 
-Existing tools (MLflow, Weights & Biases, BentoML) solve parts of this problem but assume a cloud or datacenter context. None provide a coherent story for edge-constrained environments where devices may be offline, have limited resources, and are managed as a fleet rather than individually.
+Existing tools (MLflow, Weights & Biases, BentoML) solve parts of this problem but assume a cloud or datacenter context.
+None provide a coherent story for edge-constrained environments where devices may be offline,
+have limited resources, and are managed as a fleet rather than individually.
 
 The system must:
 
@@ -63,7 +67,9 @@ A standalone process running on each edge device. Responsible purely for model e
 
 **Stack:** Rust + ``ort`` + minimal HTTP server (no axum, weight matters on device)
 
-**Key design choice:** ``edgeflow-inference`` is useful standalone, without edgeflow. A user can run it as a pure ONNX inference server with drift monitoring and never use the rest of the platform. This lowers the barrier to adoption and makes the component independently valuable.
+**Key design choice:** ``edgeflow-inference`` is useful standalone, without edgeflow.
+A user can run it as a pure ONNX inference server with drift monitoring and never use the rest of the platform.
+This lowers the barrier to adoption and makes the component independently valuable.
 
 3. edgeflow-device
 ~~~~~~~~~~~~~~~~~~
@@ -82,7 +88,9 @@ A lifecycle manager running on each edge device alongside the inference service.
 
 **Stack:** Rust + MQTT client (``rumqttc``) + local process management
 
-**Key design choice:** ``edgeflow-device`` and ``edgeflow-inference`` are two separate binaries. The device manager is purely orchestration — it does not run models. The inference service does not know about the server — it only knows about its local model and the device manager.
+**Key design choice:** ``edgeflow-device`` and ``edgeflow-inference`` are two separate binaries.
+The device manager is purely orchestration, it does not run models.
+The inference service does not know about the server — it only knows about its local model and the device manager.
 
 4. edgeflow-ui
 ~~~~~~~~~~~~~~
@@ -152,7 +160,8 @@ MLflow Compatibility Shim (adoption layer, frozen surface)
     /mlflow/api/2.0/mlflow/metrics/**
     /mlflow/api/2.0/mlflow/artifacts/**
 
-The shim is a translation layer over the native data model — not a separate implementation. The native data model is designed first; the shim is built on top of it.
+The shim is a translation layer over the native data model, not a separate implementation.
+The native data model is designed first; the shim is built on top of it.
 
 --------
 
@@ -165,8 +174,10 @@ ONNX is the sole supported model format for deployment.
 
 - Universal export target from PyTorch, TensorFlow, scikit-learn, and most major frameworks
 - ``ort`` (ONNX Runtime Rust bindings) is mature and actively maintained
-- The ONNX graph contains full I/O schema (tensor names, shapes, dtypes) which edgeflow uses to auto-generate inference wrappers and telemetry configuration — no user configuration required
-- Enables hardware-specific optimization (CUDA, TensorRT, CoreML) via ORT execution providers without changing the model artifact
+- The ONNX graph contains full I/O schema (tensor names, shapes, dtypes) which edgeflow uses to auto-generate
+  inference wrappers and telemetry configuration, no user configuration required
+- Enables hardware-specific optimization (CUDA, TensorRT, CoreML)
+  via ORT execution providers without changing the model artifact
 
 --------
 
@@ -212,9 +223,12 @@ Consequences
 
 **Negative / risks:**
 
-- MQTT adds an operational dependency (broker must be running) — mitigated by bundling a lightweight broker (rumqttd) in the server binary for single-node deployments
-- ONNX-only model format excludes teams using TensorFlow SavedModel or TorchScript directly — acceptable tradeoff for PoC, revisit at v1
-- Maintaining MLflow API compatibility is ongoing work as MLflow evolves — treat the shim as frozen at the current API surface, do not track MLflow HEAD
+- MQTT adds an operational dependency (broker must be running), mitigated by bundling a lightweight broker (rumqttd)
+  in the server binary for single-node deployments
+- ONNX-only model format excludes teams using TensorFlow SavedModel or TorchScript directly, acceptable tradeoff for
+  PoC, revisit at v1
+- Maintaining MLflow API compatibility is ongoing work as MLflow evolves treat the shim as frozen at the current
+  API surface, do not track MLflow HEAD
 
 --------
 

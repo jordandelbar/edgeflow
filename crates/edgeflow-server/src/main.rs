@@ -26,13 +26,15 @@ async fn main() -> anyhow::Result<()> {
 
     std::fs::create_dir_all(&artifact_root)?;
 
-    let store = SqliteStore::new(&db_path, artifact_root).await?;
-    let state = AppState { store: Arc::new(store) };
+    let store = SqliteStore::new(&db_path, artifact_root.clone()).await?;
+    let state = AppState { store: Arc::new(store), artifact_root };
 
     let static_dir = std::env::var("EDGEFLOW_STATIC_DIR").unwrap_or_else(|_| "./static".into());
 
     let app = Router::new()
-        .nest("/api/2.0/mlflow", api::router())
+        .nest("/api/v1", api::v1_router())
+        .nest("/api/2.0/mlflow", api::mlflow_router())
+        .nest("/api/2.0/mlflow-artifacts", api::mlflow_artifacts_router())
         .fallback_service(ServeDir::new(static_dir))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())

@@ -1,12 +1,14 @@
 pub mod artifact;
+pub mod deployment;
 pub mod experiment;
 pub mod metric;
 pub mod run;
 
-pub use experiment::*;
-pub use run::*;
-pub use metric::*;
 pub use artifact::*;
+pub use deployment::*;
+pub use experiment::*;
+pub use metric::*;
+pub use run::*;
 
 use thiserror::Error;
 

@@ -1,0 +1,16 @@
+FROM rust:1.86-bookworm AS builder
+WORKDIR /app
+COPY . .
+RUN --mount=type=cache,target=/root/.cargo/registry \
+    --mount=type=cache,target=/root/.cargo/git \
+    cargo build --release -p edgeflow-server && \
+    cp target/release/edgeflow-server /edgeflow-server
+
+FROM debian:bookworm-slim
+COPY --from=builder /edgeflow-server /usr/local/bin/edgeflow-server
+RUN mkdir -p /static /data
+ENV EDGEFLOW_DATA_DIR=/data
+ENV EDGEFLOW_STATIC_DIR=/static
+ENV EDGEFLOW_ADDR=0.0.0.0:5000
+EXPOSE 5000
+CMD ["edgeflow-server"]

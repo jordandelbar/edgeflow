@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: edgeflow-inference
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: edgeflow-inference
+  template:
+    metadata:
+      labels:
+        app: edgeflow-inference
+    spec:
+      containers:
+        - name: edgeflow-inference
+          image: edgeflow-inference:dev
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8080
+          env:
+            - name: EDGEFLOW_SERVER
+              value: http://edgeflow-server:5000
+            - name: EDGEFLOW_TARGET
+              value: iris-inference
+            - name: EDGEFLOW_INFER_ADDR
+              value: 0.0.0.0:8080
+          # Becomes ready only after model is loaded and /health responds.
+          # This naturally blocks until after train_iris.py has run.
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 2
+            periodSeconds: 5
+            failureThreshold: 60  # allow up to 5 min for training to complete
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: edgeflow-inference
+spec:
+  type: NodePort
+  selector:
+    app: edgeflow-inference
+  ports:
+    - port: 8080
+      targetPort: 8080
+      nodePort: 30808

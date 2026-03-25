@@ -1,0 +1,15 @@
+FROM rust:1.88-bookworm AS builder
+WORKDIR /app
+COPY . .
+RUN --mount=type=cache,target=/root/.cargo/registry \
+    --mount=type=cache,target=/root/.cargo/git \
+    cargo build --release -p edgeflow-inference && \
+    cp target/release/edgeflow-inference /edgeflow-inference
+
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+COPY --from=builder /edgeflow-inference /usr/local/bin/edgeflow-inference
+ENV EDGEFLOW_INFER_ADDR=0.0.0.0:8080
+EXPOSE 8080
+CMD ["edgeflow-inference"]

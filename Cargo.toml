@@ -3,6 +3,7 @@ members = [
     "crates/edgeflow-core",
     "crates/edgeflow-store",
     "crates/edgeflow-server",
+    "crates/edgeflow-inference",
 ]
 resolver = "2"
 

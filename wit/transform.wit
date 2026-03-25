@@ -1,0 +1,9 @@
+package edgeflow:transforms@0.1.0;
+
+/// Single-function transform contract.
+/// Preprocess and postprocess modules both implement this world.
+/// Input and output are opaque byte slices — the caller and callee agree
+/// on the format out of band (tensor wire format for pre→ort, raw bytes for →post).
+world transform {
+  export transform: func(input: list<u8>) -> list<u8>;
+}
