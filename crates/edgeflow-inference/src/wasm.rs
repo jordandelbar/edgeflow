@@ -1,11 +1,15 @@
 /// WASM Component executor.
 ///
-/// Loads a WASM component produced by componentize-py and calls its exported
-/// `transform(list<u8>) -> list<u8>` function (defined in wit/transform.wit).
+/// Loads a WASM component and calls its exported transform function.
 ///
-/// WASI is provided so componentize-py components (which bundle a Python runtime)
-/// can satisfy their system imports. The components themselves are sandboxed:
-/// no filesystem, no network, no env — only the transform call surface.
+/// Configurable components (standard Rust pipeline) additionally export
+/// `init(list<u8>)`, which is called once with the JSON pipeline config
+/// before any `transform` call.  Components that only export `transform`
+/// (legacy componentize-py components) remain fully compatible — the host
+/// simply skips the init step if the export is absent.
+///
+/// WASI is provided so componentize-py components (which bundle a Python
+/// runtime) can satisfy their system imports.
 
 use anyhow::{Context, Result};
 use wasmtime::{
@@ -34,13 +38,13 @@ pub struct WasmTransform {
 }
 
 impl WasmTransform {
-    pub fn new(wasm_bytes: &[u8]) -> Result<Self> {
-        let mut config = Config::new();
-        config.wasm_component_model(true);
+    pub fn new(wasm_bytes: &[u8], config: Option<&[u8]>) -> Result<Self> {
+        let mut cfg = Config::new();
+        cfg.wasm_component_model(true);
         // Disable Cranelift optimizations: 41 MB componentize-py components take
         // several minutes to JIT at O2; None brings that down to seconds.
-        config.cranelift_opt_level(wasmtime::OptLevel::None);
-        let engine = Engine::new(&config).context("failed to create wasmtime engine")?;
+        cfg.cranelift_opt_level(wasmtime::OptLevel::None);
+        let engine = Engine::new(&cfg).context("failed to create wasmtime engine")?;
 
         let component =
             Component::new(&engine, wasm_bytes).context("failed to compile WASM component")?;
@@ -50,7 +54,6 @@ impl WasmTransform {
             .context("failed to add WASI to component linker")?;
 
         let state = State {
-            // Inherit stdout/stderr so Python exceptions are visible in logs.
             ctx: WasiCtxBuilder::new().inherit_stdout().inherit_stderr().build(),
             table: ResourceTable::new(),
         };
@@ -59,6 +62,17 @@ impl WasmTransform {
         let instance = linker
             .instantiate(&mut store, &component)
             .context("failed to instantiate WASM component")?;
+
+        // Call init if the component exports it (standard Rust pipeline).
+        if let Some(cfg_bytes) = config {
+            if let Some(init_fn) = instance.get_func(&mut store, "init") {
+                let config_val = Val::List(cfg_bytes.iter().map(|&b| Val::U8(b)).collect());
+                init_fn
+                    .call(&mut store, &[config_val], &mut [])
+                    .context("init call failed")?;
+                init_fn.post_return(&mut store).ok();
+            }
+        }
 
         let func = instance
             .get_func(&mut store, "transform")
@@ -69,7 +83,7 @@ impl WasmTransform {
 
     pub fn run(&mut self, input: &[u8]) -> Result<Vec<u8>> {
         let input_val = Val::List(input.iter().map(|&b| Val::U8(b)).collect());
-        let mut results = vec![Val::Bool(false)]; // placeholder, overwritten by call
+        let mut results = vec![Val::Bool(false)];
 
         self.func
             .call(&mut self.store, &[input_val], &mut results)

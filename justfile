@@ -1,8 +1,18 @@
 data_dir := "./data"
 static_dir := "./static"
 
-# Build everything (UI then server)
-build: build-ui build-server
+# Build everything
+build: build-transforms build-ui build-server
+
+# Compile the standard Rust transforms:
+#   - WASM component → python/edgeflow/wasm/standard_pipeline.wasm  (server, ~150 KB)
+#   - Native PyO3 extension → edgeflow/_lib.so                      (local execution)
+build-transforms:
+    cd crates/edgeflow-transforms && \
+        cargo build --target wasm32-wasip2 --release
+    cp crates/edgeflow-transforms/target/wasm32-wasip2/release/_lib.wasm \
+        python/edgeflow/wasm/standard_pipeline.wasm
+    cd python && uv run maturin develop --features python
 
 # Build the Svelte UI and copy output to static/
 build-ui:

@@ -7,3 +7,13 @@ package edgeflow:transforms@0.1.0;
 world transform {
   export transform: func(input: list<u8>) -> list<u8>;
 }
+
+/// Configurable transform contract for the standard Rust pipeline.
+/// init() is called once after instantiation with a JSON pipeline config;
+/// transform() is then called per request. The host checks for the init
+/// export at runtime — components implementing the plain `transform` world
+/// remain fully compatible.
+world configurable-transform {
+  export init:      func(config: list<u8>);
+  export transform: func(input: list<u8>) -> list<u8>;
+}

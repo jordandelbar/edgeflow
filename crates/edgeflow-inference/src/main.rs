@@ -45,20 +45,25 @@ async fn main() -> Result<()> {
     let model = client.download_artifact(&run_id, "model.onnx").await?;
 
     tracing::info!("downloading preprocess.wasm");
-    let pre = client.download_artifact(&run_id, "preprocess.wasm").await.ok();
-    if pre.is_none() {
-        tracing::warn!("preprocess.wasm not found — raw bytes will be passed directly to backend");
+    let pre_wasm = client.download_artifact(&run_id, "preprocess.wasm").await.ok();
+    let pre_cfg = client.download_artifact(&run_id, "preprocess.json").await.ok();
+    if pre_wasm.is_none() {
+        tracing::warn!("preprocess.wasm not found — raw bytes passed directly to backend");
     }
 
     tracing::info!("downloading postprocess.wasm");
-    let post = client.download_artifact(&run_id, "postprocess.wasm").await.ok();
-    if post.is_none() {
-        tracing::warn!("postprocess.wasm not found — raw tensor bytes will be returned directly");
+    let post_wasm = client.download_artifact(&run_id, "postprocess.wasm").await.ok();
+    let post_cfg = client.download_artifact(&run_id, "postprocess.json").await.ok();
+    if post_wasm.is_none() {
+        tracing::warn!("postprocess.wasm not found — raw tensor bytes returned directly");
     }
+
+    let pre = pre_wasm.as_deref().map(|w| (w, pre_cfg.as_deref()));
+    let post = post_wasm.as_deref().map(|w| (w, post_cfg.as_deref()));
 
     let backend = build_backend();
     tracing::info!("loading pipeline");
-    let pipeline = Pipeline::new(backend, &model, pre.as_deref(), post.as_deref())?;
+    let pipeline = Pipeline::new(backend, &model, pre, post)?;
 
     server::serve(infer_addr, pipeline).await
 }
@@ -75,5 +80,5 @@ fn build_backend() -> Box<dyn backend::InferenceBackend> {
         return Box::new(backend::tract::TractBackend::new());
     }
     #[cfg(not(any(feature = "ort-backend", feature = "tract-backend")))]
-    compile_error!("at least one inference backend feature must be enabled (ort-backend or tract-backend)");
+    compile_error!("at least one inference backend feature must be enabled");
 }
