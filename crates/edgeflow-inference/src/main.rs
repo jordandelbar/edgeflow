@@ -1,3 +1,4 @@
+mod backend;
 mod client;
 mod pipeline;
 mod server;
@@ -46,7 +47,7 @@ async fn main() -> Result<()> {
     tracing::info!("downloading preprocess.wasm");
     let pre = client.download_artifact(&run_id, "preprocess.wasm").await.ok();
     if pre.is_none() {
-        tracing::warn!("preprocess.wasm not found — raw bytes will be passed directly to ONNX");
+        tracing::warn!("preprocess.wasm not found — raw bytes will be passed directly to backend");
     }
 
     tracing::info!("downloading postprocess.wasm");
@@ -55,8 +56,24 @@ async fn main() -> Result<()> {
         tracing::warn!("postprocess.wasm not found — raw tensor bytes will be returned directly");
     }
 
+    let backend = build_backend();
     tracing::info!("loading pipeline");
-    let pipeline = Pipeline::new(&model, pre.as_deref(), post.as_deref())?;
+    let pipeline = Pipeline::new(backend, &model, pre.as_deref(), post.as_deref())?;
 
     server::serve(infer_addr, pipeline).await
+}
+
+fn build_backend() -> Box<dyn backend::InferenceBackend> {
+    #[cfg(feature = "ort-backend")]
+    {
+        tracing::info!("using ORT backend");
+        return Box::new(backend::ort::OrtBackend::new());
+    }
+    #[cfg(feature = "tract-backend")]
+    {
+        tracing::info!("using tract backend");
+        return Box::new(backend::tract::TractBackend::new());
+    }
+    #[cfg(not(any(feature = "ort-backend", feature = "tract-backend")))]
+    compile_error!("at least one inference backend feature must be enabled (ort-backend or tract-backend)");
 }

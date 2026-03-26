@@ -2,16 +2,17 @@
 Iris PoC training script.
 
 Flow:
-  1. Train sklearn LogisticRegression on iris → export to ONNX
-  2. Import transforms.py (registers @preprocess / @postprocess via decorators)
-  3. Compile transforms to WASM components via componentize-py
-  4. Push to edgeflow: experiment, run, metrics, artifacts
-  5. Trigger deployment via POST /api/v1/deployments
+  1. Train sklearn LogisticRegression on iris
+  2. Export to ONNX via edgeflow.models.sklearn_to_onnx
+  3. Import transforms.py (registers @preprocess / @postprocess via decorators)
+  4. Compile transforms to WASM components via componentize-py
+  5. Push to edgeflow: experiment, run, metrics, artifacts
+  6. Trigger deployment via POST /api/v1/deployments
 
 Input protocol (what POST /infer expects):
   16 raw bytes — 4 × f32 little-endian (sepal_len, sepal_w, petal_len, petal_w)
 
-  python3 -c "import struct, sys; sys.stdout.buffer.write(struct.pack('<4f', 5.1, 3.5, 1.4, 0.2))" \
+  python3 -c "import struct, sys; sys.stdout.buffer.write(struct.pack('<4f', 5.1, 3.5, 1.4, 0.2))" \\
     | curl -s -X POST http://localhost:8080/infer --data-binary @-
 """
 
@@ -22,18 +23,16 @@ from pathlib import Path
 
 import mlflow
 import numpy as np
-import onnx
-import onnx.helper as oh
-import onnx.numpy_helper as onh
 import requests
 from sklearn.datasets import load_iris
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
 from sklearn.model_selection import train_test_split
 
-# Add scripts/ to path so `from edgeflow.transforms import ...` resolves locally.
+# Add scripts/ to path so `from edgeflow...` resolves locally.
 sys.path.insert(0, str(Path(__file__).parent))
 
+from edgeflow.models import sklearn_to_onnx
 from edgeflow.transforms import compile_transforms
 
 # Importing transforms.py runs the decorators, registering prepare and interpret.
@@ -59,35 +58,14 @@ clf.fit(X_train, y_train)
 accuracy = accuracy_score(y_test, clf.predict(X_test))
 print(f"accuracy: {accuracy:.4f}")
 
-# ── export ONNX ────────────────────────────────────────────────────────────────
-
-print("exporting to ONNX...")
-# Export as MatMul+Add+Softmax (standard ops that every ONNX runtime supports).
-# This avoids the ml-tools LinearClassifier op which tract-onnx doesn't implement.
-W = clf.coef_.astype(np.float32)   # (3, 4)
-b = clf.intercept_.astype(np.float32)  # (3,)
-
-nodes = [
-    oh.make_node("MatMul", ["X", "W"], ["logits_t"]),
-    oh.make_node("Add",    ["logits_t", "b"], ["logits"]),
-    oh.make_node("Softmax", ["logits"], ["probabilities"], axis=1),
-]
-graph = oh.make_graph(
-    nodes,
-    "iris-lr",
-    [oh.make_tensor_value_info("X", onnx.TensorProto.FLOAT, [1, 4])],
-    [oh.make_tensor_value_info("probabilities", onnx.TensorProto.FLOAT, [None, 3])],
-    initializer=[onh.from_array(W.T, name="W"), onh.from_array(b, name="b")],
-)
-onnx_model = oh.make_model(graph, opset_imports=[oh.make_opsetid("", 17)])
+# ── export + compile ───────────────────────────────────────────────────────────
 
 with tempfile.TemporaryDirectory() as _tmp:
     tmpdir = Path(_tmp)
 
+    print("exporting to ONNX...")
     model_path = tmpdir / "model.onnx"
-    model_path.write_bytes(onnx_model.SerializeToString())
-
-    # ── compile transforms ─────────────────────────────────────────────────────
+    model_path.write_bytes(sklearn_to_onnx(clf))
 
     print("compiling transforms to WASM components via componentize-py...")
     wasm_artifacts = compile_transforms(wit_dir=WIT_DIR, output_dir=tmpdir)
