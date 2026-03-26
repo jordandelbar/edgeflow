@@ -16,11 +16,6 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-# The scripts/ directory — added to PYTHONPATH when invoking componentize-py
-# so that `from edgeflow.codec import ...` inside transform functions gets
-# bundled into the WASM component.
-_SCRIPTS_DIR = str(Path(__file__).parent.parent)
-
 _registry: dict[str, object] = {}
 
 
@@ -86,7 +81,7 @@ def compile_transforms(wit_dir: Path, output_dir: Path) -> dict[str, Path]:
     # (componentize-py runs with cwd=output_dir, which Python adds to sys.path).
     edgeflow_dst = output_dir / "edgeflow"
     if not edgeflow_dst.exists():
-        shutil.copytree(Path(_SCRIPTS_DIR) / "edgeflow", edgeflow_dst)
+        shutil.copytree(Path(__file__).parent, edgeflow_dst)
 
     for role in ("preprocess", "postprocess"):
         fn = _registry.get(role)

@@ -13,7 +13,7 @@ pub trait InferenceBackend: Send + Sync {
     /// Run inference on a decoded tensor.
     ///
     /// Receives the input as `(shape, flat f32 data)` and returns the output
-    /// in the same form.  Shape/dtype encoding/decoding is handled by the
-    /// pipeline; the backend only deals with f32 tensors.
+    /// in the same form.  The pipeline handles shape/dtype encoding/decoding;
+    /// the backend only deals with f32 tensors.
     fn infer(&mut self, shape: &[usize], data: &[f32]) -> Result<(Vec<usize>, Vec<f32>)>;
 }

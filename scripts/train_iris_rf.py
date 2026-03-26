@@ -1,16 +1,10 @@
 """
-Iris PoC training script.
+Iris RandomForest training script.
 
-Flow:
-  1. Train sklearn LogisticRegression on iris
-  2. Export to ONNX via edgeflow.models.sklearn_to_onnx
-  3. Import transforms.py (registers @preprocess / @postprocess via decorators)
-  4. Compile transforms to WASM components via componentize-py
-  5. Push to edgeflow: experiment, run, metrics, artifacts
-  6. Trigger deployment via POST /api/v1/deployments
+Same pipeline as train_iris.py but uses RandomForestClassifier exported
+via skl2onnx (requires ORT inference backend).
 
-Input protocol (what POST /infer expects):
-  16 raw bytes — 4 × f32 little-endian (sepal_len, sepal_w, petal_len, petal_w)
+Input protocol: 16 raw bytes — 4 × f32 LE (sepal_len, sepal_w, petal_len, petal_w)
 
   python3 -c "import struct, sys; sys.stdout.buffer.write(struct.pack('<4f', 5.1, 3.5, 1.4, 0.2))" \\
     | curl -s -X POST http://localhost:8080/infer --data-binary @-
@@ -24,32 +18,34 @@ import mlflow
 import numpy as np
 import requests
 from sklearn.datasets import load_iris
-from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score
 from sklearn.model_selection import train_test_split
 
-from edgeflow.models import sklearn_to_onnx
+from edgeflow.models import clf_to_onnx
 from edgeflow.transforms import compile_transforms
 
-# Importing transforms.py runs the decorators, registering prepare and interpret.
-import transforms  # noqa: F401
+import transforms  # noqa: F401  — registers @preprocess / @postprocess
 
 # ── config ─────────────────────────────────────────────────────────────────────
 
 EDGEFLOW_SERVER = os.environ.get("EDGEFLOW_SERVER", "http://localhost:5000")
 EDGEFLOW_TARGET = os.environ.get("EDGEFLOW_TARGET", "iris-inference")
 
+N_ESTIMATORS = 100
+MAX_DEPTH = 5
+
 ROOT = Path(__file__).parent.parent
 WIT_DIR = ROOT / "wit"
 
 # ── train ──────────────────────────────────────────────────────────────────────
 
-print("training iris classifier...")
+print("training iris random forest...")
 iris = load_iris()
 X_train, X_test, y_train, y_test = train_test_split(
     iris.data.astype(np.float32), iris.target, test_size=0.2, random_state=42
 )
-clf = LogisticRegression(max_iter=200)
+clf = RandomForestClassifier(n_estimators=N_ESTIMATORS, max_depth=MAX_DEPTH, random_state=42)
 clf.fit(X_train, y_train)
 accuracy = accuracy_score(y_test, clf.predict(X_test))
 print(f"accuracy: {accuracy:.4f}")
@@ -59,9 +55,9 @@ print(f"accuracy: {accuracy:.4f}")
 with tempfile.TemporaryDirectory() as _tmp:
     tmpdir = Path(_tmp)
 
-    print("exporting to ONNX...")
+    print("exporting to ONNX via skl2onnx...")
     model_path = tmpdir / "model.onnx"
-    model_path.write_bytes(sklearn_to_onnx(clf))
+    model_path.write_bytes(clf_to_onnx(clf))
 
     print("compiling transforms to WASM components via componentize-py...")
     wasm_artifacts = compile_transforms(wit_dir=WIT_DIR, output_dir=tmpdir)
@@ -72,10 +68,14 @@ with tempfile.TemporaryDirectory() as _tmp:
     mlflow.set_tracking_uri(EDGEFLOW_SERVER)
     exp = mlflow.set_experiment("iris-poc")
 
-    with mlflow.start_run(experiment_id=exp.experiment_id, run_name="iris-logistic") as run:
-        mlflow.log_params(
-            {"model": "LogisticRegression", "max_iter": 200, "n_features": 4, "n_classes": 3}
-        )
+    with mlflow.start_run(experiment_id=exp.experiment_id, run_name="iris-random-forest") as run:
+        mlflow.log_params({
+            "model": "RandomForestClassifier",
+            "n_estimators": N_ESTIMATORS,
+            "max_depth": MAX_DEPTH,
+            "n_features": 4,
+            "n_classes": 3,
+        })
         mlflow.log_metric("accuracy", accuracy)
         mlflow.log_artifact(str(model_path))
         mlflow.log_artifact(str(wasm_artifacts["preprocess"]))
