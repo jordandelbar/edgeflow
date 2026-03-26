@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
 use anyhow::Result;
 use bytes::Bytes;
@@ -20,8 +20,13 @@ pub struct ModelInfo {
 }
 
 pub struct ServerState {
-    pub pipeline: Arc<Mutex<Option<Pipeline>>>,
-    pub model_info: Arc<Mutex<Option<ModelInfo>>>,
+    /// Outer RwLock: readers clone the inner Arc in microseconds, releasing
+    /// the read lock before inference starts.  Swap (write lock) only needs
+    /// to wait for readers to finish that cheap clone — not for in-flight
+    /// inference.  Inner Mutex serializes concurrent infer calls on the same
+    /// Pipeline instance (required because wasmtime Store needs &mut).
+    pub pipeline: Arc<RwLock<Option<Arc<Mutex<Pipeline>>>>>,
+    pub model_info: Arc<RwLock<Option<ModelInfo>>>,
     pub client: Arc<EdgeflowClient>,
     pub target: String,
 }
@@ -68,18 +73,24 @@ async fn handle(
 ) -> Result<Response<Full<Bytes>>, hyper::Error> {
     match (req.method(), req.uri().path()) {
         (&Method::POST, "/infer") => {
-            let pipeline = state.pipeline.clone();
-            if pipeline.lock().unwrap().is_none() {
+            // Acquire read lock only long enough to clone the inner Arc.
+            // The read lock is released before inference starts, so a
+            // concurrent swap (write lock) is not blocked by in-flight infer.
+            let pipeline_arc = state.pipeline.read().unwrap()
+                .as_ref()
+                .map(Arc::clone);
+
+            let Some(pipeline_arc) = pipeline_arc else {
                 return Ok(Response::builder()
                     .status(StatusCode::SERVICE_UNAVAILABLE)
                     .header("content-type", "application/json")
                     .body(Full::new(Bytes::from("{\"error\":\"no model loaded yet\"}")))
                     .unwrap());
-            }
+            };
 
             let body = req.collect().await?.to_bytes();
             let result = tokio::task::spawn_blocking(move || {
-                pipeline.lock().unwrap().as_mut().unwrap().infer(&body)
+                pipeline_arc.lock().unwrap().infer(&body)
             })
             .await
             .unwrap();
@@ -135,7 +146,7 @@ async fn handle(
         }
 
         (&Method::GET, "/model") => {
-            let info = state.model_info.lock().unwrap().clone();
+            let info = state.model_info.read().unwrap().clone();
             match info {
                 Some(i) => {
                     let json = serde_json::to_vec(&i).unwrap_or_default();
@@ -153,7 +164,7 @@ async fn handle(
         }
 
         (&Method::GET, "/health") => {
-            let loaded = state.pipeline.lock().unwrap().is_some();
+            let loaded = state.pipeline.read().unwrap().is_some();
             if loaded {
                 Ok(Response::new(Full::new(Bytes::from("{\"status\":\"ok\"}"))))
             } else {
@@ -176,8 +187,8 @@ async fn handle(
 /// Runs in a `spawn_blocking` thread so wasmtime and ORT are happy.
 fn load_and_swap(
     req: UpgradeRequest,
-    shared_pipeline: Arc<Mutex<Option<Pipeline>>>,
-    shared_model_info: Arc<Mutex<Option<ModelInfo>>>,
+    shared_pipeline: Arc<RwLock<Option<Arc<Mutex<Pipeline>>>>>,
+    shared_model_info: Arc<RwLock<Option<ModelInfo>>>,
     client: Arc<EdgeflowClient>,
     target: String,
 ) {
@@ -203,9 +214,11 @@ fn load_and_swap(
 
     match result {
         Ok(new_pipeline) => {
-            // Atomically swap pipeline and model info.
-            *shared_pipeline.lock().unwrap() = Some(new_pipeline);
-            *shared_model_info.lock().unwrap() = Some(ModelInfo {
+            // Wrap in Arc<Mutex> then write-lock the outer RwLock to swap.
+            // Write lock only blocks for readers to finish cloning their Arc,
+            // not for in-flight inference calls.
+            *shared_pipeline.write().unwrap() = Some(Arc::new(Mutex::new(new_pipeline)));
+            *shared_model_info.write().unwrap() = Some(ModelInfo {
                 run_id: req.run_id,
                 deployment_id: req.deployment_id.clone(),
                 target,

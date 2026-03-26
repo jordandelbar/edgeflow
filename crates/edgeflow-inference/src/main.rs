@@ -5,7 +5,7 @@ mod server;
 mod tensor;
 mod wasm;
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
 use anyhow::{Context, Result};
 use client::EdgeflowClient;
 use server::ServerState;
@@ -46,8 +46,8 @@ async fn main() -> Result<()> {
     let client = Arc::new(EdgeflowClient::new(&server_url));
 
     let state = ServerState {
-        pipeline: Arc::new(Mutex::new(None)),
-        model_info: Arc::new(Mutex::new(None)),
+        pipeline: Arc::new(RwLock::new(None)),
+        model_info: Arc::new(RwLock::new(None)),
         client: client.clone(),
         target: target.clone(),
     };
