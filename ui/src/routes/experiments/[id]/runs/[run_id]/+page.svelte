@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
-  import { runs, metrics, artifacts, type Run, type Metric, type FileInfo } from '$lib/api';
+  import { runs, metrics, artifacts, models, runTag, type Run, type Metric, type FileInfo } from '$lib/api';
 
   let run: Run | null = null;
   let metricKeys: string[] = [];
@@ -9,12 +9,15 @@
   let metricHistory: Metric[] = [];
   let fileList: FileInfo[] = [];
   let error = '';
+  let promoting = false;
+  let promoted = false;
 
   onMount(async () => {
-    const run_id = $page.params.run_id;
+    const run_id = $page.params.run_id!;
     try {
       const res = await runs.get(run_id);
       run = res.run;
+      promoted = runTag(run, 'edgeflow.promoted') === 'true';
       metricKeys = [...new Set(run.data.metrics.map(m => m.key))];
       if (metricKeys.length > 0) {
         selectedMetric = metricKeys[0];
@@ -32,86 +35,175 @@
     const res = await metrics.getHistory(run.info.run_id, selectedMetric);
     metricHistory = res.metrics ?? [];
   }
+
+  async function promote() {
+    if (!run) return;
+    promoting = true;
+    try {
+      await models.promote(run.info.run_id);
+      promoted = true;
+    } finally {
+      promoting = false;
+    }
+  }
+
+  const statusStyle: Record<string, string> = {
+    FINISHED: 'bg-sage-light/40 text-sage-dark',
+    RUNNING:  'bg-peach-light/60 text-peach-dark',
+    FAILED:   'bg-red-100 text-red-700',
+    KILLED:   'bg-gray-100 text-gray-600',
+  };
 </script>
 
 {#if error}
-  <p class="error">{error}</p>
+  <div class="flex items-center gap-2 text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm">
+    <i class="fa-solid fa-circle-exclamation"></i>{error}
+  </div>
 {:else if run}
-  <h1>{run.info.run_name ?? run.info.run_id}</h1>
-  <p class="meta">Status: {run.info.status} · Started: {new Date(run.info.start_time).toLocaleString()}</p>
+  <!-- Breadcrumb -->
+  <div class="flex items-center gap-2 text-sm text-gray-400 mb-5 flex-wrap">
+    <a href="/" class="hover:text-gray-700 transition-colors">Experiments</a>
+    <i class="fa-solid fa-chevron-right text-xs"></i>
+    <a href="/experiments/{run.info.experiment_id}" class="hover:text-gray-700 transition-colors">
+      {run.info.experiment_id}
+    </a>
+    <i class="fa-solid fa-chevron-right text-xs"></i>
+    <span class="text-gray-700 font-medium">{run.info.run_name ?? run.info.run_id.slice(0, 8)}</span>
+  </div>
 
-  <section>
-    <h2>Parameters</h2>
-    {#if run.data.params.length === 0}
-      <p>None.</p>
-    {:else}
-      <table>
-        <thead><tr><th>Key</th><th>Value</th></tr></thead>
-        <tbody>
-          {#each run.data.params as p}
-            <tr><td>{p.key}</td><td>{p.value}</td></tr>
-          {/each}
-        </tbody>
-      </table>
+  <!-- Header row -->
+  <div class="flex items-start justify-between gap-4 mb-6">
+    <div>
+      <h1 class="text-xl font-bold text-gray-900">{run.info.run_name ?? run.info.run_id.slice(0, 8)}</h1>
+      <div class="flex items-center gap-3 mt-1.5">
+        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium {statusStyle[run.info.status] ?? 'bg-gray-100 text-gray-600'}">
+          {run.info.status}
+        </span>
+        <span class="text-xs text-gray-400">
+          {new Date(run.info.start_time).toLocaleString('en-GB')}
+        </span>
+      </div>
+    </div>
+
+    {#if promoted}
+      <div class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sage-light/30 text-sage-dark text-sm font-medium">
+        <i class="fa-solid fa-check-circle text-xs"></i>
+        Promoted to model
+      </div>
+    {:else if run.info.status === 'FINISHED'}
+      <button
+        on:click={promote}
+        disabled={promoting}
+        class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold bg-peach text-white hover:bg-peach-dark transition-colors disabled:opacity-50"
+      >
+        {#if promoting}
+          <i class="fa-solid fa-spinner fa-spin text-xs"></i>
+        {:else}
+          <i class="fa-solid fa-arrow-up-right-dots text-xs"></i>
+        {/if}
+        Promote to Model
+      </button>
     {/if}
-  </section>
+  </div>
 
-  <section>
-    <h2>Metrics</h2>
-    {#if metricKeys.length === 0}
-      <p>None.</p>
-    {:else}
-      <label>
-        Metric:
-        <select bind:value={selectedMetric} on:change={loadMetricHistory}>
-          {#each metricKeys as key}<option value={key}>{key}</option>{/each}
-        </select>
-      </label>
-      <table>
-        <thead><tr><th>Step</th><th>Value</th><th>Timestamp</th></tr></thead>
-        <tbody>
-          {#each metricHistory as m}
-            <tr>
-              <td>{m.step}</td>
-              <td>{m.value}</td>
-              <td>{new Date(m.timestamp).toLocaleString()}</td>
+  <div class="space-y-5">
+
+    <!-- Params -->
+    <div class="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+      <div class="px-5 py-3.5 border-b border-gray-100 flex items-center gap-2">
+        <i class="fa-solid fa-sliders text-sage text-sm"></i>
+        <h2 class="font-semibold text-gray-700 text-sm">Parameters</h2>
+      </div>
+      {#if run.data.params.length === 0}
+        <p class="px-5 py-4 text-sm text-gray-400">None.</p>
+      {:else}
+        <table class="w-full text-sm">
+          <tbody>
+            {#each run.data.params as p}
+              <tr class="border-b border-gray-50 last:border-0">
+                <td class="px-5 py-2.5 font-medium text-gray-600 w-1/3 font-mono text-xs">{p.key}</td>
+                <td class="px-5 py-2.5 text-gray-800 font-mono text-xs">{p.value}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      {/if}
+    </div>
+
+    <!-- Metrics -->
+    <div class="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+      <div class="px-5 py-3.5 border-b border-gray-100 flex items-center justify-between gap-2">
+        <div class="flex items-center gap-2">
+          <i class="fa-solid fa-chart-line text-sage text-sm"></i>
+          <h2 class="font-semibold text-gray-700 text-sm">Metrics</h2>
+        </div>
+        {#if metricKeys.length > 1}
+          <select
+            bind:value={selectedMetric}
+            on:change={loadMetricHistory}
+            class="text-xs border border-gray-200 rounded-md px-2 py-1 text-gray-600 bg-white"
+          >
+            {#each metricKeys as key}<option value={key}>{key}</option>{/each}
+          </select>
+        {/if}
+      </div>
+      {#if metricKeys.length === 0}
+        <p class="px-5 py-4 text-sm text-gray-400">None.</p>
+      {:else}
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-gray-100 text-left">
+              <th class="px-5 py-2.5 text-xs font-semibold text-gray-400 uppercase tracking-wide">Step</th>
+              <th class="px-5 py-2.5 text-xs font-semibold text-gray-400 uppercase tracking-wide">Value</th>
+              <th class="px-5 py-2.5 text-xs font-semibold text-gray-400 uppercase tracking-wide">Timestamp</th>
             </tr>
-          {/each}
-        </tbody>
-      </table>
-    {/if}
-  </section>
+          </thead>
+          <tbody>
+            {#each metricHistory as m}
+              <tr class="border-b border-gray-50 last:border-0">
+                <td class="px-5 py-2.5 text-gray-500 font-mono text-xs">{m.step}</td>
+                <td class="px-5 py-2.5 text-gray-800 font-mono text-xs font-semibold">{m.value}</td>
+                <td class="px-5 py-2.5 text-gray-400 text-xs">{new Date(m.timestamp).toLocaleString('en-GB')}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      {/if}
+    </div>
 
-  <section>
-    <h2>Artifacts</h2>
-    {#if fileList.length === 0}
-      <p>None.</p>
-    {:else}
-      <ul>
-        {#each fileList as f}
-          <li>
-            {#if f.is_dir}
-              📁 {f.path}
-            {:else}
-              <a href="/api/2.0/mlflow/artifacts/get-artifact?run_id={run.info.run_id}&path={f.path}" target="_blank">
-                {f.path}
-              </a>
-              {#if f.file_size !== null}
-                <span class="meta">({(f.file_size / 1024).toFixed(1)} KB)</span>
+    <!-- Artifacts -->
+    <div class="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+      <div class="px-5 py-3.5 border-b border-gray-100 flex items-center gap-2">
+        <i class="fa-solid fa-box-archive text-sage text-sm"></i>
+        <h2 class="font-semibold text-gray-700 text-sm">Artifacts</h2>
+      </div>
+      {#if fileList.length === 0}
+        <p class="px-5 py-4 text-sm text-gray-400">None.</p>
+      {:else}
+        <ul class="divide-y divide-gray-50">
+          {#each fileList as f}
+            <li class="px-5 py-2.5 flex items-center gap-2.5 text-sm">
+              {#if f.is_dir}
+                <i class="fa-solid fa-folder text-peach-light w-4 text-center"></i>
+                <span class="text-gray-600 font-mono text-xs">{f.path}</span>
+              {:else}
+                <i class="fa-solid fa-file text-gray-300 w-4 text-center"></i>
+                <a
+                  href="/api/2.0/mlflow/artifacts/get-artifact?run_id={run.info.run_id}&path={f.path}"
+                  target="_blank"
+                  class="text-sage-dark hover:text-sage font-mono text-xs hover:underline transition-colors"
+                >
+                  {f.path}
+                </a>
+                {#if f.file_size !== null}
+                  <span class="text-gray-400 text-xs ml-auto">{(f.file_size / 1024).toFixed(1)} KB</span>
+                {/if}
               {/if}
-            {/if}
-          </li>
-        {/each}
-      </ul>
-    {/if}
-  </section>
-{/if}
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </div>
 
-<style>
-  section { margin-top: 2rem; }
-  table { border-collapse: collapse; width: 100%; }
-  th, td { padding: 0.5rem 1rem; border-bottom: 1px solid #ddd; text-align: left; }
-  .meta { color: #666; font-size: 0.85rem; }
-  .error { color: red; }
-  label { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; }
-</style>
+  </div>
+{/if}

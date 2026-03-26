@@ -39,7 +39,7 @@ pub trait Store: Send + Sync {
     async fn create_deployment(&self, run_id: &str, target: &str) -> Result<Deployment>;
     async fn get_deployment(&self, deployment_id: &str) -> Result<Deployment>;
     async fn get_latest_deployment(&self, target: &str) -> Result<Deployment>;
-    async fn list_deployments(&self, target: &str) -> Result<Vec<Deployment>>;
+    async fn list_deployments(&self, target: Option<&str>) -> Result<Vec<Deployment>>;
     async fn update_deployment_state(&self, deployment_id: &str, state: DeploymentState) -> Result<()>;
     async fn get_pending_deployment_for_target(&self, target: &str) -> Result<Option<Deployment>>;
     async fn supersede_previous_deployments(&self, target: &str, except_id: &str) -> Result<()>;

@@ -75,14 +75,14 @@ async fn create_deployment(
 
 #[derive(Deserialize)]
 struct DeploymentQuery {
-    target: String,
+    target: Option<String>,
 }
 
 async fn list_deployments(
     State(state): State<AppState>,
     Query(q): Query<DeploymentQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let deployments = state.store.list_deployments(&q.target).await?;
+    let deployments = state.store.list_deployments(q.target.as_deref()).await?;
     Ok(Json(serde_json::json!({ "deployments": deployments })))
 }
 
