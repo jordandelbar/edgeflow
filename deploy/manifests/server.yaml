@@ -1,4 +1,30 @@
 apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: edgeflow-server
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: edgeflow-server
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "create", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: edgeflow-server
+subjects:
+  - kind: ServiceAccount
+    name: edgeflow-server
+roleRef:
+  kind: Role
+  name: edgeflow-server
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: edgeflow-data
@@ -22,6 +48,7 @@ spec:
       labels:
         app: edgeflow-server
     spec:
+      serviceAccountName: edgeflow-server
       containers:
         - name: edgeflow-server
           image: edgeflow-server:dev
@@ -33,6 +60,12 @@ spec:
               value: /data
             - name: EDGEFLOW_ADDR
               value: 0.0.0.0:5000
+            - name: EDGEFLOW_SERVER_URL
+              value: http://edgeflow-server:5000
+            - name: EDGEFLOW_INFERENCE_IMAGE
+              value: edgeflow-inference:dev
+            - name: EDGEFLOW_IMAGE_PULL_POLICY
+              value: Never
           volumeMounts:
             - name: data
               mountPath: /data

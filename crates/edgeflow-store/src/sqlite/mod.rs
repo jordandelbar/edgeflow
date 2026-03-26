@@ -407,6 +407,18 @@ impl Store for SqliteStore {
         Ok(row_to_deployment(&row))
     }
 
+    async fn list_deployments(&self, target: &str) -> Result<Vec<Deployment>> {
+        let rows = sqlx::query(
+            "SELECT deployment_id, target, run_id, created_at, state FROM deployments
+             WHERE target = ? ORDER BY created_at DESC"
+        )
+        .bind(target)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.iter().map(row_to_deployment).collect())
+    }
+
     async fn get_latest_deployment(&self, target: &str) -> Result<Deployment> {
         let row = sqlx::query(
             "SELECT deployment_id, target, run_id, created_at, state FROM deployments

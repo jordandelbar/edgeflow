@@ -12,6 +12,7 @@ use super::ApiError;
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/deployments", post(create_deployment))
+        .route("/deployments", get(list_deployments))
         .route("/deployments/latest", get(get_latest_deployment))
         .route("/deployments/:id", get(get_deployment))
         .route("/deployments/:id/confirm", post(confirm_deployment))
@@ -68,6 +69,21 @@ async fn create_deployment(
 
     let deployment = state.store.get_deployment(&deployment.deployment_id).await?;
     Ok(Json(serde_json::json!({ "deployment": deployment })))
+}
+
+// ── GET /deployments?target=<t> ──────────────────────────────────────────────
+
+#[derive(Deserialize)]
+struct DeploymentQuery {
+    target: String,
+}
+
+async fn list_deployments(
+    State(state): State<AppState>,
+    Query(q): Query<DeploymentQuery>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let deployments = state.store.list_deployments(&q.target).await?;
+    Ok(Json(serde_json::json!({ "deployments": deployments })))
 }
 
 // ── GET /deployments/latest ──────────────────────────────────────────────────

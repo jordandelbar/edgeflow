@@ -1,52 +1,14 @@
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: edgeflow-inference
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: edgeflow-inference
-  template:
-    metadata:
-      labels:
-        app: edgeflow-inference
-    spec:
-      containers:
-        - name: edgeflow-inference
-          image: edgeflow-inference:dev
-          imagePullPolicy: Never
-          ports:
-            - containerPort: 8080
-          env:
-            - name: EDGEFLOW_SERVER
-              value: http://edgeflow-server:5000
-            - name: EDGEFLOW_TARGET
-              value: iris-inference
-            - name: EDGEFLOW_INFER_ADDR
-              value: 0.0.0.0:8080
-            - name: EDGEFLOW_POD_IP
-              valueFrom:
-                fieldRef:
-                  fieldPath: status.podIP
-          # Becomes ready only after model is loaded and /health responds.
-          # This naturally blocks until after train_iris.py has run.
-          readinessProbe:
-            httpGet:
-              path: /health
-              port: 8080
-            initialDelaySeconds: 2
-            periodSeconds: 5
-            failureThreshold: 60  # allow up to 5 min for training to complete
----
+# Static infrastructure — applied once at cluster setup.
+# The Deployment is created dynamically by edgeflow-server when a deployment
+# is triggered for this target.  Only the Service lives here.
 apiVersion: v1
 kind: Service
 metadata:
-  name: edgeflow-inference
+  name: edgeflow-inference-iris-inference
 spec:
   type: NodePort
   selector:
-    app: edgeflow-inference
+    app: edgeflow-inference-iris-inference
   ports:
     - port: 8080
       targetPort: 8080

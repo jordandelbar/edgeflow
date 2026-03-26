@@ -1,23 +1,157 @@
-/// Trigger creation of an inference pod for `target`.
+use std::collections::BTreeMap;
+
+use k8s_openapi::api::apps::v1::{Deployment, DeploymentSpec};
+use k8s_openapi::api::core::v1::{
+    Container, ContainerPort, EnvVar, EnvVarSource, HTTPGetAction, ObjectFieldSelector,
+    PodSpec, PodTemplateSpec, Probe,
+};
+use k8s_openapi::apimachinery::pkg::apis::meta::v1::{LabelSelector, ObjectMeta};
+use k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
+use kube::api::{Api, PostParams};
+
+/// Sanitise a target name into a valid k8s resource name.
+/// k8s names: lowercase alphanumeric + `-`, max 63 chars.
+fn k8s_name(target: &str) -> String {
+    let sanitized: String = target
+        .to_lowercase()
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { '-' })
+        .collect();
+    format!("edgeflow-inference-{}", &sanitized[..sanitized.len().min(45)])
+}
+
+/// Create a k8s Deployment for an inference pod serving `target`.
 ///
-/// Full k8s integration (via the `kube` crate) can be wired in here.
-/// For now we log the intent so the lifecycle still works in environments
-/// where the pod is created manually or by an external operator.
+/// No-ops gracefully if:
+/// - the cluster is unreachable (local dev without k8s)
+/// - the Deployment already exists (pod is starting but hasn't registered yet)
 pub async fn create_inference_pod(target: &str) {
-    let server_addr = std::env::var("EDGEFLOW_ADDR")
-        .unwrap_or_else(|_| "http://edgeflow-server:5000".into());
     let image = std::env::var("EDGEFLOW_INFERENCE_IMAGE")
         .unwrap_or_else(|_| "edgeflow-inference:latest".into());
+    let server_url = std::env::var("EDGEFLOW_SERVER_URL")
+        .unwrap_or_else(|_| "http://edgeflow-server:5000".into());
+    let namespace = std::env::var("EDGEFLOW_NAMESPACE")
+        .unwrap_or_else(|_| "default".into());
+    let pull_policy = std::env::var("EDGEFLOW_IMAGE_PULL_POLICY")
+        .unwrap_or_else(|_| "IfNotPresent".into());
 
-    tracing::info!(
-        target = %target,
-        server = %server_addr,
-        image = %image,
-        "k8s pod creation requested — set EDGEFLOW_INFERENCE_IMAGE and ensure the pod \
-         is launched with EDGEFLOW_SERVER and EDGEFLOW_TARGET env vars"
-    );
+    let client = match kube::Client::try_default().await {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!(
+                target = %target,
+                error = %e,
+                "k8s client unavailable — start the inference pod manually with \
+                 EDGEFLOW_SERVER={server_url} EDGEFLOW_TARGET={target}"
+            );
+            return;
+        }
+    };
 
-    // TODO: wire in the `kube` crate here.
-    // let client = kube::Client::try_default().await?;
-    // create_deployment_resource(client, target, &server_addr, &image).await?;
+    let name = k8s_name(target);
+    let mut labels = BTreeMap::new();
+    labels.insert("app".to_string(), name.clone());
+    labels.insert("edgeflow-target".to_string(), target.to_string());
+
+    let deployment = Deployment {
+        metadata: ObjectMeta {
+            name: Some(name.clone()),
+            namespace: Some(namespace.clone()),
+            labels: Some(labels.clone()),
+            ..Default::default()
+        },
+        spec: Some(DeploymentSpec {
+            replicas: Some(1),
+            selector: LabelSelector {
+                match_labels: Some(labels.clone()),
+                ..Default::default()
+            },
+            template: PodTemplateSpec {
+                metadata: Some(ObjectMeta {
+                    labels: Some(labels),
+                    ..Default::default()
+                }),
+                spec: Some(PodSpec {
+                    containers: vec![Container {
+                        name: "edgeflow-inference".to_string(),
+                        image: Some(image.clone()),
+                        image_pull_policy: Some(pull_policy),
+                        ports: Some(vec![ContainerPort {
+                            container_port: 8080,
+                            ..Default::default()
+                        }]),
+                        env: Some(vec![
+                            EnvVar {
+                                name: "EDGEFLOW_SERVER".to_string(),
+                                value: Some(server_url.clone()),
+                                ..Default::default()
+                            },
+                            EnvVar {
+                                name: "EDGEFLOW_TARGET".to_string(),
+                                value: Some(target.to_string()),
+                                ..Default::default()
+                            },
+                            EnvVar {
+                                name: "EDGEFLOW_INFER_ADDR".to_string(),
+                                value: Some("0.0.0.0:8080".to_string()),
+                                ..Default::default()
+                            },
+                            EnvVar {
+                                name: "EDGEFLOW_POD_IP".to_string(),
+                                value_from: Some(EnvVarSource {
+                                    field_ref: Some(ObjectFieldSelector {
+                                        field_path: "status.podIP".to_string(),
+                                        ..Default::default()
+                                    }),
+                                    ..Default::default()
+                                }),
+                                ..Default::default()
+                            },
+                        ]),
+                        readiness_probe: Some(Probe {
+                            http_get: Some(HTTPGetAction {
+                                path: Some("/health".to_string()),
+                                port: IntOrString::Int(8080),
+                                ..Default::default()
+                            }),
+                            initial_delay_seconds: Some(2),
+                            period_seconds: Some(5),
+                            failure_threshold: Some(60),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                }),
+            },
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+
+    let api: Api<Deployment> = Api::namespaced(client, &namespace);
+    match api.create(&PostParams::default(), &deployment).await {
+        Ok(_) => {
+            tracing::info!(
+                target = %target,
+                name = %name,
+                image = %image,
+                "created inference deployment"
+            );
+        }
+        Err(kube::Error::Api(e)) if e.code == 409 => {
+            tracing::info!(
+                target = %target,
+                name = %name,
+                "inference deployment already exists — waiting for pod to register"
+            );
+        }
+        Err(e) => {
+            tracing::error!(
+                target = %target,
+                error = %e,
+                "failed to create inference deployment"
+            );
+        }
+    }
 }
