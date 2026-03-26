@@ -1,4 +1,5 @@
 mod api;
+mod k8s;
 mod state;
 
 use std::path::PathBuf;
@@ -9,7 +10,9 @@ use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+use edgeflow_core::DeploymentState;
 use edgeflow_store::sqlite::SqliteStore;
+use edgeflow_store::Store;
 use state::AppState;
 
 #[tokio::main]
@@ -28,6 +31,40 @@ async fn main() -> anyhow::Result<()> {
 
     let store = SqliteStore::new(&db_path, artifact_root.clone()).await?;
     let state = AppState { store: Arc::new(store), artifact_root };
+
+    // Background task: time out deployments stuck in deploying/upgrading.
+    let timeout_state = state.clone();
+    tokio::spawn(async move {
+        let timeout_ms = std::env::var("DEPLOYMENT_TIMEOUT_SECS")
+            .ok()
+            .and_then(|s| s.parse::<i64>().ok())
+            .unwrap_or(300)
+            * 1000;
+
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+
+            match timeout_state.store
+                .get_stale_deployments(&["deploying", "upgrading"], timeout_ms)
+                .await
+            {
+                Ok(stale) => {
+                    for d in stale {
+                        tracing::warn!(
+                            deployment_id = %d.deployment_id,
+                            target = %d.target,
+                            state = %d.state.as_str(),
+                            "deployment timed out — marking failed"
+                        );
+                        let _ = timeout_state.store
+                            .update_deployment_state(&d.deployment_id, DeploymentState::Failed)
+                            .await;
+                    }
+                }
+                Err(e) => tracing::error!("timeout sweep error: {e}"),
+            }
+        }
+    });
 
     let static_dir = std::env::var("EDGEFLOW_STATIC_DIR").unwrap_or_else(|_| "./static".into());
 

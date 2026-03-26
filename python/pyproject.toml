@@ -10,7 +10,12 @@ dependencies = [
     "componentize-py>=0.13",
     "onnx>=1.16",
     "skl2onnx>=1.17",
+    "typer>=0.12",
+    "requests>=2.31",
 ]
+
+[project.scripts]
+edgeflow = "edgeflow.cli:app"
 
 [tool.maturin]
 python-source = "."

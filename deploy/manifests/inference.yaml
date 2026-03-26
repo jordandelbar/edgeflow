@@ -25,6 +25,10 @@ spec:
               value: iris-inference
             - name: EDGEFLOW_INFER_ADDR
               value: 0.0.0.0:8080
+            - name: EDGEFLOW_POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
           # Becomes ready only after model is loaded and /health responds.
           # This naturally blocks until after train_iris.py has run.
           readinessProbe:

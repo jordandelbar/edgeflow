@@ -13,6 +13,45 @@ impl EdgeflowClient {
         }
     }
 
+    /// Register this pod as the active inference server for `target`.
+    pub async fn register_target(&self, target: &str, address: &str) -> Result<()> {
+        let url = format!("{}/api/v1/targets/register", self.server);
+        self.client
+            .post(&url)
+            .json(&serde_json::json!({ "target": target, "address": address }))
+            .send()
+            .await
+            .context("failed to register target with edgeflow-server")?
+            .error_for_status()
+            .context("server rejected target registration")?;
+        Ok(())
+    }
+
+    /// Confirm the outcome of a deployment to the server.
+    pub async fn confirm_deployment(
+        &self,
+        deployment_id: &str,
+        status: &str,
+        reason: Option<&str>,
+    ) -> Result<()> {
+        let url = format!("{}/api/v1/deployments/{}/confirm", self.server, deployment_id);
+        let mut body = serde_json::json!({ "status": status });
+        if let Some(r) = reason {
+            body["reason"] = serde_json::Value::String(r.to_string());
+        }
+        self.client
+            .post(&url)
+            .json(&body)
+            .send()
+            .await
+            .context("failed to confirm deployment")?
+            .error_for_status()
+            .context("server rejected deployment confirmation")?;
+        Ok(())
+    }
+
+    /// Kept for backwards-compat / dev polling.
+    #[allow(dead_code)]
     pub async fn latest_run_id(&self, target: &str) -> Result<String> {
         let url = format!("{}/api/v1/deployments/latest?target={}", self.server, target);
         let resp: serde_json::Value = self.client

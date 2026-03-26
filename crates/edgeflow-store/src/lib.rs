@@ -37,5 +37,14 @@ pub trait Store: Send + Sync {
 
     // Deployments
     async fn create_deployment(&self, run_id: &str, target: &str) -> Result<Deployment>;
+    async fn get_deployment(&self, deployment_id: &str) -> Result<Deployment>;
     async fn get_latest_deployment(&self, target: &str) -> Result<Deployment>;
+    async fn update_deployment_state(&self, deployment_id: &str, state: DeploymentState) -> Result<()>;
+    async fn get_pending_deployment_for_target(&self, target: &str) -> Result<Option<Deployment>>;
+    async fn supersede_previous_deployments(&self, target: &str, except_id: &str) -> Result<()>;
+    async fn get_stale_deployments(&self, states: &[&str], older_than_ms: i64) -> Result<Vec<Deployment>>;
+
+    // Targets
+    async fn register_target(&self, target: &str, address: &str, pod_name: Option<&str>) -> Result<Target>;
+    async fn get_target(&self, target: &str) -> Result<Option<Target>>;
 }

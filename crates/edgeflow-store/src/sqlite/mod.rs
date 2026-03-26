@@ -25,6 +25,16 @@ impl SqliteStore {
     }
 }
 
+fn row_to_deployment(row: &sqlx::sqlite::SqliteRow) -> Deployment {
+    Deployment {
+        deployment_id: row.get("deployment_id"),
+        target: row.get("target"),
+        run_id: row.get("run_id"),
+        created_at: row.get("created_at"),
+        state: DeploymentState::from_str(&row.get::<String, _>("state")),
+    }
+}
+
 #[async_trait::async_trait]
 impl Store for SqliteStore {
     async fn create_experiment(&self, name: &str, artifact_location: Option<&str>, tags: Vec<ExperimentTag>) -> Result<Experiment> {
@@ -369,7 +379,6 @@ impl Store for SqliteStore {
             .fetch_one(&self.pool)
             .await?;
         let uri: String = row.get("artifact_uri");
-        // Convert mlflow-artifacts:/<relative_path> to local path under artifact_root.
         let rel = uri.strip_prefix("mlflow-artifacts:/").unwrap_or(&uri);
         Ok(self.artifact_root.join(rel))
     }
@@ -378,17 +387,29 @@ impl Store for SqliteStore {
         let id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Utc::now().timestamp_millis();
         sqlx::query(
-            "INSERT INTO deployments (deployment_id, target, run_id, created_at) VALUES (?, ?, ?, ?)"
+            "INSERT INTO deployments (deployment_id, target, run_id, created_at, state) VALUES (?, ?, ?, ?, 'pending')"
         )
         .bind(&id).bind(target).bind(run_id).bind(now)
         .execute(&self.pool).await?;
 
-        Ok(Deployment { deployment_id: id, target: target.to_string(), run_id: run_id.to_string(), created_at: now })
+        self.get_deployment(&id).await
+    }
+
+    async fn get_deployment(&self, deployment_id: &str) -> Result<Deployment> {
+        let row = sqlx::query(
+            "SELECT deployment_id, target, run_id, created_at, state FROM deployments WHERE deployment_id = ?"
+        )
+        .bind(deployment_id)
+        .fetch_one(&self.pool)
+        .await
+        .context("deployment not found")?;
+
+        Ok(row_to_deployment(&row))
     }
 
     async fn get_latest_deployment(&self, target: &str) -> Result<Deployment> {
         let row = sqlx::query(
-            "SELECT deployment_id, target, run_id, created_at FROM deployments
+            "SELECT deployment_id, target, run_id, created_at, state FROM deployments
              WHERE target = ? ORDER BY created_at DESC LIMIT 1"
         )
         .bind(target)
@@ -396,11 +417,87 @@ impl Store for SqliteStore {
         .await
         .context("deployment not found")?;
 
-        Ok(Deployment {
-            deployment_id: row.get("deployment_id"),
-            target: row.get("target"),
-            run_id: row.get("run_id"),
-            created_at: row.get("created_at"),
+        Ok(row_to_deployment(&row))
+    }
+
+    async fn update_deployment_state(&self, deployment_id: &str, state: DeploymentState) -> Result<()> {
+        sqlx::query("UPDATE deployments SET state = ? WHERE deployment_id = ?")
+            .bind(state.as_str()).bind(deployment_id)
+            .execute(&self.pool).await?;
+        Ok(())
+    }
+
+    async fn get_pending_deployment_for_target(&self, target: &str) -> Result<Option<Deployment>> {
+        let row = sqlx::query(
+            "SELECT deployment_id, target, run_id, created_at, state FROM deployments
+             WHERE target = ? AND state = 'pending' ORDER BY created_at DESC LIMIT 1"
+        )
+        .bind(target)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(row.as_ref().map(row_to_deployment))
+    }
+
+    async fn supersede_previous_deployments(&self, target: &str, except_id: &str) -> Result<()> {
+        sqlx::query(
+            "UPDATE deployments SET state = 'superseded'
+             WHERE target = ? AND state = 'healthy' AND deployment_id != ?"
+        )
+        .bind(target).bind(except_id)
+        .execute(&self.pool).await?;
+        Ok(())
+    }
+
+    async fn get_stale_deployments(&self, states: &[&str], older_than_ms: i64) -> Result<Vec<Deployment>> {
+        // SQLite doesn't support array parameters; run one query per state.
+        let mut results = Vec::new();
+        let cutoff = chrono::Utc::now().timestamp_millis() - older_than_ms;
+        for state in states {
+            let rows = sqlx::query(
+                "SELECT deployment_id, target, run_id, created_at, state FROM deployments
+                 WHERE state = ? AND created_at < ?"
+            )
+            .bind(state).bind(cutoff)
+            .fetch_all(&self.pool).await?;
+
+            for row in &rows {
+                results.push(row_to_deployment(row));
+            }
+        }
+        Ok(results)
+    }
+
+    async fn register_target(&self, target: &str, address: &str, pod_name: Option<&str>) -> Result<Target> {
+        let now = chrono::Utc::now().timestamp_millis();
+        sqlx::query(
+            "INSERT INTO targets (target, address, pod_name, registered_at) VALUES (?, ?, ?, ?)
+             ON CONFLICT(target) DO UPDATE SET address = excluded.address, pod_name = excluded.pod_name, registered_at = excluded.registered_at"
+        )
+        .bind(target).bind(address).bind(pod_name).bind(now)
+        .execute(&self.pool).await?;
+
+        Ok(Target {
+            target: target.to_string(),
+            address: address.to_string(),
+            pod_name: pod_name.map(|s| s.to_string()),
+            registered_at: now,
         })
+    }
+
+    async fn get_target(&self, target: &str) -> Result<Option<Target>> {
+        let row = sqlx::query(
+            "SELECT target, address, pod_name, registered_at FROM targets WHERE target = ?"
+        )
+        .bind(target)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(row.map(|r| Target {
+            target: r.get("target"),
+            address: r.get("address"),
+            pod_name: r.get("pod_name"),
+            registered_at: r.get("registered_at"),
+        }))
     }
 }

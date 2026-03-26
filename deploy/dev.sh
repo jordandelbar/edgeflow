@@ -1,5 +1,12 @@
 #!/usr/bin/env bash
-# End-to-end PoC setup: build → k3d → deploy → train → test
+# End-to-end dev setup: build → k3d → deploy → train → test
+#
+# New lifecycle (hot-swap):
+#   1. Server + inference pods start in parallel.
+#   2. Inference pod registers its address with the server (retries until server is up).
+#   3. Training creates a deployment record → server calls POST /upgrade on the pod.
+#   4. Pod downloads artifacts, swaps pipeline atomically, confirms HEALTHY.
+#   5. k8s readiness probe (/health) passes → rollout completes.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -30,17 +37,17 @@ kubectl apply -f deploy/manifests/
 echo "==> waiting for edgeflow-server to be ready..."
 kubectl rollout status deployment/edgeflow-server --timeout=120s
 
-# ── train & push ──────────────────────────────────────────────────────────────
-# Server is reachable on localhost:5000 via k3d port mapping.
-# The inference pod is already running and polling for a deployment.
+# ── train & deploy ────────────────────────────────────────────────────────────
+# The inference pod is already starting and will register with the server.
+# Creating a deployment here triggers POST /upgrade on the registered pod.
 echo "==> running training script..."
 EDGEFLOW_SERVER=http://localhost:5000 \
 EDGEFLOW_TARGET=iris-inference \
     uv run --project scripts python scripts/train_iris.py
 
-# ── wait for inference ────────────────────────────────────────────────────────
-# Inference pod fetches the deployment, downloads artifacts, loads pipeline,
-# then /health starts responding → readiness probe passes.
+# ── wait for inference to become healthy ──────────────────────────────────────
+# The readiness probe on /health only passes after the model is loaded and the
+# deployment is confirmed HEALTHY — so rollout status = model is serving.
 echo "==> waiting for edgeflow-inference to be ready..."
 kubectl rollout status deployment/edgeflow-inference --timeout=300s
 
@@ -50,6 +57,10 @@ echo "==> smoke test (setosa sample: sepal=5.1x3.5 petal=1.4x0.2)..."
 python3 -c "import struct, sys; sys.stdout.buffer.write(struct.pack('<4f', 5.1, 3.5, 1.4, 0.2))" \
     | curl -s -X POST http://localhost:8080/infer --data-binary @- \
     | python3 -m json.tool
+
+echo ""
+echo "==> deployment state:"
+curl -s "http://localhost:5000/api/v1/deployments/latest?target=iris-inference" | python3 -m json.tool
 
 echo ""
 echo "done. cluster is up at localhost:5000 (server) and localhost:8080 (inference)."
