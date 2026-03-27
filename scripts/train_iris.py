@@ -63,9 +63,7 @@ print(f"run_id: {run_id}")
 
 # ── trigger deployment ─────────────────────────────────────────────────────────
 
-print(f"deploying → target={EDGEFLOW_TARGET}...")
 deployment = edgeflow.deploy(run_id, EDGEFLOW_TARGET, wait=False)
-print(f"deployment_id: {deployment['deployment_id']}")
 
 print()
 print("done. to test inference:")

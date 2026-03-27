@@ -75,6 +75,4 @@ print(f"run_id: {run_id}")
 
 # ── deploy ─────────────────────────────────────────────────────────────────────
 
-print(f"deploying → target={EDGEFLOW_TARGET}...")
-deployment = edgeflow.deploy(run_id, EDGEFLOW_TARGET, wait=False)
-print(f"deployment_id: {deployment['deployment_id']}")
+deployment = edgeflow.deploy(run_id, EDGEFLOW_TARGET, wait=True)

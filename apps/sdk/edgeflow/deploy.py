@@ -35,6 +35,8 @@ def deploy(
     """
     server = server or os.environ.get("EDGEFLOW_SERVER", _DEFAULT_SERVER)
 
+    print(f"🚀 Deploying run {run_id[:12]} → target '{target}'")
+
     resp = requests.post(
         f"{server}/api/v1/deployments",
         json={"run_id": run_id, "target": target},
@@ -42,23 +44,31 @@ def deploy(
     )
     resp.raise_for_status()
     deployment = resp.json()["deployment"]
+    deployment_id = deployment["deployment_id"]
+
+    print(f"   deployment_id: {deployment_id}")
 
     if not wait:
         return deployment
 
-    deployment_id = deployment["deployment_id"]
     deadline = time.monotonic() + timeout
+    last_state = deployment["state"]
 
     while time.monotonic() < deadline:
         time.sleep(2)
         resp = requests.get(f"{server}/api/v1/deployments/{deployment_id}", timeout=10)
         resp.raise_for_status()
         deployment = resp.json()["deployment"]
-        if deployment["state"] in TERMINAL_STATES:
+        state = deployment["state"]
+        if state != last_state:
+            print(f"   {last_state} → {state}")
+            last_state = state
+        if state in TERMINAL_STATES:
             break
 
     state = deployment["state"]
     if state == "deployed":
+        print(f"✅ Deployment live on '{target}'")
         return deployment
     if time.monotonic() >= deadline:
         raise RuntimeError(
