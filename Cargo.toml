@@ -1,9 +1,9 @@
 [workspace]
 members = [
-    "crates/edgeflow-core",
-    "crates/edgeflow-store",
-    "crates/edgeflow-server",
-    "crates/edgeflow-inference",
+    "crates/core",
+    "crates/store",
+    "apps/server",
+    "apps/inference",
 ]
 resolver = "2"
 

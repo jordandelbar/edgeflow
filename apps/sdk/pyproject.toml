@@ -20,5 +20,5 @@ edgeflow = "edgeflow.cli:app"
 [tool.maturin]
 python-source = "."
 module-name = "edgeflow._lib"
-manifest-path = "../crates/edgeflow-transforms/Cargo.toml"
+manifest-path = "../../crates/transforms/Cargo.toml"
 features = ["python"]

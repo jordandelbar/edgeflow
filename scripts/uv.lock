@@ -366,7 +366,7 @@ wheels = [
 [[package]]
 name = "edgeflow"
 version = "0.1.0"
-source = { editable = "../python" }
+source = { editable = "../apps/sdk" }
 dependencies = [
     { name = "componentize-py" },
     { name = "onnx" },
@@ -398,7 +398,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "edgeflow", editable = "../python" },
+    { name = "edgeflow", editable = "../apps/sdk" },
     { name = "mlflow", specifier = ">=3.10.1" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "requests", specifier = ">=2.31" },

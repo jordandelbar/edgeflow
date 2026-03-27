@@ -14,10 +14,10 @@ cd "$ROOT"
 
 # ── build images ──────────────────────────────────────────────────────────────
 echo "==> building edgeflow-server image..."
-docker build -f deploy/Dockerfile.server -t edgeflow-server:dev .
+docker build -f deploy/server.Dockerfile -t edgeflow-server:dev .
 
 echo "==> building edgeflow-inference image..."
-docker build -f deploy/Dockerfile.inference -t edgeflow-inference:dev .
+docker build -f deploy/inference.Dockerfile -t edgeflow-inference:dev .
 
 # ── k3d cluster ───────────────────────────────────────────────────────────────
 echo "==> creating k3d cluster..."

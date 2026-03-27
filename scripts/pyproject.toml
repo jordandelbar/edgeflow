@@ -11,4 +11,4 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-edgeflow = { path = "../python", editable = true }
+edgeflow = { path = "../apps/sdk", editable = true }

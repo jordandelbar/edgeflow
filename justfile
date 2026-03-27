@@ -5,20 +5,20 @@ static_dir := "./static"
 build: build-transforms build-ui build-server
 
 # Compile the standard Rust transforms:
-#   - WASM component → python/edgeflow/wasm/standard_pipeline.wasm  (server, ~150 KB)
-#   - Native PyO3 extension → edgeflow/_lib.so                      (local execution)
+#   - WASM component → apps/sdk/edgeflow/wasm/standard_pipeline.wasm  (server, ~150 KB)
+#   - Native PyO3 extension → edgeflow/_lib.so                        (local execution)
 build-transforms:
-    cd crates/edgeflow-transforms && \
+    cd crates/transforms && \
         cargo build --target wasm32-wasip2 --release
-    cp crates/edgeflow-transforms/target/wasm32-wasip2/release/_lib.wasm \
-        python/edgeflow/wasm/standard_pipeline.wasm
-    cd python && uv run maturin develop --features python
+    cp crates/transforms/target/wasm32-wasip2/release/_lib.wasm \
+        apps/sdk/edgeflow/wasm/standard_pipeline.wasm
+    cd apps/sdk && uv run maturin develop --features python
 
 # Build the Svelte UI and copy output to static/
 build-ui:
-    cd ui && npm install && npm run build
+    cd apps/ui && npm install && npm run build
     rm -rf {{static_dir}}
-    cp -r ui/build {{static_dir}}
+    cp -r apps/ui/build {{static_dir}}
 
 # Build the server in release mode
 build-server:
@@ -32,7 +32,7 @@ dev-server:
 
 # Run the Svelte dev server
 dev-ui:
-    cd ui && npm run dev
+    cd apps/ui && npm run dev
 
 # Run Rust unit tests
 test:
@@ -52,4 +52,4 @@ docs:
 # Clean build artifacts
 clean:
     cargo clean
-    rm -rf {{static_dir}} ui/build ui/node_modules
+    rm -rf {{static_dir}} apps/ui/build apps/ui/node_modules
