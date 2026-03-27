@@ -53,6 +53,45 @@ def sklearn_to_onnx(clf, n_features: int | None = None) -> bytes:
     return model.SerializeToString()
 
 
+def read_onnx_named_inputs(model_bytes: bytes) -> list[dict] | None:
+    """Return ordered input specs for models with multiple or mixed-type inputs.
+
+    Returns a list of ``{"name": str, "type": "float"|"string"}`` dicts when
+    the ONNX model has more than one input — i.e. a full sklearn pipeline
+    exported via skl2onnx with per-column tensors.
+
+    Returns ``None`` for models with a single float32 tensor input so the
+    existing ``FloatBytesToTensor`` auto-injection path continues to work.
+
+    Args:
+        model_bytes: serialised ONNX model bytes.
+
+    Returns:
+        List of field specs, or None for single-tensor models.
+    """
+    import onnx
+
+    proto = onnx.ModelProto()
+    proto.ParseFromString(model_bytes)
+
+    initializer_names = {i.name for i in proto.graph.initializer}
+    true_inputs = [i for i in proto.graph.input if i.name not in initializer_names]
+
+    if len(true_inputs) <= 1:
+        return None
+
+    specs = []
+    for inp in true_inputs:
+        tensor_type = inp.type.tensor_type
+        if tensor_type.elem_type == onnx.TensorProto.STRING:
+            dtype = "string"
+        else:
+            dtype = "float"
+        specs.append({"name": inp.name, "type": dtype})
+
+    return specs
+
+
 def read_onnx_input_shape(model_bytes: bytes) -> int | None:
     """Return n_features if the ONNX model has a single float[batch, n_features] input.
 

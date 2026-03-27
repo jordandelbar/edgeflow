@@ -292,7 +292,8 @@ fn load_and_swap(
         let pre = pre_wasm.as_deref().map(|w| (w, pre_cfg.as_deref()));
         let post = post_wasm.as_deref().map(|w| (w, post_cfg.as_deref()));
         let backend = crate::backend::build_backend();
-        let pipeline = Pipeline::new(backend, &model, pre, post)?;
+        // Pass schema.json so Pipeline can determine input mode (Single vs Named).
+        let pipeline = Pipeline::new(backend, &model, pre, post, schema.as_deref())?;
         Ok((pipeline, schema))
     });
 

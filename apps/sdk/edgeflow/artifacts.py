@@ -15,6 +15,7 @@ def log_model(
     preprocess=None,
     postprocess=None,
     wit_dir: Path | None = None,
+    column_transformer=None,
 ) -> None:
     """Log an ONNX model and transforms to the active mlflow run.
 
@@ -27,6 +28,14 @@ def log_model(
         pipeline does not already start with one.  In most cases you only
         need to supply postprocess.
 
+    Named-input path — mixed tabular models:
+        Pass ``column_transformer`` (a fitted sklearn ColumnTransformer) to
+        enable JSON input mode.  Encoding tables are extracted from the
+        fitted transformer and written to schema.json.  The inference server
+        will accept a JSON body, apply the encodings, and feed the resulting
+        float tensor to the ONNX model.  The ONNX model must be exported
+        post-encoding (i.e. the classifier only, not the full sklearn pipeline).
+
     Legacy path — @preprocess / @postprocess decorators:
         Falls back to componentize-py (requires wit_dir). Produces ~40 MB
         WASM components and ~800 MB inference memory. Emits a UserWarning.
@@ -34,23 +43,27 @@ def log_model(
     Must be called inside an active mlflow.start_run() context.
 
     Args:
-        model_bytes:  serialised ONNX model bytes (e.g. from clf_to_onnx()).
-        preprocess:   Pipeline for input transforms, or None.
-        postprocess:  Pipeline for output transforms, or None.
-        wit_dir:      path to WIT definitions — only required for legacy path.
+        model_bytes:         serialised ONNX model bytes (e.g. from clf_to_onnx()).
+        preprocess:          Pipeline for input transforms, or None.
+        postprocess:         Pipeline for output transforms, or None.
+        wit_dir:             path to WIT definitions — only required for legacy path.
+        column_transformer:  fitted sklearn ColumnTransformer.  When supplied,
+                             Named-input mode is activated and FloatBytesToTensor
+                             auto-injection is skipped.
     """
     import mlflow
     from edgeflow.pipeline import Pipeline
     from edgeflow.layers import FloatBytesToTensor
 
-    # Auto-inject FloatBytesToTensor from ONNX input shape when not already present.
-    n = _read_onnx_n_features(model_bytes)
-    if n is not None:
-        if preprocess is None:
-            preprocess = Pipeline([FloatBytesToTensor(n_features=n)])
-        elif isinstance(preprocess, Pipeline):
-            if not preprocess.steps or not isinstance(preprocess.steps[0], FloatBytesToTensor):
-                preprocess = Pipeline([FloatBytesToTensor(n_features=n)] + preprocess.steps)
+    if column_transformer is None:
+        # Single-tensor path: auto-inject FloatBytesToTensor from ONNX input shape.
+        n = _read_onnx_n_features(model_bytes)
+        if n is not None:
+            if preprocess is None:
+                preprocess = Pipeline([FloatBytesToTensor(n_features=n)])
+            elif isinstance(preprocess, Pipeline):
+                if not preprocess.steps or not isinstance(preprocess.steps[0], FloatBytesToTensor):
+                    preprocess = Pipeline([FloatBytesToTensor(n_features=n)] + preprocess.steps)
 
     with tempfile.TemporaryDirectory() as tmp:
         tmpdir = Path(tmp)
@@ -60,11 +73,12 @@ def log_model(
 
         if isinstance(preprocess, Pipeline) or isinstance(postprocess, Pipeline):
             _log_standard(tmpdir, preprocess, postprocess)
-        else:
+        elif column_transformer is None:
             _log_legacy(tmpdir, wit_dir)
 
         schema_path = tmpdir / "schema.json"
-        schema_path.write_bytes(json.dumps(_build_schema(preprocess, postprocess)).encode())
+        schema = _build_schema(preprocess, postprocess, column_transformer)
+        schema_path.write_bytes(json.dumps(schema).encode())
         mlflow.log_artifact(str(schema_path))
 
 
@@ -94,12 +108,16 @@ def _read_onnx_n_features(model_bytes: bytes) -> int | None:
         return None
 
 
-def _build_schema(preprocess, postprocess) -> dict:
+def _build_schema(preprocess, postprocess, column_transformer=None) -> dict:
     from edgeflow.layers import FloatBytesToTensor, ClassifierOutput
 
     schema: dict = {}
 
-    if preprocess is not None and preprocess.steps:
+    if column_transformer is not None:
+        # Named-input mode: encoding tables extracted from the fitted transformer.
+        fields = _build_field_specs_from_transformer(column_transformer)
+        schema["input"] = {"format": "json", "fields": fields}
+    elif preprocess is not None and preprocess.steps:
         first = preprocess.steps[0]
         if isinstance(first, FloatBytesToTensor):
             schema["input"] = {"format": "float_bytes", "n_features": first.n_features}
@@ -114,6 +132,56 @@ def _build_schema(preprocess, postprocess) -> dict:
         schema["output"] = {"format": "tensor"}
 
     return schema
+
+
+def _build_field_specs_from_transformer(column_transformer) -> list[dict]:
+    """Extract per-field encoding specs from a fitted sklearn ColumnTransformer.
+
+    Fields are emitted in the same order as ``column_transformer.transform()``
+    output — this order must match what the deployed ONNX model was trained on.
+
+    Supported transformers:
+        OrdinalEncoder  → ``{"type": "ordinal", "map": {category: index}}``
+        OneHotEncoder   → ``{"type": "one_hot", "categories": [...]}``
+        "passthrough"   → ``{"type": "float"}`` (no encoding entry)
+    """
+    from sklearn.preprocessing import OrdinalEncoder, OneHotEncoder
+    from sklearn.preprocessing import FunctionTransformer
+
+    fields = []
+    for _step_name, transformer, columns in column_transformer.transformers_:
+        if _step_name == "remainder":
+            continue
+
+        cols = list(columns) if not isinstance(columns, list) else columns
+
+        for col_idx, col in enumerate(cols):
+            if transformer == "passthrough" or isinstance(transformer, FunctionTransformer):
+                fields.append({"name": str(col), "type": "float"})
+
+            elif isinstance(transformer, OrdinalEncoder):
+                categories = transformer.categories_[col_idx]
+                fields.append({
+                    "name": str(col),
+                    "type": "string",
+                    "encoding": {
+                        "type": "ordinal",
+                        "map": {str(cat): float(i) for i, cat in enumerate(categories)},
+                    },
+                })
+
+            elif isinstance(transformer, OneHotEncoder):
+                categories = transformer.categories_[col_idx]
+                fields.append({
+                    "name": str(col),
+                    "type": "string",
+                    "encoding": {
+                        "type": "one_hot",
+                        "categories": [str(c) for c in categories],
+                    },
+                })
+
+    return fields
 
 
 def _log_legacy(tmpdir: Path, wit_dir: Path | None) -> None:

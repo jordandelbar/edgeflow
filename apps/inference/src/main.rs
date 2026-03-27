@@ -1,5 +1,6 @@
 mod backend;
 mod client;
+mod inputs;
 mod pipeline;
 mod server;
 mod tensor;
