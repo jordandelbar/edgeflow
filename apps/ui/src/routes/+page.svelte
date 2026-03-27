@@ -1,49 +1,52 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { experiments, type Experiment } from '$lib/api';
-
-  let items: Experiment[] = [];
-  let error = '';
-
-  onMount(async () => {
-    try {
-      const res = await experiments.list();
-      items = res.experiments ?? [];
-    } catch (e) {
-      error = String(e);
-    }
-  });
-
-  function fmt(ms: number) {
-    return new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-  }
+  const sections = [
+    {
+      href:        '/experiments',
+      label:       'Experiments',
+      icon:        'fa-solid fa-flask',
+      description: 'Browse MLflow runs, inspect parameters, metrics, and artifacts.',
+    },
+    {
+      href:        '/models',
+      label:       'Models',
+      icon:        'fa-solid fa-brain',
+      description: 'Promote finished runs to models and deploy them to edge targets.',
+    },
+    {
+      href:        '/deployments',
+      label:       'Deployments',
+      icon:        'fa-solid fa-rocket',
+      description: 'Monitor active targets, check pod health, and run inference tests.',
+    },
+  ];
 </script>
 
-{#if error}
-  <div class="flex items-center gap-2 text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm">
-    <i class="fa-solid fa-circle-exclamation"></i>{error}
+<div class="max-w-2xl mx-auto py-12">
+  <div class="mb-10">
+    <h1 class="text-2xl font-bold text-gray-900 mb-2">
+      <i class="fa-solid fa-hexagon text-peach mr-2 text-xl"></i>edgeflow
+    </h1>
+    <p class="text-sm text-gray-500">
+      ML experiment tracking and edge model deployment - all in one place.
+    </p>
   </div>
-{:else if items.length === 0}
-  <div class="text-center py-20 text-gray-400">
-    <i class="fa-solid fa-flask text-4xl mb-3 block opacity-30"></i>
-    <p class="text-sm">No experiments yet.</p>
-  </div>
-{:else}
-  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-    {#each items as exp}
+
+  <div class="space-y-3">
+    {#each sections as s}
       <a
-        href="/experiments/{exp.experiment_id}"
-        class="block bg-white rounded-xl border border-gray-100 p-5 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-150 group"
+        href={s.href}
+        class="flex items-center gap-5 bg-white rounded-xl border border-gray-100 px-6 py-5 shadow-sm
+               hover:shadow-md hover:-translate-y-0.5 transition-all duration-150 group"
       >
-        <div class="flex items-start justify-between gap-2 mb-3">
-          <div class="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style="background:#edf4f1">
-            <i class="fa-solid fa-flask text-sage text-sm"></i>
-          </div>
-          <span class="text-xs text-gray-400 font-mono mt-1">#{exp.experiment_id}</span>
+        <div class="w-11 h-11 rounded-xl flex items-center justify-center shrink-0" style="background:#edf4f1">
+          <i class="{s.icon} text-sage text-base"></i>
         </div>
-        <p class="font-semibold text-gray-800 group-hover:text-peach-dark transition-colors truncate">{exp.name}</p>
-        <p class="text-xs text-gray-400 mt-1">{fmt(exp.creation_time)}</p>
+        <div class="flex-1 min-w-0">
+          <p class="font-semibold text-gray-800 group-hover:text-peach-dark transition-colors">{s.label}</p>
+          <p class="text-xs text-gray-400 mt-0.5">{s.description}</p>
+        </div>
+        <i class="fa-solid fa-chevron-right text-gray-300 group-hover:text-peach transition-colors text-xs shrink-0"></i>
       </a>
     {/each}
   </div>
-{/if}
+</div>

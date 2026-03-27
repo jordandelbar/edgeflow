@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { models, deployments, modelName, runTag, type Run, type Deployment, type ResourceSettings } from '$lib/api';
+  import ErrorCard from '$lib/components/ErrorCard.svelte';
+  import DeployStateBadge from '$lib/components/DeployStateBadge.svelte';
 
   let items: Run[] = [];
   let knownTargets: { name: string; state: string }[] = [];
@@ -108,30 +110,10 @@
       } catch { clearInterval(iv); }
     }, 2000);
   }
-
-  const stateStyle: Record<string, string> = {
-    pending:    'bg-gray-100 text-gray-500',
-    deploying:  'bg-peach-light/60 text-peach-dark',
-    upgrading:  'bg-peach-light/60 text-peach-dark',
-    deployed:   'bg-sage-light/40 text-sage-dark',
-    failed:     'bg-red-100 text-red-600',
-    superseded: 'bg-gray-100 text-gray-400',
-  };
-
-  const stateIcon: Record<string, string> = {
-    pending:    'fa-solid fa-clock',
-    deploying:  'fa-solid fa-spinner fa-spin',
-    upgrading:  'fa-solid fa-spinner fa-spin',
-    deployed:   'fa-solid fa-circle-check',
-    failed:     'fa-solid fa-circle-xmark',
-    superseded: 'fa-solid fa-circle-minus',
-  };
 </script>
 
 {#if error}
-  <div class="flex items-center gap-2 text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm">
-    <i class="fa-solid fa-circle-exclamation"></i>{error}
-  </div>
+  <ErrorCard message={error} />
 {:else if items.length === 0}
   <div class="text-center py-20 text-gray-400">
     <i class="fa-solid fa-brain text-4xl mb-3 block opacity-30"></i>
@@ -182,10 +164,7 @@
             <!-- Active deployment result -->
             <div class="px-5 py-3 flex items-center justify-between gap-3">
               <div class="flex items-center gap-2 text-sm">
-                <i class="{stateIcon[c.dep.state] ?? 'fa-solid fa-circle'} text-xs {c.polling ? 'text-peach' : ''}"></i>
-                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium {stateStyle[c.dep.state] ?? 'bg-gray-100 text-gray-600'}">
-                  {c.dep.state}
-                </span>
+                <DeployStateBadge state={c.dep.state} />
                 <span class="text-gray-400 text-xs">→ {c.dep.target}</span>
               </div>
               {#if c.polling}
@@ -220,10 +199,7 @@
                   >
                     <i class="fa-solid fa-server text-xs text-gray-400"></i>
                     {t.name}
-                    <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs {stateStyle[t.state] ?? 'bg-gray-100 text-gray-500'}">
-                      <i class="{stateIcon[t.state] ?? 'fa-solid fa-circle'} text-xs"></i>
-                      {t.state}
-                    </span>
+                    <DeployStateBadge state={t.state} />
                   </button>
                 {/each}
 

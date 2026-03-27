@@ -1,7 +1,11 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { page } from '$app/stores';
   import { experiments, runs, type Experiment, type Run } from '$lib/api';
+  import ErrorCard from '$lib/components/ErrorCard.svelte';
+  import BreadcrumbNav from '$lib/components/BreadcrumbNav.svelte';
+  import StatusBadge from '$lib/components/StatusBadge.svelte';
+
+  export let data: { id: string };
 
   let experiment: Experiment | null = null;
   let runList: Run[] = [];
@@ -9,7 +13,7 @@
   let interval: ReturnType<typeof setInterval>;
 
   async function load() {
-    const id = $page.params.id!;
+    const id = data.id;
     try {
       const [expRes, runsRes] = await Promise.all([
         experiments.get(id),
@@ -35,13 +39,6 @@
     return s < 60 ? `${s.toFixed(1)}s` : `${(s / 60).toFixed(1)}m`;
   }
 
-  const statusStyle: Record<string, string> = {
-    FINISHED: 'bg-sage-light/40 text-sage-dark',
-    RUNNING:  'bg-peach-light/60 text-peach-dark',
-    FAILED:   'bg-red-100 text-red-700',
-    KILLED:   'bg-gray-100 text-gray-600',
-  };
-
   $: metricKeys = [...new Set(runList.flatMap(r => r.data.metrics.map(m => m.key)))];
 
   function metricValue(run: Run, key: string): string {
@@ -52,18 +49,10 @@
 </script>
 
 {#if error}
-  <div class="flex items-center gap-2 text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm">
-    <i class="fa-solid fa-circle-exclamation"></i>{error}
-  </div>
+  <ErrorCard message={error} />
 {:else if experiment}
-  <!-- Breadcrumb -->
-  <div class="flex items-center gap-2 text-sm text-gray-400 mb-5">
-    <a href="/" class="hover:text-gray-700 transition-colors">Experiments</a>
-    <i class="fa-solid fa-chevron-right text-xs"></i>
-    <span class="text-gray-700 font-medium">{experiment.name}</span>
-  </div>
+  <BreadcrumbNav items={[{ label: 'Experiments', href: '/experiments' }, { label: experiment.name }]} />
 
-  <!-- Runs table -->
   {#if runList.length === 0}
     <div class="text-center py-16 text-gray-400">
       <i class="fa-solid fa-play-circle text-3xl mb-2 block opacity-30"></i>
@@ -96,9 +85,7 @@
                 <div class="text-xs text-gray-400 font-mono mt-0.5">{run.info.run_id.slice(0, 12)}</div>
               </td>
               <td class="px-5 py-3.5">
-                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium {statusStyle[run.info.status] ?? 'bg-gray-100 text-gray-600'}">
-                  {run.info.status}
-                </span>
+                <StatusBadge status={run.info.status} />
               </td>
               <td class="px-5 py-3.5 text-gray-500">
                 {new Date(run.info.start_time).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}

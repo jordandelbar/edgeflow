@@ -1,7 +1,11 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { page } from '$app/stores';
   import { runs, metrics, artifacts, models, runTag, type Run, type Metric, type FileInfo } from '$lib/api';
+  import ErrorCard from '$lib/components/ErrorCard.svelte';
+  import BreadcrumbNav from '$lib/components/BreadcrumbNav.svelte';
+  import StatusBadge from '$lib/components/StatusBadge.svelte';
+
+  export let data: { run_id: string };
 
   let run: Run | null = null;
   let metricKeys: string[] = [];
@@ -13,7 +17,7 @@
   let promoted = false;
 
   onMount(async () => {
-    const run_id = $page.params.run_id!;
+    const run_id = data.run_id;
     try {
       const res = await runs.get(run_id);
       run = res.run;
@@ -46,39 +50,23 @@
       promoting = false;
     }
   }
-
-  const statusStyle: Record<string, string> = {
-    FINISHED: 'bg-sage-light/40 text-sage-dark',
-    RUNNING:  'bg-peach-light/60 text-peach-dark',
-    FAILED:   'bg-red-100 text-red-700',
-    KILLED:   'bg-gray-100 text-gray-600',
-  };
 </script>
 
 {#if error}
-  <div class="flex items-center gap-2 text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm">
-    <i class="fa-solid fa-circle-exclamation"></i>{error}
-  </div>
+  <ErrorCard message={error} />
 {:else if run}
-  <!-- Breadcrumb -->
-  <div class="flex items-center gap-2 text-sm text-gray-400 mb-5 flex-wrap">
-    <a href="/" class="hover:text-gray-700 transition-colors">Experiments</a>
-    <i class="fa-solid fa-chevron-right text-xs"></i>
-    <a href="/experiments/{run.info.experiment_id}" class="hover:text-gray-700 transition-colors">
-      {run.info.experiment_id}
-    </a>
-    <i class="fa-solid fa-chevron-right text-xs"></i>
-    <span class="text-gray-700 font-medium">{run.info.run_name ?? run.info.run_id.slice(0, 8)}</span>
-  </div>
+  <BreadcrumbNav items={[
+    { label: 'Experiments', href: '/experiments' },
+    { label: run.info.experiment_id, href: `/experiments/${run.info.experiment_id}` },
+    { label: run.info.run_name ?? run.info.run_id.slice(0, 8) },
+  ]} />
 
   <!-- Header row -->
   <div class="flex items-start justify-between gap-4 mb-6">
     <div>
       <h1 class="text-xl font-bold text-gray-900">{run.info.run_name ?? run.info.run_id.slice(0, 8)}</h1>
       <div class="flex items-center gap-3 mt-1.5">
-        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium {statusStyle[run.info.status] ?? 'bg-gray-100 text-gray-600'}">
-          {run.info.status}
-        </span>
+        <StatusBadge status={run.info.status} />
         <span class="text-xs text-gray-400">
           {new Date(run.info.start_time).toLocaleString('en-GB')}
         </span>

@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { deployments, targets, runs, type Deployment, type ModelStatus } from '$lib/api';
+  import ErrorCard from '$lib/components/ErrorCard.svelte';
+  import DeployStateBadge from '$lib/components/DeployStateBadge.svelte';
 
   let byTarget: Record<string, Deployment[]> = {};
   let targetList: string[] = [];
@@ -139,24 +141,6 @@
     }
   }
 
-  const stateStyle: Record<string, string> = {
-    pending:    'bg-gray-100 text-gray-500',
-    deploying:  'bg-peach-light/60 text-peach-dark',
-    upgrading:  'bg-peach-light/60 text-peach-dark',
-    deployed:   'bg-sage-light/40 text-sage-dark',
-    failed:     'bg-red-100 text-red-600',
-    superseded: 'bg-gray-100 text-gray-400',
-  };
-
-  const stateIcon: Record<string, string> = {
-    pending:    'fa-solid fa-clock',
-    deploying:  'fa-solid fa-spinner fa-spin',
-    upgrading:  'fa-solid fa-arrows-rotate',
-    deployed:   'fa-solid fa-circle-check',
-    failed:     'fa-solid fa-circle-xmark',
-    superseded: 'fa-solid fa-circle-minus',
-  };
-
   function fmt(ms: number) {
     return new Date(ms).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
   }
@@ -167,9 +151,7 @@
 </script>
 
 {#if error}
-  <div class="flex items-center gap-2 text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm">
-    <i class="fa-solid fa-circle-exclamation"></i>{error}
-  </div>
+  <ErrorCard message={error} />
 {:else if loading}
   <div class="text-center py-20 text-gray-400">
     <i class="fa-solid fa-spinner fa-spin text-2xl mb-3 block"></i>
@@ -344,10 +326,7 @@
                   <tr class="border-b border-gray-50 last:border-0 hover:bg-gray-50 transition-colors">
                     <td class="px-5 py-2.5 font-mono text-xs text-gray-600">{dep.run_id.slice(0, 12)}</td>
                     <td class="px-5 py-2.5">
-                      <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium {stateStyle[dep.state] ?? 'bg-gray-100 text-gray-600'}">
-                        <i class="{stateIcon[dep.state] ?? 'fa-solid fa-circle'} text-xs"></i>
-                        {dep.state}
-                      </span>
+                      <DeployStateBadge state={dep.state} />
                     </td>
                     <td class="px-5 py-2.5 text-xs text-gray-400">{fmt(dep.created_at)}</td>
                   </tr>
