@@ -17,12 +17,14 @@ pub fn router() -> Router<AppState> {
         .route("/deployments/latest", get(get_latest_deployment))
         .route("/deployments/:id", get(get_deployment))
         .route("/deployments/:id/confirm", post(confirm_deployment))
+        .route("/targets", get(list_targets))
         .route("/targets/register", post(register_target))
         .route("/targets/:target/model", get(target_model_status))
         .route("/targets/:target/schema", get(target_schema))
         .route("/targets/:target/health", get(target_health))
         .route("/targets/:target/infer/playground", post(infer_playground))
         .route("/targets/:target", delete(teardown_target))
+        .route("/nodes", get(list_nodes))
 }
 
 // ── Tensor helpers (mirrors edgeflow-inference tensor format) ─────────────────
@@ -171,6 +173,7 @@ async fn infer_playground(
 struct CreateDeploymentRequest {
     run_id: String,
     target: String,
+    node: Option<String>,
     #[serde(default)]
     resources: ResourceSettings,
 }
@@ -211,9 +214,9 @@ async fn create_deployment(
             }
         }
     } else {
-        // First deploy: pod doesn't exist yet — store resources then create it via k8s.
-        state.store.store_target_resources(&req.target, &req.resources).await?;
-        crate::k8s::create_inference_pod(&req.target, &req.resources).await;
+        // First deploy: pod doesn't exist yet — store node + resources then create it via k8s.
+        state.store.store_target_resources(&req.target, req.node.as_deref(), &req.resources).await?;
+        crate::k8s::create_inference_pod(&req.target, req.node.as_deref(), &req.resources).await;
     }
 
     let deployment = state.store.get_deployment(&deployment.deployment_id).await?;
@@ -379,4 +382,20 @@ async fn teardown_target(
 
     tracing::info!(target = %target, "target torn down");
     Ok(StatusCode::NO_CONTENT)
+}
+
+// ── GET /targets ──────────────────────────────────────────────────────────────
+
+async fn list_targets(
+    State(state): State<AppState>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let targets = state.store.list_targets().await?;
+    Ok(Json(serde_json::json!({ "targets": targets })))
+}
+
+// ── GET /nodes ────────────────────────────────────────────────────────────────
+
+async fn list_nodes() -> Json<serde_json::Value> {
+    let nodes = crate::k8s::list_nodes().await;
+    Json(serde_json::json!({ "nodes": nodes }))
 }

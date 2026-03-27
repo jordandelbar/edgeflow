@@ -1,12 +1,14 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { models, deployments, modelName, runTag, type Run, type Deployment, type ResourceSettings } from '$lib/api';
+  import { models, deployments, targets, nodes, modelName, type Run, type Deployment, type ResourceSettings } from '$lib/api';
   import ErrorCard from '$lib/components/ErrorCard.svelte';
   import DeployStateBadge from '$lib/components/DeployStateBadge.svelte';
 
   let items: Run[] = [];
-  let knownTargets: { name: string; state: string }[] = [];
+  let knownTargets: { name: string; state: string; node: string | null }[] = [];
   let deployedOn: Record<string, string[]> = {};   // run_id → target names currently deployed
+  let nodeList: string[] = [];
+  let loadingNodes = false;
   let error = '';
 
   const DEFAULT_RESOURCES: ResourceSettings = {
@@ -16,36 +18,52 @@
     max_concurrent: 8,
   };
 
+  type ActiveDep = { target: string; dep: Deployment };
+
   // Per-card deploy state
   type CardState = {
     open: boolean;
     addingNew: boolean;
     newTarget: string;
+    selectedNodes: string[];
     showAdvanced: boolean;
     resources: ResourceSettings;
     err: string;
-    dep: Deployment | null;
+    activeDeps: ActiveDep[];
     polling: boolean;
   };
   let cards: Record<string, CardState> = {};
 
+  function emptyCard(): CardState {
+    return { open: false, addingNew: false, newTarget: '', selectedNodes: [], showAdvanced: false, resources: { ...DEFAULT_RESOURCES }, err: '', activeDeps: [], polling: false };
+  }
+
   onMount(async () => {
     try {
-      const [modelsRes, depsRes] = await Promise.all([
+      const [modelsRes, depsRes, tgRes] = await Promise.all([
         models.list(),
         deployments.list(),
+        targets.list(),
       ]);
       items = modelsRes.runs ?? [];
-      items.forEach(r => {
-        cards[r.info.run_id] = { open: false, addingNew: false, newTarget: '', showAdvanced: false, resources: { ...DEFAULT_RESOURCES }, err: '', dep: null, polling: false };
-      });
+      items.forEach(r => { cards[r.info.run_id] = emptyCard(); });
+
+      // Build node info from target records
+      const targetNodeMap: Record<string, string | null> = {};
+      for (const t of (tgRes.targets ?? [])) {
+        targetNodeMap[t.target] = t.node;
+      }
 
       // Extract latest state per target
       const latestByTarget: Record<string, Deployment> = {};
       for (const d of (depsRes.deployments ?? [])) {
         if (!latestByTarget[d.target]) latestByTarget[d.target] = d;
       }
-      knownTargets = Object.entries(latestByTarget).map(([name, d]) => ({ name, state: d.state }));
+      knownTargets = Object.entries(latestByTarget).map(([name, d]) => ({
+        name,
+        state: d.state,
+        node: targetNodeMap[name] ?? null,
+      }));
 
       // Map run_id → targets where it is the active deployed deployment
       const newDeployedOn: Record<string, string[]> = {};
@@ -62,27 +80,63 @@
   });
 
   function toggle(run_id: string) {
-    const c = cards[run_id];
-    c.open = !c.open;
-    c.addingNew = false;
-    c.newTarget = '';
-    c.showAdvanced = false;
-    c.resources = { ...DEFAULT_RESOURCES };
-    c.err = '';
-    c.dep = null;
+    const wasOpen = cards[run_id].open || cards[run_id].activeDeps.length > 0;
+    cards[run_id] = emptyCard();
+    cards[run_id].open = !wasOpen;
     cards = cards;
   }
 
-  async function deployTo(run: Run, target: string, isNew = false) {
+  function toggleNode(run_id: string, node: string) {
+    const c = cards[run_id];
+    const idx = c.selectedNodes.indexOf(node);
+    if (idx === -1) c.selectedNodes = [...c.selectedNodes, node];
+    else c.selectedNodes = c.selectedNodes.filter(n => n !== node);
+    cards = cards;
+  }
+
+  // Short suffix from a full node name, e.g. "k3d-edgeflow-agent-0" → "agent-0"
+  function nodeSuffix(node: string): string {
+    const parts = node.split('-');
+    return parts.slice(-2).join('-');
+  }
+
+  // Derive target name(s) from base name + selected nodes
+  function targetNames(base: string, selected: string[]): string[] {
+    if (selected.length <= 1) return [base];
+    return selected.map(n => `${base}-${nodeSuffix(n)}`);
+  }
+
+  async function openNewTarget(run_id: string) {
+    cards[run_id].addingNew = true;
+    cards = cards;
+    if (nodeList.length === 0 && !loadingNodes) {
+      loadingNodes = true;
+      try {
+        const res = await nodes.list();
+        nodeList = res.nodes;
+        // Auto-select when there's exactly one node
+        if (nodeList.length === 1) {
+          cards[run_id].selectedNodes = [nodeList[0]];
+          cards = cards;
+        }
+      } catch { /* k8s may not be reachable */ }
+      loadingNodes = false;
+    } else if (nodeList.length === 1) {
+      cards[run_id].selectedNodes = [nodeList[0]];
+      cards = cards;
+    }
+  }
+
+  async function deployToExisting(run: Run, target: string) {
     const c = cards[run.info.run_id];
     c.err = '';
     c.polling = true;
     cards = cards;
     try {
-      const res = await deployments.create(run.info.run_id, target, isNew ? c.resources : undefined);
-      c.dep = res.deployment;
+      const res = await deployments.create(run.info.run_id, target, null);
+      c.activeDeps = [{ target, dep: res.deployment }];
       cards = cards;
-      poll(run.info.run_id, res.deployment.deployment_id);
+      pollOne(run.info.run_id, res.deployment.deployment_id, target);
     } catch (e) {
       c.err = String(e);
       c.polling = false;
@@ -93,19 +147,54 @@
   async function deployNew(run: Run) {
     const c = cards[run.info.run_id];
     if (!c.newTarget.trim()) { c.err = 'Target name is required.'; cards = cards; return; }
-    await deployTo(run, c.newTarget.trim(), true);
+    if (c.selectedNodes.length === 0) { c.err = 'Select at least one node.'; cards = cards; return; }
+
+    c.err = '';
+    c.polling = true;
+    c.activeDeps = [];
+    cards = cards;
+
+    const base = c.newTarget.trim();
+    const pairs = c.selectedNodes.map((node, i) => ({
+      node,
+      target: c.selectedNodes.length === 1 ? base : `${base}-${nodeSuffix(node)}`,
+    }));
+
+    const results = await Promise.allSettled(
+      pairs.map(({ node, target }) =>
+        deployments.create(run.info.run_id, target, node, c.resources)
+          .then(res => ({ target, dep: res.deployment }))
+      )
+    );
+
+    const succeeded = results
+      .filter((r): r is PromiseFulfilledResult<ActiveDep> => r.status === 'fulfilled')
+      .map(r => r.value);
+    const failCount = results.filter(r => r.status === 'rejected').length;
+
+    c.activeDeps = succeeded;
+    if (failCount > 0) c.err = `${failCount} deployment${failCount > 1 ? 's' : ''} failed to start.`;
+    if (succeeded.length === 0) c.polling = false;
+    cards = cards;
+
+    succeeded.forEach(({ target, dep }) => pollOne(run.info.run_id, dep.deployment_id, target));
   }
 
-  function poll(run_id: string, dep_id: string) {
+  function pollOne(run_id: string, dep_id: string, target: string) {
     const iv = setInterval(async () => {
       try {
         const res = await deployments.getById(dep_id);
-        cards[run_id].dep = res.deployment;
-        cards = cards;
-        if (['deployed', 'failed', 'superseded'].includes(res.deployment.state)) {
-          cards[run_id].polling = false;
+        const idx = cards[run_id].activeDeps.findIndex(d => d.target === target);
+        if (idx !== -1) {
+          cards[run_id].activeDeps[idx].dep = res.deployment;
           cards = cards;
+        }
+        if (['deployed', 'failed', 'superseded'].includes(res.deployment.state)) {
           clearInterval(iv);
+          const allSettled = cards[run_id].activeDeps.every(d =>
+            ['deployed', 'failed', 'superseded'].includes(d.dep.state)
+          );
+          if (allSettled) { cards[run_id].polling = false; cards = cards; }
         }
       } catch { clearInterval(iv); }
     }, 2000);
@@ -123,7 +212,7 @@
 {:else}
   <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
     {#each items as run}
-      {@const c = cards[run.info.run_id] ?? { open: false, addingNew: false, newTarget: '', err: '', dep: null, polling: false }}
+      {@const c = cards[run.info.run_id] ?? emptyCard()}
       <div class="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
 
         <!-- Card header -->
@@ -160,20 +249,26 @@
         <!-- Deploy area -->
         <div class="border-t border-gray-100">
 
-          {#if c.dep}
-            <!-- Active deployment result -->
-            <div class="px-5 py-3 flex items-center justify-between gap-3">
-              <div class="flex items-center gap-2 text-sm">
-                <DeployStateBadge state={c.dep.state} />
-                <span class="text-gray-400 text-xs">→ {c.dep.target}</span>
+          {#if c.activeDeps.length > 0}
+            <!-- Active deployment results -->
+            <div class="px-5 py-3 space-y-2">
+              {#each c.activeDeps as { target, dep }}
+                <div class="flex items-center gap-2 text-sm">
+                  <DeployStateBadge state={dep.state} />
+                  <span class="text-gray-400 text-xs">→ {target}</span>
+                </div>
+              {/each}
+              <div class="pt-1">
+                {#if c.polling}
+                  <span class="text-xs text-gray-400 italic">
+                    <i class="fa-solid fa-spinner fa-spin mr-1"></i>polling…
+                  </span>
+                {:else}
+                  <button on:click={() => toggle(run.info.run_id)} class="text-xs text-gray-400 hover:text-gray-600">
+                    <i class="fa-solid fa-xmark mr-1"></i>Close
+                  </button>
+                {/if}
               </div>
-              {#if c.polling}
-                <span class="text-xs text-gray-400 italic">polling…</span>
-              {:else}
-                <button on:click={() => toggle(run.info.run_id)} class="text-xs text-gray-400 hover:text-gray-600">
-                  <i class="fa-solid fa-xmark"></i>
-                </button>
-              {/if}
             </div>
 
           {:else if !c.open}
@@ -193,20 +288,23 @@
               <div class="flex flex-wrap gap-2">
                 {#each knownTargets as t}
                   <button
-                    on:click={() => deployTo(run, t.name)}
+                    on:click={() => deployToExisting(run, t.name)}
                     class="flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors
                       hover:border-peach hover:text-peach-dark border-gray-200 text-gray-700"
                   >
                     <i class="fa-solid fa-server text-xs text-gray-400"></i>
                     {t.name}
                     <DeployStateBadge state={t.state} />
+                    {#if t.node}
+                      <span class="text-xs text-gray-400 font-mono" title={t.node}>{nodeSuffix(t.node)}</span>
+                    {/if}
                   </button>
                 {/each}
 
                 <!-- Add new target -->
                 {#if !c.addingNew}
                   <button
-                    on:click={() => { cards[run.info.run_id].addingNew = true; cards = cards; }}
+                    on:click={() => openNewTarget(run.info.run_id)}
                     class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed border-gray-300 text-sm text-gray-400 hover:border-peach hover:text-peach-dark transition-colors"
                   >
                     <i class="fa-solid fa-plus text-xs"></i>New target
@@ -215,27 +313,60 @@
               </div>
 
               {#if c.addingNew}
-                <div class="space-y-2">
+                <div class="space-y-3">
+
+                  <!-- Target base name -->
                   <div class="flex gap-2">
                     <input
                       type="text"
                       placeholder="Target name"
                       bind:value={cards[run.info.run_id].newTarget}
-                      on:keydown={(e) => e.key === 'Enter' && deployNew(run)}
                       class="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-peach/50 focus:border-peach"
                     />
-                    <button
-                      on:click={() => deployNew(run)}
-                      class="px-4 py-1.5 rounded-lg text-sm font-semibold bg-peach text-white hover:bg-peach-dark transition-colors"
-                    >
-                      <i class="fa-solid fa-rocket text-xs mr-1"></i>Deploy
-                    </button>
                     <button
                       on:click={() => { cards[run.info.run_id].addingNew = false; cards = cards; }}
                       class="px-2 py-1.5 rounded-lg text-gray-400 hover:bg-gray-100 transition-colors"
                     >
                       <i class="fa-solid fa-xmark text-sm"></i>
                     </button>
+                  </div>
+
+                  <!-- Node selection -->
+                  <div>
+                    <p class="text-xs text-gray-500 mb-2">
+                      <i class="fa-solid fa-server mr-1"></i>Nodes
+                    </p>
+                    {#if loadingNodes}
+                      <p class="text-xs text-gray-400 italic"><i class="fa-solid fa-spinner fa-spin mr-1"></i>Discovering nodes…</p>
+                    {:else if nodeList.length === 0}
+                      <p class="text-xs text-red-400"><i class="fa-solid fa-circle-xmark mr-1"></i>No nodes discovered — is the cluster reachable?</p>
+                    {:else if nodeList.length === 1}
+                      <p class="text-xs text-gray-500 font-mono">{nodeList[0]}</p>
+                    {:else}
+                      <div class="flex flex-wrap gap-2">
+                        {#each nodeList as n}
+                          {@const selected = c.selectedNodes.includes(n)}
+                          <button
+                            on:click={() => toggleNode(run.info.run_id, n)}
+                            class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors
+                              {selected
+                                ? 'border-sage bg-sage-light/30 text-sage-dark'
+                                : 'border-gray-200 text-gray-500 hover:border-gray-300'}"
+                          >
+                            <i class="fa-solid fa-{selected ? 'square-check' : 'square'} text-xs"></i>
+                            {nodeSuffix(n)}
+                          </button>
+                        {/each}
+                      </div>
+                    {/if}
+
+                    <!-- Target name preview when multiple nodes selected -->
+                    {#if c.selectedNodes.length > 1 && c.newTarget.trim()}
+                      <p class="text-xs text-gray-400 mt-2">
+                        Creates:
+                        {targetNames(c.newTarget.trim(), c.selectedNodes).join(', ')}
+                      </p>
+                    {/if}
                   </div>
 
                   <!-- Advanced: resource settings -->
@@ -251,47 +382,48 @@
                     <div class="grid grid-cols-2 gap-2 bg-gray-50 rounded-lg p-3">
                       <div>
                         <label class="block text-xs text-gray-500 mb-1">CPU request</label>
-                        <input
-                          type="text"
-                          bind:value={cards[run.info.run_id].resources.cpu_request}
-                          placeholder="100m"
-                          class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-peach/50 focus:border-peach bg-white"
-                        />
+                        <input type="text" bind:value={cards[run.info.run_id].resources.cpu_request} placeholder="100m"
+                          class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-peach/50 focus:border-peach bg-white" />
                       </div>
                       <div>
                         <label class="block text-xs text-gray-500 mb-1">Memory request</label>
-                        <input
-                          type="text"
-                          bind:value={cards[run.info.run_id].resources.memory_request}
-                          placeholder="256Mi"
-                          class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-peach/50 focus:border-peach bg-white"
-                        />
+                        <input type="text" bind:value={cards[run.info.run_id].resources.memory_request} placeholder="256Mi"
+                          class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-peach/50 focus:border-peach bg-white" />
                       </div>
                       <div>
                         <label class="block text-xs text-gray-500 mb-1">Memory limit</label>
-                        <input
-                          type="text"
-                          bind:value={cards[run.info.run_id].resources.memory_limit}
-                          placeholder="512Mi"
-                          class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-peach/50 focus:border-peach bg-white"
-                        />
+                        <input type="text" bind:value={cards[run.info.run_id].resources.memory_limit} placeholder="512Mi"
+                          class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-peach/50 focus:border-peach bg-white" />
                       </div>
                       <div>
                         <label class="block text-xs text-gray-500 mb-1">Max concurrent infer</label>
-                        <input
-                          type="number"
-                          min="1"
-                          bind:value={cards[run.info.run_id].resources.max_concurrent}
-                          placeholder="8"
-                          class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-peach/50 focus:border-peach bg-white"
-                        />
+                        <input type="number" min="1" bind:value={cards[run.info.run_id].resources.max_concurrent} placeholder="8"
+                          class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-peach/50 focus:border-peach bg-white" />
                       </div>
                     </div>
                   {/if}
+
+                  <!-- Deploy button -->
+                  <div class="flex items-center justify-between">
+                    {#if c.err}
+                      <p class="text-xs text-red-500"><i class="fa-solid fa-circle-xmark mr-1"></i>{c.err}</p>
+                    {:else}
+                      <span></span>
+                    {/if}
+                    <button
+                      on:click={() => deployNew(run)}
+                      disabled={loadingNodes || nodeList.length === 0 || c.selectedNodes.length === 0}
+                      class="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-semibold bg-peach text-white hover:bg-peach-dark transition-colors disabled:opacity-50"
+                    >
+                      <i class="fa-solid fa-rocket text-xs"></i>
+                      Deploy{c.selectedNodes.length > 1 ? ` to ${c.selectedNodes.length} nodes` : ''}
+                    </button>
+                  </div>
+
                 </div>
               {/if}
 
-              {#if c.err}
+              {#if !c.addingNew && c.err}
                 <p class="text-xs text-red-500">{c.err}</p>
               {/if}
 

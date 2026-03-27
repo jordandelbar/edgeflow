@@ -8,7 +8,7 @@ use k8s_openapi::api::core::v1::{
 use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::{LabelSelector, ObjectMeta};
 use k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
-use kube::api::{Api, DeleteParams, PostParams};
+use kube::api::{Api, DeleteParams, ListParams, PostParams};
 use edgeflow_core::ResourceSettings;
 
 /// Sanitise a target name into a valid k8s resource name.
@@ -24,10 +24,13 @@ fn k8s_name(target: &str) -> String {
 
 /// Create a k8s Deployment for an inference pod serving `target`.
 ///
+/// `node` pins the pod to a specific node by name (k3s/k3d node names
+/// like `k3d-cluster-agent-0`). Pass `None` to let the scheduler decide.
+///
 /// No-ops gracefully if:
 /// - the cluster is unreachable (local dev without k8s)
 /// - the Deployment already exists (pod is starting but hasn't registered yet)
-pub async fn create_inference_pod(target: &str, resources: &ResourceSettings) {
+pub async fn create_inference_pod(target: &str, node: Option<&str>, resources: &ResourceSettings) {
     let image = std::env::var("EDGEFLOW_INFERENCE_IMAGE")
         .unwrap_or_else(|_| "edgeflow-inference:latest".into());
     let server_url = std::env::var("EDGEFLOW_SERVER_URL")
@@ -89,6 +92,7 @@ pub async fn create_inference_pod(target: &str, resources: &ResourceSettings) {
                     ..Default::default()
                 }),
                 spec: Some(PodSpec {
+                    node_name: node.map(String::from),
                     containers: vec![Container {
                         name: "edgeflow-inference".to_string(),
                         image: Some(image.clone()),
@@ -168,6 +172,7 @@ pub async fn create_inference_pod(target: &str, resources: &ResourceSettings) {
                 target = %target,
                 name = %name,
                 image = %image,
+                node = ?node,
                 "created inference deployment"
             );
         }
@@ -217,6 +222,25 @@ pub async fn delete_inference_pod(target: &str) {
         }
         Err(e) => {
             tracing::error!(target = %target, error = %e, "failed to delete inference deployment");
+        }
+    }
+}
+
+/// List all node names in the cluster.
+/// Returns an empty vec if the cluster is unreachable.
+pub async fn list_nodes() -> Vec<String> {
+    let client = match kube::Client::try_default().await {
+        Ok(c) => c,
+        Err(_) => return vec![],
+    };
+    let api: Api<k8s_openapi::api::core::v1::Node> = Api::all(client);
+    match api.list(&ListParams::default()).await {
+        Ok(list) => list.items.into_iter()
+            .filter_map(|n| n.metadata.name)
+            .collect(),
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to list k8s nodes");
+            vec![]
         }
     }
 }

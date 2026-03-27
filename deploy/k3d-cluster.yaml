@@ -3,7 +3,7 @@ kind: Simple
 metadata:
   name: edgeflow
 servers: 1
-agents: 0
+agents: 3
 ports:
   - port: 5000:30500
     nodeFilters: [loadbalancer]

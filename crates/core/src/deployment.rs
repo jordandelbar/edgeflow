@@ -57,6 +57,7 @@ pub struct Target {
     pub target: String,
     pub address: String,
     pub pod_name: Option<String>,
+    pub node: Option<String>,
     pub registered_at: i64,
     pub resources: ResourceSettings,
 }

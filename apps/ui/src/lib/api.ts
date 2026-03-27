@@ -92,6 +92,7 @@ export type Target = {
   target: string;
   address: string;
   pod_name: string | null;
+  node: string | null;
   registered_at: number;
 };
 
@@ -172,6 +173,7 @@ export type ModelStatus = {
 };
 
 export const targets = {
+  list:    () => v1get<{ targets: Target[] }>('/targets'),
   model:   (target: string) =>
     v1get<ModelStatus>(`/targets/${target}/model`),
   health:  (target: string) =>
@@ -184,9 +186,13 @@ export const targets = {
   },
 };
 
+export const nodes = {
+  list: () => v1get<{ nodes: string[] }>('/nodes'),
+};
+
 export const deployments = {
-  create:  (run_id: string, target: string, resources?: Partial<ResourceSettings>) =>
-    v1post<{ deployment: Deployment }>('/deployments', { run_id, target, resources }),
+  create:  (run_id: string, target: string, node?: string | null, resources?: Partial<ResourceSettings>) =>
+    v1post<{ deployment: Deployment }>('/deployments', { run_id, target, node, resources }),
   list:    () =>
     v1get<{ deployments: Deployment[] }>('/deployments'),
   listForTarget: (target: string) =>

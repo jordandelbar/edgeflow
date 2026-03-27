@@ -506,17 +506,19 @@ impl Store for SqliteStore {
         self.get_target(target).await.map(|t| t.unwrap())
     }
 
-    async fn store_target_resources(&self, target: &str, resources: &ResourceSettings) -> Result<()> {
+    async fn store_target_resources(&self, target: &str, node: Option<&str>, resources: &ResourceSettings) -> Result<()> {
         sqlx::query(
-            "INSERT INTO targets (target, address, pod_name, registered_at, cpu_request, memory_request, memory_limit, max_concurrent)
-             VALUES (?, '', NULL, 0, ?, ?, ?, ?)
+            "INSERT INTO targets (target, address, pod_name, registered_at, node, cpu_request, memory_request, memory_limit, max_concurrent)
+             VALUES (?, '', NULL, 0, ?, ?, ?, ?, ?)
              ON CONFLICT(target) DO UPDATE SET
+               node           = excluded.node,
                cpu_request    = excluded.cpu_request,
                memory_request = excluded.memory_request,
                memory_limit   = excluded.memory_limit,
                max_concurrent = excluded.max_concurrent"
         )
         .bind(target)
+        .bind(node)
         .bind(&resources.cpu_request)
         .bind(&resources.memory_request)
         .bind(&resources.memory_limit)
@@ -527,7 +529,7 @@ impl Store for SqliteStore {
 
     async fn get_target(&self, target: &str) -> Result<Option<Target>> {
         let row = sqlx::query(
-            "SELECT target, address, pod_name, registered_at,
+            "SELECT target, address, pod_name, registered_at, node,
                     cpu_request, memory_request, memory_limit, max_concurrent
              FROM targets WHERE target = ?"
         )
@@ -536,9 +538,10 @@ impl Store for SqliteStore {
         .await?;
 
         Ok(row.map(|r| Target {
-            target: r.get("target"),
-            address: r.get("address"),
-            pod_name: r.get("pod_name"),
+            target:       r.get("target"),
+            address:      r.get("address"),
+            pod_name:     r.get("pod_name"),
+            node:         r.get("node"),
             registered_at: r.get("registered_at"),
             resources: ResourceSettings {
                 cpu_request:    r.get("cpu_request"),
@@ -547,6 +550,30 @@ impl Store for SqliteStore {
                 max_concurrent: r.get("max_concurrent"),
             },
         }))
+    }
+
+    async fn list_targets(&self) -> Result<Vec<Target>> {
+        let rows = sqlx::query(
+            "SELECT target, address, pod_name, registered_at, node,
+                    cpu_request, memory_request, memory_limit, max_concurrent
+             FROM targets ORDER BY registered_at DESC"
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.iter().map(|r| Target {
+            target:       r.get("target"),
+            address:      r.get("address"),
+            pod_name:     r.get("pod_name"),
+            node:         r.get("node"),
+            registered_at: r.get("registered_at"),
+            resources: ResourceSettings {
+                cpu_request:    r.get("cpu_request"),
+                memory_request: r.get("memory_request"),
+                memory_limit:   r.get("memory_limit"),
+                max_concurrent: r.get("max_concurrent"),
+            },
+        }).collect())
     }
 
     async fn delete_target(&self, target: &str) -> Result<()> {
