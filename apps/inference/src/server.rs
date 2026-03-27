@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex, RwLock};
 
 use anyhow::Result;
 use bytes::Bytes;
+use edgeflow_common::CancellationToken;
 use http_body_util::{BodyExt, Full};
 use hyper::{body::Incoming, server::conn::http1, service::service_fn, Method, Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
@@ -58,12 +59,19 @@ impl Clone for ServerState {
     }
 }
 
-pub async fn serve(state: ServerState, addr: String) -> Result<()> {
+pub async fn serve(state: ServerState, addr: String, cancel: CancellationToken) -> Result<()> {
     let listener = TcpListener::bind(&addr).await?;
     tracing::info!("listening on {addr}");
 
     loop {
-        let (stream, _peer) = listener.accept().await?;
+        let (stream, _peer) = tokio::select! {
+            res = listener.accept() => res?,
+            _ = cancel.cancelled() => {
+                tracing::info!("inference server shutting down");
+                break;
+            }
+        };
+
         let io = TokioIo::new(stream);
         let state = state.clone();
 
@@ -74,6 +82,8 @@ pub async fn serve(state: ServerState, addr: String) -> Result<()> {
             }
         });
     }
+
+    Ok(())
 }
 
 #[derive(Deserialize)]

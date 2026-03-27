@@ -1,6 +1,7 @@
 use axum::{
     extract::{Path, Query, State},
-    routing::{get, post},
+    http::StatusCode,
+    routing::{delete, get, post},
     Json, Router,
 };
 use serde::Deserialize;
@@ -21,6 +22,7 @@ pub fn router() -> Router<AppState> {
         .route("/targets/:target/schema", get(target_schema))
         .route("/targets/:target/health", get(target_health))
         .route("/targets/:target/infer/playground", post(infer_playground))
+        .route("/targets/:target", delete(teardown_target))
 }
 
 // ── Tensor helpers (mirrors edgeflow-inference tensor format) ─────────────────
@@ -361,4 +363,20 @@ async fn register_target(
     }
 
     Ok(Json(serde_json::json!({ "target": target })))
+}
+
+// ── DELETE /targets/:target ───────────────────────────────────────────────────
+
+async fn teardown_target(
+    State(state): State<AppState>,
+    Path(target): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    // Supersede active deployments + remove target record.
+    state.store.delete_target(&target).await?;
+
+    // Best-effort k8s cleanup — logs a warning if cluster is unreachable.
+    crate::k8s::delete_inference_pod(&target).await;
+
+    tracing::info!(target = %target, "target torn down");
+    Ok(StatusCode::NO_CONTENT)
 }

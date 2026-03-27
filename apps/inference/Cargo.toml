@@ -13,6 +13,7 @@ ort-backend = ["dep:ort"]
 tract-backend = ["dep:tract-onnx"]
 
 [dependencies]
+edgeflow-common = { path = "../../crates/common" }
 anyhow = "1"
 bytes = "1"
 chrono = "0.4"

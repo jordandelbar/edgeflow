@@ -408,17 +408,22 @@ impl Store for SqliteStore {
     }
 
     async fn list_deployments(&self, target: Option<&str>) -> Result<Vec<Deployment>> {
+        // JOIN with targets so deployments for torn-down targets are excluded.
         let rows = match target {
             Some(t) => sqlx::query(
-                "SELECT deployment_id, target, run_id, created_at, state FROM deployments
-                 WHERE target = ? ORDER BY created_at DESC"
+                "SELECT d.deployment_id, d.target, d.run_id, d.created_at, d.state
+                 FROM deployments d
+                 INNER JOIN targets t ON t.target = d.target
+                 WHERE d.target = ? ORDER BY d.created_at DESC"
             )
             .bind(t)
             .fetch_all(&self.pool)
             .await?,
             None => sqlx::query(
-                "SELECT deployment_id, target, run_id, created_at, state FROM deployments
-                 ORDER BY created_at DESC"
+                "SELECT d.deployment_id, d.target, d.run_id, d.created_at, d.state
+                 FROM deployments d
+                 INNER JOIN targets t ON t.target = d.target
+                 ORDER BY d.created_at DESC"
             )
             .fetch_all(&self.pool)
             .await?,
@@ -542,5 +547,21 @@ impl Store for SqliteStore {
                 max_concurrent: r.get("max_concurrent"),
             },
         }))
+    }
+
+    async fn delete_target(&self, target: &str) -> Result<()> {
+        // Supersede any active deployments first so history is preserved.
+        sqlx::query(
+            "UPDATE deployments SET state = 'superseded'
+             WHERE target = ? AND state NOT IN ('superseded', 'failed')"
+        )
+        .bind(target)
+        .execute(&self.pool).await?;
+
+        sqlx::query("DELETE FROM targets WHERE target = ?")
+            .bind(target)
+            .execute(&self.pool).await?;
+
+        Ok(())
     }
 }

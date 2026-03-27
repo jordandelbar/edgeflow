@@ -1,0 +1,10 @@
+[package]
+name = "edgeflow-common"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { workspace = true }
+tokio-util = { version = "0.7", features = ["rt"] }
+tracing = { workspace = true }
+rand = "0.9"

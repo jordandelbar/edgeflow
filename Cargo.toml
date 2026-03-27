@@ -2,6 +2,7 @@
 members = [
     "crates/core",
     "crates/store",
+    "crates/common",
     "apps/server",
     "apps/inference",
 ]

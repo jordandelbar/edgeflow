@@ -14,7 +14,6 @@ import os
 import edgeflow
 import mlflow
 import numpy as np
-import requests
 from sklearn.datasets import load_iris
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
@@ -77,9 +76,5 @@ print(f"run_id: {run_id}")
 # ── deploy ─────────────────────────────────────────────────────────────────────
 
 print(f"deploying → target={EDGEFLOW_TARGET}...")
-resp = requests.post(
-    f"{EDGEFLOW_SERVER}/api/v1/deployments",
-    json={"run_id": run_id, "target": EDGEFLOW_TARGET},
-)
-resp.raise_for_status()
-print(f"deployment_id: {resp.json()['deployment']['deployment_id']}")
+deployment = edgeflow.deploy(run_id, EDGEFLOW_TARGET, wait=False)
+print(f"deployment_id: {deployment['deployment_id']}")

@@ -8,7 +8,7 @@ use k8s_openapi::api::core::v1::{
 use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::{LabelSelector, ObjectMeta};
 use k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
-use kube::api::{Api, PostParams};
+use kube::api::{Api, DeleteParams, PostParams};
 use edgeflow_core::ResourceSettings;
 
 /// Sanitise a target name into a valid k8s resource name.
@@ -184,6 +184,39 @@ pub async fn create_inference_pod(target: &str, resources: &ResourceSettings) {
                 error = %e,
                 "failed to create inference deployment"
             );
+        }
+    }
+}
+
+/// Delete the k8s Deployment for `target`.
+/// No-ops gracefully if the cluster is unreachable or the Deployment doesn't exist.
+pub async fn delete_inference_pod(target: &str) {
+    let namespace = std::env::var("EDGEFLOW_NAMESPACE")
+        .unwrap_or_else(|_| "default".into());
+
+    let client = match kube::Client::try_default().await {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!(
+                target = %target,
+                error = %e,
+                "k8s client unavailable — delete the inference pod manually"
+            );
+            return;
+        }
+    };
+
+    let name = k8s_name(target);
+    let api: Api<k8s_openapi::api::apps::v1::Deployment> = Api::namespaced(client, &namespace);
+    match api.delete(&name, &DeleteParams::default()).await {
+        Ok(_) => {
+            tracing::info!(target = %target, name = %name, "deleted inference deployment");
+        }
+        Err(kube::Error::Api(e)) if e.code == 404 => {
+            tracing::info!(target = %target, name = %name, "inference deployment already gone");
+        }
+        Err(e) => {
+            tracing::error!(target = %target, error = %e, "failed to delete inference deployment");
         }
     }
 }

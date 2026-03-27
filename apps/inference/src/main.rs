@@ -8,6 +8,7 @@ mod wasm;
 use std::sync::{Arc, RwLock};
 use anyhow::{Context, Result};
 use client::EdgeflowClient;
+use edgeflow_common::{backoff::retry_forever, shutdown_signal};
 use server::{Metrics, ServerState};
 use tokio::sync::Semaphore;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -22,6 +23,8 @@ async fn main() -> Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
+    let cancel = shutdown_signal();
+
     let server_url = std::env::var("EDGEFLOW_SERVER")
         .context("EDGEFLOW_SERVER env var required (e.g. http://edgeflow-server:5000)")?;
     let target = std::env::var("EDGEFLOW_TARGET")
@@ -32,8 +35,6 @@ async fn main() -> Result<()> {
     // Derive our reachable address for the server to call back on.
     // k8s injects the pod IP via fieldRef: status.podIP as EDGEFLOW_POD_IP.
     let pod_ip = std::env::var("EDGEFLOW_POD_IP").unwrap_or_else(|_| {
-        // Fall back to the bind address (works for local dev where server and
-        // inference run on the same host).
         infer_addr
             .split(':')
             .next()
@@ -64,8 +65,9 @@ async fn main() -> Result<()> {
     // Start HTTP server in background so we're ready before registering.
     let serve_state = state.clone();
     let serve_addr = infer_addr.clone();
+    let serve_cancel = cancel.clone();
     tokio::spawn(async move {
-        if let Err(e) = server::serve(serve_state, serve_addr).await {
+        if let Err(e) = server::serve(serve_state, serve_addr, serve_cancel).await {
             tracing::error!("inference server error: {e:#}");
         }
     });
@@ -73,24 +75,19 @@ async fn main() -> Result<()> {
     // Small pause to let the listener bind before we register.
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
 
-    // Register with edgeflow-server (retry until it's ready — it may still be
-    // starting when we come up).  A successful registration may immediately
-    // trigger an /upgrade call back to us if a pending deployment exists.
+    // Register with edgeflow-server (retry with exponential backoff until it's
+    // ready — it may still be starting when we come up).
     tracing::info!(target = %target, address = %self_address, "registering with edgeflow-server");
-    loop {
-        match client.register_target(&target, &self_address).await {
-            Ok(_) => {
-                tracing::info!("registered — waiting for /upgrade calls");
-                break;
-            }
-            Err(e) => {
-                tracing::warn!("registration failed ({e}), retrying in 3s...");
-                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-            }
-        }
-    }
+    retry_forever("register with edgeflow-server", || {
+        let client = client.clone();
+        let target = target.clone();
+        let self_address = self_address.clone();
+        async move { client.register_target(&target, &self_address).await }
+    })
+    .await;
+    tracing::info!("registered — waiting for /upgrade calls");
 
-    // Keep running until the process is killed.
-    std::future::pending::<()>().await;
+    cancel.cancelled().await;
+    tracing::info!("inference service stopped");
     Ok(())
 }

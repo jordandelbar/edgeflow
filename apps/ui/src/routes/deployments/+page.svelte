@@ -7,6 +7,8 @@
   let modelStatus: Record<string, ModelStatus | null> = {};
   let podHealth: Record<string, 'up' | 'down' | 'checking'> = {};
   let expanded: Record<string, 'history' | 'test' | null> = {};
+  let confirming: Record<string, boolean> = {};
+  let tearing: Record<string, boolean> = {};
   let error = '';
   let loading = true;
   let interval: ReturnType<typeof setInterval>;
@@ -40,6 +42,8 @@
         if (!(t in expanded))    expanded[t]    = null;
         if (!(t in modelStatus)) modelStatus[t] = null;
         if (!(t in podHealth))   podHealth[t]   = 'checking';
+        if (!(t in confirming))  confirming[t]  = false;
+        if (!(t in tearing))     tearing[t]     = false;
         if (!(t in playground))  playground[t]  = { inputs: [], nFeatures: null, featureNames: [], result: null, err: '', running: false };
       }
 
@@ -117,6 +121,21 @@
     } finally {
       p.running = false;
       playground = playground;
+    }
+  }
+
+  async function teardown(t: string) {
+    tearing[t] = true; tearing = tearing;
+    try {
+      await targets.teardown(t);
+      // Remove from local state immediately — next load() will confirm.
+      delete byTarget[t]; byTarget = byTarget;
+      targetList = targetList.filter(x => x !== t);
+    } catch (e) {
+      error = String(e);
+    } finally {
+      tearing[t] = false; confirming[t] = false;
+      tearing = tearing; confirming = confirming;
     }
   }
 
@@ -216,6 +235,31 @@
                   : 'border border-peach text-peach-dark hover:bg-peach-light/20'}"
             >
               <i class="fa-solid fa-flask-vial"></i>Test
+            </button>
+          {/if}
+
+          <!-- Teardown -->
+          {#if confirming[t]}
+            <div class="flex items-center gap-1">
+              <button
+                on:click={() => teardown(t)}
+                disabled={tearing[t]}
+                class="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-red-500 text-white hover:bg-red-600 transition-colors disabled:opacity-50"
+              >
+                {#if tearing[t]}<i class="fa-solid fa-spinner fa-spin text-xs"></i>{:else}Confirm{/if}
+              </button>
+              <button
+                on:click={() => { confirming[t] = false; confirming = confirming; }}
+                class="px-2 py-1 rounded-lg text-xs text-gray-400 hover:bg-gray-100 transition-colors"
+              >Cancel</button>
+            </div>
+          {:else}
+            <button
+              on:click={() => { confirming[t] = true; confirming = confirming; }}
+              class="text-gray-300 hover:text-red-400 transition-colors"
+              title="Tear down target"
+            >
+              <i class="fa-solid fa-trash text-xs"></i>
             </button>
           {/if}
 

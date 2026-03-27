@@ -10,6 +10,7 @@ use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+use edgeflow_common::shutdown_signal;
 use edgeflow_core::DeploymentState;
 use edgeflow_store::sqlite::SqliteStore;
 use edgeflow_store::Store;
@@ -23,6 +24,8 @@ async fn main() -> anyhow::Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
+    let cancel = shutdown_signal();
+
     let data_dir = PathBuf::from(std::env::var("EDGEFLOW_DATA_DIR").unwrap_or_else(|_| "./data".into()));
     let artifact_root = data_dir.join("artifacts");
     let db_path = data_dir.join("edgeflow.db");
@@ -34,6 +37,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Background task: time out deployments stuck in deploying/upgrading.
     let timeout_state = state.clone();
+    let timeout_cancel = cancel.clone();
     tokio::spawn(async move {
         let timeout_ms = std::env::var("DEPLOYMENT_TIMEOUT_SECS")
             .ok()
@@ -42,7 +46,10 @@ async fn main() -> anyhow::Result<()> {
             * 1000;
 
         loop {
-            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+            tokio::select! {
+                _ = tokio::time::sleep(std::time::Duration::from_secs(60)) => {}
+                _ = timeout_cancel.cancelled() => { break; }
+            }
 
             match timeout_state.store
                 .get_stale_deployments(&["deploying", "upgrading"], timeout_ms)
@@ -80,7 +87,9 @@ async fn main() -> anyhow::Result<()> {
     let addr = std::env::var("EDGEFLOW_ADDR").unwrap_or_else(|_| "0.0.0.0:5000".into());
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     tracing::info!("listening on {addr}");
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(cancel.cancelled_owned())
+        .await?;
 
     Ok(())
 }
