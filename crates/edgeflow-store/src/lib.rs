@@ -47,5 +47,6 @@ pub trait Store: Send + Sync {
 
     // Targets
     async fn register_target(&self, target: &str, address: &str, pod_name: Option<&str>) -> Result<Target>;
+    async fn store_target_resources(&self, target: &str, resources: &ResourceSettings) -> Result<()>;
     async fn get_target(&self, target: &str) -> Result<Option<Target>>;
 }

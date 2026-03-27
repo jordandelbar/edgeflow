@@ -1,17 +1,26 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { models, deployments, modelName, runTag, type Run, type Deployment } from '$lib/api';
+  import { models, deployments, modelName, runTag, type Run, type Deployment, type ResourceSettings } from '$lib/api';
 
   let items: Run[] = [];
   let knownTargets: { name: string; state: string }[] = [];
   let deployedOn: Record<string, string[]> = {};   // run_id → target names currently deployed
   let error = '';
 
+  const DEFAULT_RESOURCES: ResourceSettings = {
+    cpu_request:    '100m',
+    memory_request: '256Mi',
+    memory_limit:   '512Mi',
+    max_concurrent: 8,
+  };
+
   // Per-card deploy state
   type CardState = {
     open: boolean;
     addingNew: boolean;
     newTarget: string;
+    showAdvanced: boolean;
+    resources: ResourceSettings;
     err: string;
     dep: Deployment | null;
     polling: boolean;
@@ -26,7 +35,7 @@
       ]);
       items = modelsRes.runs ?? [];
       items.forEach(r => {
-        cards[r.info.run_id] = { open: false, addingNew: false, newTarget: '', err: '', dep: null, polling: false };
+        cards[r.info.run_id] = { open: false, addingNew: false, newTarget: '', showAdvanced: false, resources: { ...DEFAULT_RESOURCES }, err: '', dep: null, polling: false };
       });
 
       // Extract latest state per target
@@ -55,18 +64,20 @@
     c.open = !c.open;
     c.addingNew = false;
     c.newTarget = '';
+    c.showAdvanced = false;
+    c.resources = { ...DEFAULT_RESOURCES };
     c.err = '';
     c.dep = null;
     cards = cards;
   }
 
-  async function deployTo(run: Run, target: string) {
+  async function deployTo(run: Run, target: string, isNew = false) {
     const c = cards[run.info.run_id];
     c.err = '';
     c.polling = true;
     cards = cards;
     try {
-      const res = await deployments.create(run.info.run_id, target);
+      const res = await deployments.create(run.info.run_id, target, isNew ? c.resources : undefined);
       c.dep = res.deployment;
       cards = cards;
       poll(run.info.run_id, res.deployment.deployment_id);
@@ -80,7 +91,7 @@
   async function deployNew(run: Run) {
     const c = cards[run.info.run_id];
     if (!c.newTarget.trim()) { c.err = 'Target name is required.'; cards = cards; return; }
-    await deployTo(run, c.newTarget.trim());
+    await deployTo(run, c.newTarget.trim(), true);
   }
 
   function poll(run_id: string, dep_id: string) {
@@ -228,26 +239,79 @@
               </div>
 
               {#if c.addingNew}
-                <div class="flex gap-2">
-                  <input
-                    type="text"
-                    placeholder="Target name"
-                    bind:value={cards[run.info.run_id].newTarget}
-                    on:keydown={(e) => e.key === 'Enter' && deployNew(run)}
-                    class="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-peach/50 focus:border-peach"
-                  />
+                <div class="space-y-2">
+                  <div class="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Target name"
+                      bind:value={cards[run.info.run_id].newTarget}
+                      on:keydown={(e) => e.key === 'Enter' && deployNew(run)}
+                      class="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-peach/50 focus:border-peach"
+                    />
+                    <button
+                      on:click={() => deployNew(run)}
+                      class="px-4 py-1.5 rounded-lg text-sm font-semibold bg-peach text-white hover:bg-peach-dark transition-colors"
+                    >
+                      <i class="fa-solid fa-rocket text-xs mr-1"></i>Deploy
+                    </button>
+                    <button
+                      on:click={() => { cards[run.info.run_id].addingNew = false; cards = cards; }}
+                      class="px-2 py-1.5 rounded-lg text-gray-400 hover:bg-gray-100 transition-colors"
+                    >
+                      <i class="fa-solid fa-xmark text-sm"></i>
+                    </button>
+                  </div>
+
+                  <!-- Advanced: resource settings -->
                   <button
-                    on:click={() => deployNew(run)}
-                    class="px-4 py-1.5 rounded-lg text-sm font-semibold bg-peach text-white hover:bg-peach-dark transition-colors"
+                    on:click={() => { cards[run.info.run_id].showAdvanced = !c.showAdvanced; cards = cards; }}
+                    class="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition-colors"
                   >
-                    <i class="fa-solid fa-rocket text-xs mr-1"></i>Deploy
+                    <i class="fa-solid fa-chevron-{c.showAdvanced ? 'up' : 'down'} text-xs"></i>
+                    Resource settings
                   </button>
-                  <button
-                    on:click={() => { cards[run.info.run_id].addingNew = false; cards = cards; }}
-                    class="px-2 py-1.5 rounded-lg text-gray-400 hover:bg-gray-100 transition-colors"
-                  >
-                    <i class="fa-solid fa-xmark text-sm"></i>
-                  </button>
+
+                  {#if c.showAdvanced}
+                    <div class="grid grid-cols-2 gap-2 bg-gray-50 rounded-lg p-3">
+                      <div>
+                        <label class="block text-xs text-gray-500 mb-1">CPU request</label>
+                        <input
+                          type="text"
+                          bind:value={cards[run.info.run_id].resources.cpu_request}
+                          placeholder="100m"
+                          class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-peach/50 focus:border-peach bg-white"
+                        />
+                      </div>
+                      <div>
+                        <label class="block text-xs text-gray-500 mb-1">Memory request</label>
+                        <input
+                          type="text"
+                          bind:value={cards[run.info.run_id].resources.memory_request}
+                          placeholder="256Mi"
+                          class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-peach/50 focus:border-peach bg-white"
+                        />
+                      </div>
+                      <div>
+                        <label class="block text-xs text-gray-500 mb-1">Memory limit</label>
+                        <input
+                          type="text"
+                          bind:value={cards[run.info.run_id].resources.memory_limit}
+                          placeholder="512Mi"
+                          class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-peach/50 focus:border-peach bg-white"
+                        />
+                      </div>
+                      <div>
+                        <label class="block text-xs text-gray-500 mb-1">Max concurrent infer</label>
+                        <input
+                          type="number"
+                          min="1"
+                          bind:value={cards[run.info.run_id].resources.max_concurrent}
+                          placeholder="8"
+                          class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-peach/50 focus:border-peach bg-white"
+                        />
+                      </div>
+                    </div>
+                  {/if}
                 </div>
               {/if}
 

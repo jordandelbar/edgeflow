@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
 use anyhow::Result;
@@ -7,9 +8,18 @@ use hyper::{body::Incoming, server::conn::http1, service::service_fn, Method, Re
 use hyper_util::rt::TokioIo;
 use serde::Deserialize;
 use tokio::net::TcpListener;
+use tokio::sync::Semaphore;
 
 use crate::client::EdgeflowClient;
 use crate::pipeline::Pipeline;
+
+#[derive(Default)]
+pub struct Metrics {
+    pub requests_total:    AtomicU64,
+    pub requests_active:   AtomicU64,
+    pub requests_rejected: AtomicU64,
+    pub inference_errors:  AtomicU64,
+}
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ModelInfo {
@@ -25,21 +35,25 @@ pub struct ServerState {
     /// to wait for readers to finish that cheap clone — not for in-flight
     /// inference.  Inner Mutex serializes concurrent infer calls on the same
     /// Pipeline instance (required because wasmtime Store needs &mut).
-    pub pipeline: Arc<RwLock<Option<Arc<Mutex<Pipeline>>>>>,
+    pub pipeline:  Arc<RwLock<Option<Arc<Mutex<Pipeline>>>>>,
     pub model_info: Arc<RwLock<Option<ModelInfo>>>,
-    pub schema: Arc<RwLock<Option<Vec<u8>>>>,
-    pub client: Arc<EdgeflowClient>,
-    pub target: String,
+    pub schema:    Arc<RwLock<Option<Vec<u8>>>>,
+    pub semaphore: Arc<Semaphore>,
+    pub metrics:   Arc<Metrics>,
+    pub client:    Arc<EdgeflowClient>,
+    pub target:    String,
 }
 
 impl Clone for ServerState {
     fn clone(&self) -> Self {
         Self {
-            pipeline: self.pipeline.clone(),
+            pipeline:   self.pipeline.clone(),
             model_info: self.model_info.clone(),
-            schema: self.schema.clone(),
-            client: self.client.clone(),
-            target: self.target.clone(),
+            schema:     self.schema.clone(),
+            semaphore:  self.semaphore.clone(),
+            metrics:    self.metrics.clone(),
+            client:     self.client.clone(),
+            target:     self.target.clone(),
         }
     }
 }
@@ -74,6 +88,22 @@ async fn handle(
 ) -> Result<Response<Full<Bytes>>, hyper::Error> {
     match (req.method(), req.uri().path()) {
         (&Method::POST, "/infer") => {
+            // Reject immediately if at capacity — don't queue.
+            let permit = match state.semaphore.clone().try_acquire_owned() {
+                Ok(p) => p,
+                Err(_) => {
+                    state.metrics.requests_rejected.fetch_add(1, Ordering::Relaxed);
+                    return Ok(Response::builder()
+                        .status(StatusCode::TOO_MANY_REQUESTS)
+                        .header("content-type", "application/json")
+                        .body(Full::new(Bytes::from("{\"error\":\"too many concurrent requests\"}")))
+                        .unwrap());
+                }
+            };
+
+            state.metrics.requests_total.fetch_add(1, Ordering::Relaxed);
+            state.metrics.requests_active.fetch_add(1, Ordering::Relaxed);
+
             // Acquire read lock only long enough to clone the inner Arc.
             // The read lock is released before inference starts, so a
             // concurrent swap (write lock) is not blocked by in-flight infer.
@@ -82,6 +112,8 @@ async fn handle(
                 .map(Arc::clone);
 
             let Some(pipeline_arc) = pipeline_arc else {
+                state.metrics.requests_active.fetch_sub(1, Ordering::Relaxed);
+                drop(permit);
                 return Ok(Response::builder()
                     .status(StatusCode::SERVICE_UNAVAILABLE)
                     .header("content-type", "application/json")
@@ -90,15 +122,21 @@ async fn handle(
             };
 
             let body = req.collect().await?.to_bytes();
+            let metrics = state.metrics.clone();
             let result = tokio::task::spawn_blocking(move || {
-                pipeline_arc.lock().unwrap().infer(&body)
+                let out = pipeline_arc.lock().unwrap().infer(&body);
+                drop(permit);  // release as soon as inference completes
+                out
             })
             .await
             .unwrap();
 
+            metrics.requests_active.fetch_sub(1, Ordering::Relaxed);
+
             match result {
                 Ok(out) => Ok(Response::new(Full::new(Bytes::from(out)))),
                 Err(e) => {
+                    metrics.inference_errors.fetch_add(1, Ordering::Relaxed);
                     tracing::error!("inference error: {e:#}");
                     let msg = format!("{{\"error\":\"{e}\"}}");
                     Ok(Response::builder()
@@ -163,6 +201,21 @@ async fn handle(
                     .body(Full::new(Bytes::from("{\"error\":\"no model loaded\"}")))
                     .unwrap()),
             }
+        }
+
+        (&Method::GET, "/metrics") => {
+            let m = &state.metrics;
+            let json = serde_json::json!({
+                "requests_total":    m.requests_total.load(Ordering::Relaxed),
+                "requests_active":   m.requests_active.load(Ordering::Relaxed),
+                "requests_rejected": m.requests_rejected.load(Ordering::Relaxed),
+                "inference_errors":  m.inference_errors.load(Ordering::Relaxed),
+                "concurrency_limit": state.semaphore.available_permits() + m.requests_active.load(Ordering::Relaxed) as usize,
+            });
+            Ok(Response::builder()
+                .header("content-type", "application/json")
+                .body(Full::new(Bytes::from(serde_json::to_vec(&json).unwrap())))
+                .unwrap())
         }
 
         (&Method::GET, "/schema") => {

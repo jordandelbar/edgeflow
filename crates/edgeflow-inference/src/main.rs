@@ -8,7 +8,8 @@ mod wasm;
 use std::sync::{Arc, RwLock};
 use anyhow::{Context, Result};
 use client::EdgeflowClient;
-use server::ServerState;
+use server::{Metrics, ServerState};
+use tokio::sync::Semaphore;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
@@ -43,14 +44,21 @@ async fn main() -> Result<()> {
     let port = infer_addr.split(':').last().unwrap_or("8080");
     let self_address = format!("http://{}:{}", pod_ip, port);
 
+    let max_concurrent = std::env::var("EDGEFLOW_MAX_CONCURRENT_INFER")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(8usize);
+
     let client = Arc::new(EdgeflowClient::new(&server_url));
 
     let state = ServerState {
-        pipeline: Arc::new(RwLock::new(None)),
+        pipeline:   Arc::new(RwLock::new(None)),
         model_info: Arc::new(RwLock::new(None)),
-        schema: Arc::new(RwLock::new(None)),
-        client: client.clone(),
-        target: target.clone(),
+        schema:     Arc::new(RwLock::new(None)),
+        semaphore:  Arc::new(Semaphore::new(max_concurrent)),
+        metrics:    Arc::new(Metrics::default()),
+        client:     client.clone(),
+        target:     target.clone(),
     };
 
     // Start HTTP server in background so we're ready before registering.

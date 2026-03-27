@@ -490,6 +490,7 @@ impl Store for SqliteStore {
 
     async fn register_target(&self, target: &str, address: &str, pod_name: Option<&str>) -> Result<Target> {
         let now = chrono::Utc::now().timestamp_millis();
+        // ON CONFLICT only updates address/pod_name — resource columns are preserved.
         sqlx::query(
             "INSERT INTO targets (target, address, pod_name, registered_at) VALUES (?, ?, ?, ?)
              ON CONFLICT(target) DO UPDATE SET address = excluded.address, pod_name = excluded.pod_name, registered_at = excluded.registered_at"
@@ -497,17 +498,33 @@ impl Store for SqliteStore {
         .bind(target).bind(address).bind(pod_name).bind(now)
         .execute(&self.pool).await?;
 
-        Ok(Target {
-            target: target.to_string(),
-            address: address.to_string(),
-            pod_name: pod_name.map(|s| s.to_string()),
-            registered_at: now,
-        })
+        self.get_target(target).await.map(|t| t.unwrap())
+    }
+
+    async fn store_target_resources(&self, target: &str, resources: &ResourceSettings) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO targets (target, address, pod_name, registered_at, cpu_request, memory_request, memory_limit, max_concurrent)
+             VALUES (?, '', NULL, 0, ?, ?, ?, ?)
+             ON CONFLICT(target) DO UPDATE SET
+               cpu_request    = excluded.cpu_request,
+               memory_request = excluded.memory_request,
+               memory_limit   = excluded.memory_limit,
+               max_concurrent = excluded.max_concurrent"
+        )
+        .bind(target)
+        .bind(&resources.cpu_request)
+        .bind(&resources.memory_request)
+        .bind(&resources.memory_limit)
+        .bind(resources.max_concurrent)
+        .execute(&self.pool).await?;
+        Ok(())
     }
 
     async fn get_target(&self, target: &str) -> Result<Option<Target>> {
         let row = sqlx::query(
-            "SELECT target, address, pod_name, registered_at FROM targets WHERE target = ?"
+            "SELECT target, address, pod_name, registered_at,
+                    cpu_request, memory_request, memory_limit, max_concurrent
+             FROM targets WHERE target = ?"
         )
         .bind(target)
         .fetch_optional(&self.pool)
@@ -518,6 +535,12 @@ impl Store for SqliteStore {
             address: r.get("address"),
             pod_name: r.get("pod_name"),
             registered_at: r.get("registered_at"),
+            resources: ResourceSettings {
+                cpu_request:    r.get("cpu_request"),
+                memory_request: r.get("memory_request"),
+                memory_limit:   r.get("memory_limit"),
+                max_concurrent: r.get("max_concurrent"),
+            },
         }))
     }
 }

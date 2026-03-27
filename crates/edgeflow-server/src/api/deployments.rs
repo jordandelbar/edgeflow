@@ -4,7 +4,7 @@ use axum::{
     Json, Router,
 };
 use serde::Deserialize;
-use edgeflow_core::DeploymentState;
+use edgeflow_core::{DeploymentState, ResourceSettings};
 use edgeflow_store::Store;
 use crate::state::AppState;
 use super::ApiError;
@@ -169,6 +169,8 @@ async fn infer_playground(
 struct CreateDeploymentRequest {
     run_id: String,
     target: String,
+    #[serde(default)]
+    resources: ResourceSettings,
 }
 
 async fn create_deployment(
@@ -207,8 +209,9 @@ async fn create_deployment(
             }
         }
     } else {
-        // First deploy: pod doesn't exist yet — create it via k8s.
-        crate::k8s::create_inference_pod(&req.target).await;
+        // First deploy: pod doesn't exist yet — store resources then create it via k8s.
+        state.store.store_target_resources(&req.target, &req.resources).await?;
+        crate::k8s::create_inference_pod(&req.target, &req.resources).await;
     }
 
     let deployment = state.store.get_deployment(&deployment.deployment_id).await?;

@@ -44,10 +44,19 @@ pub struct Deployment {
     pub state: DeploymentState,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ResourceSettings {
+    pub cpu_request:    Option<String>,
+    pub memory_request: Option<String>,
+    pub memory_limit:   Option<String>,
+    pub max_concurrent: Option<i64>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Target {
     pub target: String,
     pub address: String,
     pub pod_name: Option<String>,
     pub registered_at: i64,
+    pub resources: ResourceSettings,
 }

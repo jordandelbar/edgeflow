@@ -3,11 +3,13 @@ use std::collections::BTreeMap;
 use k8s_openapi::api::apps::v1::{Deployment, DeploymentSpec};
 use k8s_openapi::api::core::v1::{
     Container, ContainerPort, EnvVar, EnvVarSource, HTTPGetAction, ObjectFieldSelector,
-    PodSpec, PodTemplateSpec, Probe,
+    PodSpec, PodTemplateSpec, Probe, ResourceRequirements,
 };
+use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::{LabelSelector, ObjectMeta};
 use k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
 use kube::api::{Api, PostParams};
+use edgeflow_core::ResourceSettings;
 
 /// Sanitise a target name into a valid k8s resource name.
 /// k8s names: lowercase alphanumeric + `-`, max 63 chars.
@@ -25,7 +27,7 @@ fn k8s_name(target: &str) -> String {
 /// No-ops gracefully if:
 /// - the cluster is unreachable (local dev without k8s)
 /// - the Deployment already exists (pod is starting but hasn't registered yet)
-pub async fn create_inference_pod(target: &str) {
+pub async fn create_inference_pod(target: &str, resources: &ResourceSettings) {
     let image = std::env::var("EDGEFLOW_INFERENCE_IMAGE")
         .unwrap_or_else(|_| "edgeflow-inference:latest".into());
     let server_url = std::env::var("EDGEFLOW_SERVER_URL")
@@ -34,6 +36,21 @@ pub async fn create_inference_pod(target: &str) {
         .unwrap_or_else(|_| "default".into());
     let pull_policy = std::env::var("EDGEFLOW_IMAGE_PULL_POLICY")
         .unwrap_or_else(|_| "IfNotPresent".into());
+
+    // Per-target resource settings, falling back to env var defaults.
+    let cpu_request = resources.cpu_request.clone()
+        .or_else(|| std::env::var("EDGEFLOW_INFERENCE_CPU_REQUEST").ok())
+        .unwrap_or_else(|| "100m".into());
+    let memory_request = resources.memory_request.clone()
+        .or_else(|| std::env::var("EDGEFLOW_INFERENCE_MEMORY_REQUEST").ok())
+        .unwrap_or_else(|| "256Mi".into());
+    let memory_limit = resources.memory_limit.clone()
+        .or_else(|| std::env::var("EDGEFLOW_INFERENCE_MEMORY_LIMIT").ok())
+        .unwrap_or_else(|| "512Mi".into());
+    let max_concurrent = resources.max_concurrent
+        .or_else(|| std::env::var("EDGEFLOW_MAX_CONCURRENT_INFER").ok().and_then(|s| s.parse().ok()))
+        .unwrap_or(8);
+    // No CPU limit — throttling degrades inference latency more than an OOM would.
 
     let client = match kube::Client::try_default().await {
         Ok(c) => c,
@@ -97,6 +114,11 @@ pub async fn create_inference_pod(target: &str) {
                                 ..Default::default()
                             },
                             EnvVar {
+                                name: "EDGEFLOW_MAX_CONCURRENT_INFER".to_string(),
+                                value: Some(max_concurrent.to_string()),
+                                ..Default::default()
+                            },
+                            EnvVar {
                                 name: "EDGEFLOW_POD_IP".to_string(),
                                 value_from: Some(EnvVarSource {
                                     field_ref: Some(ObjectFieldSelector {
@@ -108,6 +130,16 @@ pub async fn create_inference_pod(target: &str) {
                                 ..Default::default()
                             },
                         ]),
+                        resources: Some(ResourceRequirements {
+                            requests: Some([
+                                ("cpu".into(),    Quantity(cpu_request)),
+                                ("memory".into(), Quantity(memory_request)),
+                            ].into()),
+                            limits: Some([
+                                ("memory".into(), Quantity(memory_limit)),
+                            ].into()),
+                            ..Default::default()
+                        }),
                         readiness_probe: Some(Probe {
                             http_get: Some(HTTPGetAction {
                                 path: Some("/health".to_string()),

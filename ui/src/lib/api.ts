@@ -95,6 +95,13 @@ export type Target = {
   registered_at: number;
 };
 
+export type ResourceSettings = {
+  cpu_request:    string | null;
+  memory_request: string | null;
+  memory_limit:   string | null;
+  max_concurrent: number | null;
+};
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 export function runTag(run: Run, key: string): string | undefined {
@@ -174,8 +181,8 @@ export const targets = {
 };
 
 export const deployments = {
-  create:  (run_id: string, target: string) =>
-    v1post<{ deployment: Deployment }>('/deployments', { run_id, target }),
+  create:  (run_id: string, target: string, resources?: Partial<ResourceSettings>) =>
+    v1post<{ deployment: Deployment }>('/deployments', { run_id, target, resources }),
   list:    () =>
     v1get<{ deployments: Deployment[] }>('/deployments'),
   listForTarget: (target: string) =>
