@@ -157,6 +157,22 @@ export const models = {
 
 // ── Deployments ────────────────────────────────────────────────────────────
 
+export type ModelStatus = {
+  run_id: string;
+  deployment_id: string;
+  target: string;
+  loaded_at: string;
+};
+
+export const targets = {
+  model:   (target: string) =>
+    v1get<ModelStatus>(`/targets/${target}/model`),
+  health:  (target: string) =>
+    v1get<{ status: string }>(`/targets/${target}/health`),
+  playground: (target: string, data: number[]) =>
+    v1post<{ shape: number[]; data: number[] }>(`/targets/${target}/infer/playground`, { data }),
+};
+
 export const deployments = {
   create:  (run_id: string, target: string) =>
     v1post<{ deployment: Deployment }>('/deployments', { run_id, target }),

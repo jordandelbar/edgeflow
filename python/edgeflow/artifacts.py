@@ -4,6 +4,7 @@ Helpers for logging edgeflow artifacts to an active mlflow run.
 from __future__ import annotations
 
 import importlib.resources
+import json
 import tempfile
 import warnings
 from pathlib import Path
@@ -21,6 +22,11 @@ def log_model(
         Uses the pre-compiled Rust standard_pipeline.wasm (~150 KB).
         No extra tools required; no Rust compiler on the user's machine.
 
+        FloatBytesToTensor is injected automatically when the ONNX model
+        has a single float[batch, n_features] input and the preprocess
+        pipeline does not already start with one.  In most cases you only
+        need to supply postprocess.
+
     Legacy path — @preprocess / @postprocess decorators:
         Falls back to componentize-py (requires wit_dir). Produces ~40 MB
         WASM components and ~800 MB inference memory. Emits a UserWarning.
@@ -35,6 +41,16 @@ def log_model(
     """
     import mlflow
     from edgeflow.pipeline import Pipeline
+    from edgeflow.layers import FloatBytesToTensor
+
+    # Auto-inject FloatBytesToTensor from ONNX input shape when not already present.
+    n = _read_onnx_n_features(model_bytes)
+    if n is not None:
+        if preprocess is None:
+            preprocess = Pipeline([FloatBytesToTensor(n_features=n)])
+        elif isinstance(preprocess, Pipeline):
+            if not preprocess.steps or not isinstance(preprocess.steps[0], FloatBytesToTensor):
+                preprocess = Pipeline([FloatBytesToTensor(n_features=n)] + preprocess.steps)
 
     with tempfile.TemporaryDirectory() as tmp:
         tmpdir = Path(tmp)
@@ -46,6 +62,10 @@ def log_model(
             _log_standard(tmpdir, preprocess, postprocess)
         else:
             _log_legacy(tmpdir, wit_dir)
+
+        schema_path = tmpdir / "schema.json"
+        schema_path.write_bytes(json.dumps(_build_schema(preprocess, postprocess)).encode())
+        mlflow.log_artifact(str(schema_path))
 
 
 def _log_standard(tmpdir: Path, preprocess, postprocess) -> None:
@@ -63,6 +83,37 @@ def _log_standard(tmpdir: Path, preprocess, postprocess) -> None:
         (tmpdir / f"{role}.json").write_bytes(pipeline.to_config())
         mlflow.log_artifact(str(tmpdir / f"{role}.wasm"))
         mlflow.log_artifact(str(tmpdir / f"{role}.json"))
+
+
+def _read_onnx_n_features(model_bytes: bytes) -> int | None:
+    """Return n_features from a float[batch, n_features] ONNX input, or None."""
+    try:
+        from edgeflow.models import read_onnx_input_shape
+        return read_onnx_input_shape(model_bytes)
+    except Exception:
+        return None
+
+
+def _build_schema(preprocess, postprocess) -> dict:
+    from edgeflow.layers import FloatBytesToTensor, ClassifierOutput
+
+    schema: dict = {}
+
+    if preprocess is not None and preprocess.steps:
+        first = preprocess.steps[0]
+        if isinstance(first, FloatBytesToTensor):
+            schema["input"] = {"format": "float_bytes", "n_features": first.n_features}
+
+    if postprocess is not None and postprocess.steps:
+        last = postprocess.steps[-1]
+        if isinstance(last, ClassifierOutput):
+            schema["output"] = {"format": "json", "labels": last.labels}
+        else:
+            schema["output"] = {"format": "tensor"}
+    else:
+        schema["output"] = {"format": "tensor"}
+
+    return schema
 
 
 def _log_legacy(tmpdir: Path, wit_dir: Path | None) -> None:

@@ -1,10 +1,11 @@
 """
 edgeflow model export helpers.
 
-sklearn_to_onnx   — LogisticRegression, hand-rolled standard ops graph
-                    (kept for reference; predates skl2onnx support)
-rf_to_onnx        — any skl2onnx-supported classifier via the ml-tools
-                    opset; requires ORT backend (tract does not support it)
+sklearn_to_onnx      — LogisticRegression, hand-rolled standard ops graph
+                       (kept for reference; predates skl2onnx support)
+rf_to_onnx           — any skl2onnx-supported classifier via the ml-tools
+                       opset; requires ORT backend (tract does not support it)
+read_onnx_input_shape — read n_features from a float[N, k] ONNX input
 """
 
 from __future__ import annotations
@@ -50,6 +51,45 @@ def sklearn_to_onnx(clf, n_features: int | None = None) -> bytes:
     )
     model = oh.make_model(graph, opset_imports=[oh.make_opsetid("", 17)])
     return model.SerializeToString()
+
+
+def read_onnx_input_shape(model_bytes: bytes) -> int | None:
+    """Return n_features if the ONNX model has a single float[batch, n_features] input.
+
+    Returns None for models with multi-dimensional inputs (e.g. image models),
+    multiple inputs, non-float inputs, or dynamic feature dimensions.
+
+    Args:
+        model_bytes: serialised ONNX model bytes.
+
+    Returns:
+        n_features as an int, or None if the input shape cannot be determined.
+    """
+    import onnx
+
+    proto = onnx.ModelProto()
+    proto.ParseFromString(model_bytes)
+
+    # Exclude initializers (weights/biases) — only real graph inputs matter.
+    initializer_names = {i.name for i in proto.graph.initializer}
+    true_inputs = [i for i in proto.graph.input if i.name not in initializer_names]
+
+    if len(true_inputs) != 1:
+        return None
+
+    tensor_type = true_inputs[0].type.tensor_type
+    if tensor_type.elem_type != onnx.TensorProto.FLOAT:
+        return None
+
+    shape = tensor_type.shape
+    if shape is None or len(shape.dim) != 2:
+        return None
+
+    features_dim = shape.dim[1]
+    if features_dim.HasField("dim_value") and features_dim.dim_value > 0:
+        return features_dim.dim_value
+
+    return None
 
 
 def clf_to_onnx(clf, n_features: int | None = None) -> bytes:

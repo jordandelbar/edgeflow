@@ -48,6 +48,7 @@ async fn main() -> Result<()> {
     let state = ServerState {
         pipeline: Arc::new(RwLock::new(None)),
         model_info: Arc::new(RwLock::new(None)),
+        schema: Arc::new(RwLock::new(None)),
         client: client.clone(),
         target: target.clone(),
     };

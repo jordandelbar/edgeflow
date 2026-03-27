@@ -59,7 +59,6 @@ with mlflow.start_run(experiment_id=exp.experiment_id, run_name="iris-random-for
     mlflow.log_metric("accuracy", accuracy)
     edgeflow.log_model(
         model_bytes=clf_to_onnx(clf),
-        preprocess=edgeflow.Pipeline([edgeflow.FloatBytesToTensor(n_features=4)]),
         postprocess=edgeflow.Pipeline([edgeflow.ClassifierOutput(labels=list(iris.target_names))]),
     )
     run_id = run.info.run_id

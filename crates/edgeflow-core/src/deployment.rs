@@ -6,7 +6,7 @@ pub enum DeploymentState {
     Pending,
     Deploying,
     Upgrading,
-    Healthy,
+    Deployed,
     Failed,
     Superseded,
 }
@@ -17,7 +17,7 @@ impl DeploymentState {
             DeploymentState::Pending => "pending",
             DeploymentState::Deploying => "deploying",
             DeploymentState::Upgrading => "upgrading",
-            DeploymentState::Healthy => "healthy",
+            DeploymentState::Deployed => "deployed",
             DeploymentState::Failed => "failed",
             DeploymentState::Superseded => "superseded",
         }
@@ -27,7 +27,7 @@ impl DeploymentState {
         match s {
             "deploying" => DeploymentState::Deploying,
             "upgrading" => DeploymentState::Upgrading,
-            "healthy" => DeploymentState::Healthy,
+            "deployed" => DeploymentState::Deployed,
             "failed" => DeploymentState::Failed,
             "superseded" => DeploymentState::Superseded,
             _ => DeploymentState::Pending,

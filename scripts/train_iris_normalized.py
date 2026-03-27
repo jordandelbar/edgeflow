@@ -64,7 +64,6 @@ with mlflow.start_run(experiment_id=exp.experiment_id, run_name="iris-normalized
     edgeflow.log_model(
         model_bytes=sklearn_to_onnx(clf),
         preprocess=edgeflow.Pipeline([
-            edgeflow.FloatBytesToTensor(n_features=4),
             edgeflow.Normalize(mean=mean, std=std),
         ]),
         postprocess=edgeflow.Pipeline([

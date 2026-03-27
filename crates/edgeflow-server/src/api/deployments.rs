@@ -17,6 +17,150 @@ pub fn router() -> Router<AppState> {
         .route("/deployments/:id", get(get_deployment))
         .route("/deployments/:id/confirm", post(confirm_deployment))
         .route("/targets/register", post(register_target))
+        .route("/targets/:target/model", get(target_model_status))
+        .route("/targets/:target/schema", get(target_schema))
+        .route("/targets/:target/health", get(target_health))
+        .route("/targets/:target/infer/playground", post(infer_playground))
+}
+
+// ── Tensor helpers (mirrors edgeflow-inference tensor format) ─────────────────
+
+fn tensor_decode(bytes: &[u8]) -> anyhow::Result<(Vec<usize>, Vec<f32>)> {
+    anyhow::ensure!(!bytes.is_empty(), "empty tensor buffer");
+    let mut pos = 0;
+    let ndim = bytes[pos] as usize;
+    pos += 1;
+    anyhow::ensure!(bytes.len() >= pos + ndim * 4 + 1, "buffer too short for shape");
+    let mut shape = Vec::with_capacity(ndim);
+    for _ in 0..ndim {
+        let dim = u32::from_le_bytes(bytes[pos..pos + 4].try_into().unwrap()) as usize;
+        shape.push(dim);
+        pos += 4;
+    }
+    let dtype = bytes[pos];
+    pos += 1;
+    anyhow::ensure!(dtype == 1, "unsupported dtype {dtype}, only f32 supported");
+    let data = bytes[pos..].chunks_exact(4)
+        .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
+        .collect();
+    Ok((shape, data))
+}
+
+// ── GET /targets/:target/model ────────────────────────────────────────────────
+
+async fn target_model_status(
+    State(state): State<AppState>,
+    Path(target): Path<String>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let rec = state.store.get_target(&target).await?
+        .ok_or_else(|| anyhow::anyhow!("target '{target}' not registered"))?;
+
+    let url = format!("{}/model", rec.address);
+    let resp = reqwest::Client::new().get(&url).send().await
+        .map_err(|e| anyhow::anyhow!("failed to reach inference pod: {e}"))?;
+
+    if !resp.status().is_success() {
+        return Err(anyhow::anyhow!("no model loaded on target '{target}'").into());
+    }
+
+    let json: serde_json::Value = resp.json().await
+        .map_err(|e| anyhow::anyhow!("failed to parse model info: {e}"))?;
+
+    Ok(Json(json))
+}
+
+// ── GET /targets/:target/health ───────────────────────────────────────────────
+
+async fn target_health(
+    State(state): State<AppState>,
+    Path(target): Path<String>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let rec = state.store.get_target(&target).await?
+        .ok_or_else(|| anyhow::anyhow!("target '{target}' not registered"))?;
+
+    let url = format!("{}/health", rec.address);
+    let resp = reqwest::Client::new().get(&url)
+        .timeout(std::time::Duration::from_secs(3))
+        .send().await
+        .map_err(|_| anyhow::anyhow!("pod unreachable"))?;
+
+    let json: serde_json::Value = resp.json().await
+        .map_err(|e| anyhow::anyhow!("failed to parse health response: {e}"))?;
+
+    Ok(Json(json))
+}
+
+// ── GET /targets/:target/schema ───────────────────────────────────────────────
+
+async fn target_schema(
+    State(state): State<AppState>,
+    Path(target): Path<String>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let rec = state.store.get_target(&target).await?
+        .ok_or_else(|| anyhow::anyhow!("target '{target}' not registered"))?;
+
+    let url = format!("{}/schema", rec.address);
+    let resp = reqwest::Client::new().get(&url).send().await
+        .map_err(|e| anyhow::anyhow!("failed to reach inference pod: {e}"))?;
+
+    if !resp.status().is_success() {
+        return Err(anyhow::anyhow!("no schema available on target '{target}'").into());
+    }
+
+    let json: serde_json::Value = resp.json().await
+        .map_err(|e| anyhow::anyhow!("failed to parse schema: {e}"))?;
+
+    Ok(Json(json))
+}
+
+// ── POST /targets/:target/infer/playground ────────────────────────────────────
+
+#[derive(Deserialize)]
+struct PlaygroundRequest {
+    data: Vec<f32>,
+}
+
+async fn infer_playground(
+    State(state): State<AppState>,
+    Path(target): Path<String>,
+    Json(req): Json<PlaygroundRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let rec = state.store.get_target(&target).await?
+        .ok_or_else(|| anyhow::anyhow!("target '{target}' not registered"))?;
+
+    // Send raw packed floats — same format as the Python client (struct.pack('<Nf', ...)).
+    // The preprocess WASM (FloatBytesToTensor) expects this, not a tensor-encoded header.
+    let body: Vec<u8> = req.data.iter().flat_map(|&v| v.to_le_bytes()).collect();
+    let url = format!("{}/infer", rec.address);
+
+    let resp = reqwest::Client::new()
+        .post(&url)
+        .header("content-type", "application/octet-stream")
+        .body(body)
+        .send()
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to reach inference pod: {e}"))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let msg = resp.text().await.unwrap_or_default();
+        return Err(anyhow::anyhow!("inference pod returned {status}: {msg}").into());
+    }
+
+    let bytes = resp.bytes().await
+        .map_err(|e| anyhow::anyhow!("failed to read response: {e}"))?;
+
+    // The postprocess WASM can return anything. Try JSON first (ClassifierOutput,
+    // custom transforms), then fall back to tensor decode (no postprocess).
+    let result = if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&bytes) {
+        json
+    } else if let Ok((shape, data)) = tensor_decode(&bytes) {
+        serde_json::json!({ "shape": shape, "data": data })
+    } else {
+        return Err(anyhow::anyhow!("unrecognised response format from inference pod").into());
+    };
+
+    Ok(Json(result))
 }
 
 // ── POST /deployments ────────────────────────────────────────────────────────
@@ -115,7 +259,7 @@ async fn get_deployment(
 
 #[derive(Deserialize)]
 struct ConfirmRequest {
-    status: String,  // "healthy" | "failed"
+    status: String,  // "deployed" | "failed"
     reason: Option<String>,
 }
 
@@ -127,11 +271,11 @@ async fn confirm_deployment(
     let deployment = state.store.get_deployment(&id).await?;
 
     match req.status.as_str() {
-        "healthy" => {
+        "deployed" => {
             state.store
-                .update_deployment_state(&id, DeploymentState::Healthy)
+                .update_deployment_state(&id, DeploymentState::Deployed)
                 .await?;
-            // If this was an upgrade, supersede the previous healthy deployment.
+            // If this was an upgrade, supersede the previous deployed deployment.
             if deployment.state == DeploymentState::Upgrading {
                 state.store
                     .supersede_previous_deployments(&deployment.target, &id)
@@ -140,7 +284,7 @@ async fn confirm_deployment(
             tracing::info!(
                 deployment_id = %id,
                 target = %deployment.target,
-                "deployment confirmed healthy"
+                "deployment confirmed deployed"
             );
         }
         "failed" => {

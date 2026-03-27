@@ -49,9 +49,13 @@ EDGEFLOW_TARGET=iris-inference \
 # The readiness probe on /health only passes after the model is loaded and the
 # deployment is confirmed HEALTHY — so rollout status = model is serving.
 echo "==> waiting for edgeflow-inference to be ready..."
-kubectl rollout status deployment/edgeflow-inference --timeout=300s
+kubectl rollout status deployment/edgeflow-inference-iris-inference --timeout=300s
 
 # ── smoke test ────────────────────────────────────────────────────────────────
+# Brief pause: kubectl rollout completes when the readiness probe passes, but
+# k3d's NodePort routing takes a moment to propagate after that.
+sleep 3
+
 echo ""
 echo "==> smoke test (setosa sample: sepal=5.1x3.5 petal=1.4x0.2)..."
 python3 -c "import struct, sys; sys.stdout.buffer.write(struct.pack('<4f', 5.1, 3.5, 1.4, 0.2))" \

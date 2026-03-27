@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use axum::Router;
 use tower_http::cors::CorsLayer;
-use tower_http::services::ServeDir;
+use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -72,7 +72,7 @@ async fn main() -> anyhow::Result<()> {
         .nest("/api/v1", api::v1_router())
         .nest("/api/2.0/mlflow", api::mlflow_router())
         .nest("/api/2.0/mlflow-artifacts", api::mlflow_artifacts_router())
-        .fallback_service(ServeDir::new(static_dir))
+        .fallback_service(ServeDir::new(&static_dir).fallback(ServeFile::new(format!("{static_dir}/index.html"))))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state);

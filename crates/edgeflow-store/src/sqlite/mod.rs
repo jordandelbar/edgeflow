@@ -462,7 +462,7 @@ impl Store for SqliteStore {
     async fn supersede_previous_deployments(&self, target: &str, except_id: &str) -> Result<()> {
         sqlx::query(
             "UPDATE deployments SET state = 'superseded'
-             WHERE target = ? AND state = 'healthy' AND deployment_id != ?"
+             WHERE target = ? AND state = 'deployed' AND deployment_id != ?"
         )
         .bind(target).bind(except_id)
         .execute(&self.pool).await?;

@@ -1,13 +1,14 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { page } from '$app/stores';
   import { experiments, runs, type Experiment, type Run } from '$lib/api';
 
   let experiment: Experiment | null = null;
   let runList: Run[] = [];
   let error = '';
+  let interval: ReturnType<typeof setInterval>;
 
-  onMount(async () => {
+  async function load() {
     const id = $page.params.id!;
     try {
       const [expRes, runsRes] = await Promise.all([
@@ -19,7 +20,14 @@
     } catch (e) {
       error = String(e);
     }
+  }
+
+  onMount(() => {
+    load();
+    interval = setInterval(load, 10000);
   });
+
+  onDestroy(() => clearInterval(interval));
 
   function duration(run: Run): string {
     if (!run.info.end_time) return '—';
@@ -33,6 +41,14 @@
     FAILED:   'bg-red-100 text-red-700',
     KILLED:   'bg-gray-100 text-gray-600',
   };
+
+  $: metricKeys = [...new Set(runList.flatMap(r => r.data.metrics.map(m => m.key)))];
+
+  function metricValue(run: Run, key: string): string {
+    const m = run.data.metrics.find(m => m.key === key);
+    if (m == null) return '—';
+    return Number.isInteger(m.value) ? String(m.value) : m.value.toFixed(4);
+  }
 </script>
 
 {#if error}
@@ -62,6 +78,9 @@
             <th class="px-5 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide">Status</th>
             <th class="px-5 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide">Started</th>
             <th class="px-5 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide">Duration</th>
+            {#each metricKeys as key}
+              <th class="px-5 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide">{key}</th>
+            {/each}
           </tr>
         </thead>
         <tbody>
@@ -85,6 +104,9 @@
                 {new Date(run.info.start_time).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
               </td>
               <td class="px-5 py-3.5 text-gray-500 font-mono text-xs">{duration(run)}</td>
+              {#each metricKeys as key}
+                <td class="px-5 py-3.5 font-mono text-xs text-gray-700">{metricValue(run, key)}</td>
+              {/each}
             </tr>
           {/each}
         </tbody>
