@@ -16,7 +16,7 @@ impl SqliteStore {
             .await
             .context("failed to open sqlite database")?;
 
-        sqlx::migrate!("../../migrations")
+        sqlx::migrate!()
             .run(&pool)
             .await
             .context("failed to run migrations")?;

@@ -4,7 +4,7 @@ use crate::layers::{PipelineConfig, run_pipeline};
 
 wit_bindgen::generate!({
     world: "configurable-transform",
-    path: "../../wit",
+    path: "wit",
 });
 
 struct Component;
