@@ -11,7 +11,6 @@
   let lastSeenAt: Record<string, number | null> = {};
   let modelStatus: Record<string, ModelStatus | null> = {};
   let runExpId: Record<string, string> = {};  // run_id → experiment_id for linking
-  let podHealth: Record<string, 'up' | 'down' | 'checking'> = {};
   let expanded: Record<string, 'history' | 'test' | null> = {};
   let confirming: Record<string, boolean> = {};
   let tearing: Record<string, boolean> = {};
@@ -77,7 +76,6 @@
       for (const t of newTargetList) {
         if (!(t in expanded))    expanded[t]    = null;
         if (!(t in modelStatus)) modelStatus[t] = null;
-        if (!(t in podHealth))   podHealth[t]   = 'checking';
         if (!(t in confirming))  confirming[t]  = false;
         if (!(t in tearing))     tearing[t]     = false;
         if (!(t in playground))  playground[t]  = { inputs: [], nFeatures: null, featureNames: [], result: null, err: '', running: false };
@@ -99,9 +97,6 @@
             }
           })
           .catch(() => { modelStatus[t] = null; modelStatus = modelStatus; });
-        targets.health(t)
-          .then(() => { podHealth[t] = 'up';   podHealth = podHealth; })
-          .catch(() => { podHealth[t] = 'down'; podHealth = podHealth; });
       });
     } catch (e) {
       error = String(e);
@@ -246,27 +241,18 @@
             {@const deps = byTarget[t]}
             {@const latest = deps[0]}
             {@const status = modelStatus[t]}
-            {@const ph = podHealth[t]}
             {@const pg = playground[t]}
             {@const ls = lastSeenAt[t]}
-            {@const hs = targetHealth[t]}
+            {@const hs = targetHealth[t] ?? 'unknown'}
 
             <!-- Target row -->
             <tr class="border-b border-gray-50 last:border-0 hover:bg-gray-50/50 transition-colors">
-              <!-- Health dot: server-computed from heartbeat when available, HTTP probe fallback -->
+              <!-- Health dot — server-computed from heartbeat timestamps -->
               <td class="pl-4 pr-2 py-3">
-                {#if hs && hs !== 'unknown'}
+                {#if true}
                   {@const dot = healthDot[hs]}
                   <i class="fa-solid fa-circle text-xs {dot.colour}"
                      title="{dot.label}{ls ? ` — heartbeat ${fmtAgo(ls)}` : ''}"></i>
-                {:else if ph === 'checking'}
-                  <i class="fa-solid fa-spinner fa-spin text-gray-300 text-xs" title="checking…"></i>
-                {:else if ph === 'up'}
-                  <i class="fa-solid fa-circle text-sage text-xs" title="healthy"></i>
-                {:else if ph === 'down'}
-                  <i class="fa-solid fa-circle text-red-400 text-xs" title="unreachable"></i>
-                {:else}
-                  <i class="fa-solid fa-circle text-gray-300 text-xs" title="unknown"></i>
                 {/if}
               </td>
 
@@ -305,8 +291,8 @@
               <td class="px-4 py-3">
                 <div class="flex items-center justify-end gap-1">
 
-                  <!-- Test -->
-                  {#if ph === 'up'}
+                  <!-- Test — show for any state except unhealthy (pod is likely gone) -->
+                  {#if hs !== 'unhealthy' && status?.run_id}
                     <button
                       on:click={() => toggle(t, 'test')}
                       title="Playground"

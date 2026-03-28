@@ -535,10 +535,18 @@ impl Store for SqliteStore {
         Ok(())
     }
 
+    async fn set_target_model(&self, target: &str, run_id: &str, loaded_at: &str) -> Result<()> {
+        sqlx::query("UPDATE targets SET current_run_id = ?, model_loaded_at = ? WHERE target = ?")
+            .bind(run_id).bind(loaded_at).bind(target)
+            .execute(&self.pool).await?;
+        Ok(())
+    }
+
     async fn get_target(&self, target: &str) -> Result<Option<Target>> {
         let row = sqlx::query(
             "SELECT target, address, pod_name, registered_at, last_seen, node,
-                    cpu_request, memory_request, memory_limit, max_concurrent
+                    cpu_request, memory_request, memory_limit, max_concurrent,
+                    current_run_id, model_loaded_at
              FROM targets WHERE target = ?"
         )
         .bind(target)
@@ -555,6 +563,8 @@ impl Store for SqliteStore {
                 registered_at: r.get("registered_at"),
                 last_seen,
                 health: TargetHealth::from_last_seen(last_seen),
+                current_run_id:  r.get("current_run_id"),
+                model_loaded_at: r.get("model_loaded_at"),
                 resources: ResourceSettings {
                     cpu_request:    r.get("cpu_request"),
                     memory_request: r.get("memory_request"),
@@ -568,7 +578,8 @@ impl Store for SqliteStore {
     async fn list_targets(&self) -> Result<Vec<Target>> {
         let rows = sqlx::query(
             "SELECT target, address, pod_name, registered_at, last_seen, node,
-                    cpu_request, memory_request, memory_limit, max_concurrent
+                    cpu_request, memory_request, memory_limit, max_concurrent,
+                    current_run_id, model_loaded_at
              FROM targets ORDER BY registered_at DESC"
         )
         .fetch_all(&self.pool)
@@ -584,6 +595,8 @@ impl Store for SqliteStore {
                 registered_at: r.get("registered_at"),
                 last_seen,
                 health: TargetHealth::from_last_seen(last_seen),
+                current_run_id:  r.get("current_run_id"),
+                model_loaded_at: r.get("model_loaded_at"),
                 resources: ResourceSettings {
                     cpu_request:    r.get("cpu_request"),
                     memory_request: r.get("memory_request"),

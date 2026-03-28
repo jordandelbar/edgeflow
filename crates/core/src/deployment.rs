@@ -86,5 +86,7 @@ pub struct Target {
     pub registered_at: i64,
     pub last_seen: Option<i64>,
     pub health: TargetHealth,
+    pub current_run_id: Option<String>,
+    pub model_loaded_at: Option<String>,
     pub resources: ResourceSettings,
 }

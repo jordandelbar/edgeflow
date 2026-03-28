@@ -65,18 +65,18 @@ async fn target_model_status(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let rec = require_target(&state, &target).await?;
 
-    let url = format!("{}/model", rec.address);
-    let resp = state.http_client.get(&url).send().await
-        .map_err(|e| anyhow::anyhow!("failed to reach inference pod: {e}"))?;
+    let run_id     = rec.current_run_id.ok_or_else(|| anyhow::anyhow!("no model loaded on target '{target}'"))?;
+    let loaded_at  = rec.model_loaded_at.unwrap_or_default();
 
-    if !resp.status().is_success() {
-        return Err(anyhow::anyhow!("no model loaded on target '{target}'").into());
-    }
+    // Fetch the latest deployment id for this target for reference.
+    let dep = state.store.get_latest_deployment(&target).await?;
 
-    let json: serde_json::Value = resp.json().await
-        .map_err(|e| anyhow::anyhow!("failed to parse model info: {e}"))?;
-
-    Ok(Json(json))
+    Ok(Json(serde_json::json!({
+        "run_id":        run_id,
+        "deployment_id": dep.deployment_id,
+        "target":        target,
+        "loaded_at":     loaded_at,
+    })))
 }
 
 // ── GET /targets/:target/health ───────────────────────────────────────────────
@@ -306,6 +306,12 @@ async fn confirm_deployment(
             state.store
                 .update_deployment_state(&id, DeploymentState::Deployed)
                 .await?;
+            // Record which model is now live on this target — server becomes the SSOT
+            // so model info survives even if the inference pod is later torn down.
+            let loaded_at = chrono::Utc::now().to_rfc3339();
+            state.store
+                .set_target_model(&deployment.target, &deployment.run_id, &loaded_at)
+                .await?;
             // If this was an upgrade, supersede the previous deployed deployment.
             if deployment.state == DeploymentState::Upgrading {
                 state.store
@@ -315,6 +321,7 @@ async fn confirm_deployment(
             tracing::info!(
                 deployment_id = %id,
                 target = %deployment.target,
+                run_id = %deployment.run_id,
                 "deployment confirmed deployed"
             );
         }

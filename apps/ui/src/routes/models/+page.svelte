@@ -35,6 +35,8 @@
   };
   let cards: Record<string, CardState> = {};
   let activeIntervals: ReturnType<typeof setInterval>[] = [];
+  // Per-card interval tracking so toggle() can cancel in-flight polls immediately.
+  let cardIntervals: Record<string, ReturnType<typeof setInterval>[]> = {};
 
   function emptyCard(): CardState {
     return { open: false, addingNew: false, newTarget: '', selectedNodes: [], showAdvanced: false, resources: { ...DEFAULT_RESOURCES }, err: '', activeDeps: [], polling: false };
@@ -83,6 +85,8 @@
   });
 
   function toggle(run_id: string) {
+    (cardIntervals[run_id] ?? []).forEach(clearInterval);
+    cardIntervals[run_id] = [];
     const wasOpen = cards[run_id].open || cards[run_id].activeDeps.length > 0;
     cards[run_id] = emptyCard();
     cards[run_id].open = !wasOpen;
@@ -206,6 +210,8 @@
       }
     }, 2000);
     activeIntervals.push(iv);
+    if (!cardIntervals[run_id]) cardIntervals[run_id] = [];
+    cardIntervals[run_id].push(iv);
   }
 
   async function demote(run_id: string) {
@@ -298,16 +304,15 @@
                   <span class="text-gray-400 text-xs">→ {target}</span>
                 </div>
               {/each}
-              <div class="pt-1">
+              <div class="pt-1 flex items-center gap-3">
                 {#if c.polling}
                   <span class="text-xs text-gray-400 italic">
                     <i class="fa-solid fa-spinner fa-spin mr-1"></i>polling…
                   </span>
-                {:else}
-                  <button on:click={() => toggle(run.info.run_id)} class="text-xs text-gray-400 hover:text-gray-600">
-                    <i class="fa-solid fa-xmark mr-1"></i>Close
-                  </button>
                 {/if}
+                <button on:click={() => toggle(run.info.run_id)} class="text-xs text-gray-400 hover:text-gray-600">
+                  <i class="fa-solid fa-xmark mr-1"></i>{c.polling ? 'Cancel' : 'Close'}
+                </button>
               </div>
             </div>
 

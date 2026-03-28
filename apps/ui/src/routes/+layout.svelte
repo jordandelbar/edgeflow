@@ -17,9 +17,7 @@
   <!-- ── Sidebar ─────────────────────────────────────────── -->
   <aside class="w-52 shrink-0 flex flex-col" style="background:#1e2d28">
     <a href="/" class="px-5 py-5 select-none">
-      <span class="text-peach font-bold text-lg tracking-tight">
-        <i class="fa-solid fa-hexagon mr-1.5 text-sm"></i>edgeflow
-      </span>
+      <span class="text-peach font-bold text-lg tracking-tight">edgeflow</span>
     </a>
 
     <nav class="flex-1 px-2 space-y-0.5">
