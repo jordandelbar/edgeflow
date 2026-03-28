@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { models, deployments, targets, nodes, modelName, type Run, type Deployment, type ResourceSettings } from '$lib/api';
   import ErrorCard from '$lib/components/ErrorCard.svelte';
   import DeployStateBadge from '$lib/components/DeployStateBadge.svelte';
@@ -33,6 +33,7 @@
     polling: boolean;
   };
   let cards: Record<string, CardState> = {};
+  let activeIntervals: ReturnType<typeof setInterval>[] = [];
 
   function emptyCard(): CardState {
     return { open: false, addingNew: false, newTarget: '', selectedNodes: [], showAdvanced: false, resources: { ...DEFAULT_RESOURCES }, err: '', activeDeps: [], polling: false };
@@ -191,14 +192,21 @@
         }
         if (['deployed', 'failed', 'superseded'].includes(res.deployment.state)) {
           clearInterval(iv);
+          activeIntervals = activeIntervals.filter(i => i !== iv);
           const allSettled = cards[run_id].activeDeps.every(d =>
             ['deployed', 'failed', 'superseded'].includes(d.dep.state)
           );
           if (allSettled) { cards[run_id].polling = false; cards = cards; }
         }
-      } catch { clearInterval(iv); }
+      } catch {
+        clearInterval(iv);
+        activeIntervals = activeIntervals.filter(i => i !== iv);
+      }
     }, 2000);
+    activeIntervals.push(iv);
   }
+
+  onDestroy(() => { activeIntervals.forEach(clearInterval); });
 </script>
 
 {#if error}
