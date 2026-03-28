@@ -71,3 +71,58 @@ class RawTensorOutput(Layer):
 
     def to_config(self) -> dict:
         return {"type": "raw_tensor_output"}
+
+
+@dataclass
+class ImageToTensor(Layer):
+    """Decode raw JPEG/PNG bytes, resize, normalise to [0, 1], and reorder HWC → CHW.
+
+    Output tensor shape: [1, 3, height, width].  Use as the first preprocess step
+    for image-based models (e.g. YOLO, DETR).  The server accepts the raw image
+    bytes directly when this layer is the first step; set Content-Type to
+    image/jpeg or image/png on the inference request.
+
+    Args:
+        width:  target image width in pixels (e.g. 640 for YOLOv8).
+        height: target image height in pixels (e.g. 640 for YOLOv8).
+    """
+
+    width: int
+    height: int
+
+    def to_config(self) -> dict:
+        return {"type": "image_to_tensor", "width": self.width, "height": self.height}
+
+
+@dataclass
+class DetectionOutput(Layer):
+    """Decode a YOLO-style detection tensor and apply NMS; returns a JSON array.
+
+    Expects input tensor shape [1, 4+num_classes, num_boxes] — the standard
+    YOLOv8 ONNX export format.  Bounding box coordinates in the output are
+    normalised to [0, 1]; multiply by your display dimensions to get pixel coords.
+
+    Produces:
+        [{"class_id": int, "label": str, "confidence": float,
+          "bbox": [x1, y1, x2, y2]}, ...]
+
+    Args:
+        labels:           ordered list of class label strings (must match model).
+        conf_threshold:   discard detections below this confidence (default 0.5).
+        iou_threshold:    IoU threshold for greedy NMS (default 0.7).
+        model_size:       square input size the model was trained on (default 640).
+    """
+
+    labels: list[str]
+    conf_threshold: float = 0.5
+    iou_threshold: float = 0.7
+    model_size: int = 640
+
+    def to_config(self) -> dict:
+        return {
+            "type": "detection_output",
+            "labels": self.labels,
+            "conf_threshold": self.conf_threshold,
+            "iou_threshold": self.iou_threshold,
+            "model_size": self.model_size,
+        }

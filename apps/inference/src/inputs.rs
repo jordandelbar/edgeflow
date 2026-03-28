@@ -108,8 +108,16 @@ pub fn parse_schema(bytes: Option<&[u8]>) -> (InputMode, Vec<InputSpec>) {
         None => return (InputMode::Single, vec![]),
     };
 
-    if input.format != "json" {
-        return (InputMode::Single, vec![]);
+    match input.format.as_str() {
+        "json" => {}
+        "image" => {
+            tracing::info!("image input mode: raw JPEG/PNG bytes routed through preprocess WASM");
+            return (InputMode::Single, vec![]);
+        }
+        other => {
+            tracing::info!(format = other, "unrecognised input format, using Single mode");
+            return (InputMode::Single, vec![]);
+        }
     }
 
     let fields = match input.fields {

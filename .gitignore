@@ -267,3 +267,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Models
+*.onnx
+*.pt

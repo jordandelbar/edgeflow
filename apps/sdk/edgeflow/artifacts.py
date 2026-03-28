@@ -53,17 +53,19 @@ def log_model(
     """
     import mlflow
     from edgeflow.pipeline import Pipeline
-    from edgeflow.layers import FloatBytesToTensor
+    from edgeflow.layers import FloatBytesToTensor, ImageToTensor
 
     if column_transformer is None:
         # Single-tensor path: auto-inject FloatBytesToTensor from ONNX input shape.
+        # Skip injection when the first step is already ImageToTensor — image
+        # models produce their own tensor inside the preprocess WASM.
         n = _read_onnx_n_features(model_bytes)
         if n is not None:
+            first = preprocess.steps[0] if (isinstance(preprocess, Pipeline) and preprocess.steps) else None
             if preprocess is None:
                 preprocess = Pipeline([FloatBytesToTensor(n_features=n)])
-            elif isinstance(preprocess, Pipeline):
-                if not preprocess.steps or not isinstance(preprocess.steps[0], FloatBytesToTensor):
-                    preprocess = Pipeline([FloatBytesToTensor(n_features=n)] + preprocess.steps)
+            elif isinstance(preprocess, Pipeline) and not isinstance(first, (FloatBytesToTensor, ImageToTensor)):
+                preprocess = Pipeline([FloatBytesToTensor(n_features=n)] + preprocess.steps)
 
     with tempfile.TemporaryDirectory() as tmp:
         tmpdir = Path(tmp)
@@ -109,7 +111,7 @@ def _read_onnx_n_features(model_bytes: bytes) -> int | None:
 
 
 def _build_schema(preprocess, postprocess, column_transformer=None) -> dict:
-    from edgeflow.layers import FloatBytesToTensor, ClassifierOutput
+    from edgeflow.layers import FloatBytesToTensor, ClassifierOutput, ImageToTensor, DetectionOutput
 
     schema: dict = {}
 
@@ -121,11 +123,20 @@ def _build_schema(preprocess, postprocess, column_transformer=None) -> dict:
         first = preprocess.steps[0]
         if isinstance(first, FloatBytesToTensor):
             schema["input"] = {"format": "float_bytes", "n_features": first.n_features}
+        elif isinstance(first, ImageToTensor):
+            schema["input"] = {"format": "image", "width": first.width, "height": first.height}
 
     if postprocess is not None and postprocess.steps:
         last = postprocess.steps[-1]
         if isinstance(last, ClassifierOutput):
             schema["output"] = {"format": "json", "labels": last.labels}
+        elif isinstance(last, DetectionOutput):
+            schema["output"] = {
+                "format": "json",
+                "labels": last.labels,
+                "conf_threshold": last.conf_threshold,
+                "iou_threshold": last.iou_threshold,
+            }
         else:
             schema["output"] = {"format": "tensor"}
     else:

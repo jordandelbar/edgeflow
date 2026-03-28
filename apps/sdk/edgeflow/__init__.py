@@ -1,6 +1,6 @@
 from edgeflow.artifacts import log_model
 from edgeflow.deploy import deploy
-from edgeflow.layers import ClassifierOutput, FloatBytesToTensor, Normalize, RawTensorOutput
+from edgeflow.layers import ClassifierOutput, DetectionOutput, FloatBytesToTensor, ImageToTensor, Normalize, RawTensorOutput
 from edgeflow.pipeline import Pipeline
 
 __all__ = [
@@ -11,4 +11,6 @@ __all__ = [
     "Normalize",
     "ClassifierOutput",
     "RawTensorOutput",
+    "ImageToTensor",
+    "DetectionOutput",
 ]
