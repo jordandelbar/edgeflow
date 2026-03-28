@@ -35,6 +35,9 @@ async fn main() -> Result<()> {
         std::env::var("EDGEFLOW_INFER_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".into());
 
     // Derive our reachable address for the server to call back on.
+    // k8s injects the node name via fieldRef: spec.nodeName as EDGEFLOW_NODE_NAME.
+    let node_name = std::env::var("EDGEFLOW_NODE_NAME").ok();
+
     // k8s injects the pod IP via fieldRef: status.podIP as EDGEFLOW_POD_IP.
     let pod_ip = std::env::var("EDGEFLOW_POD_IP").unwrap_or_else(|_| {
         infer_addr
@@ -79,12 +82,13 @@ async fn main() -> Result<()> {
 
     // Register with edgeflow-server (retry with exponential backoff until it's
     // ready — it may still be starting when we come up).
-    tracing::info!(target = %target, address = %self_address, "registering with edgeflow-server");
+    tracing::info!(target = %target, address = %self_address, node = ?node_name, "registering with edgeflow-server");
     retry_forever("register with edgeflow-server", || {
         let client = client.clone();
         let target = target.clone();
         let self_address = self_address.clone();
-        async move { client.register_target(&target, &self_address).await }
+        let node = node_name.clone();
+        async move { client.register_target(&target, &self_address, node.as_deref()).await }
     })
     .await;
     tracing::info!("registered — polling for deployments");

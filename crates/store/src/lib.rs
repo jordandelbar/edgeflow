@@ -46,7 +46,7 @@ pub trait Store: Send + Sync {
     async fn get_stale_deployments(&self, states: &[&str], older_than_ms: i64) -> Result<Vec<Deployment>>;
 
     // Targets
-    async fn register_target(&self, target: &str, address: &str, pod_name: Option<&str>) -> Result<Target>;
+    async fn register_target(&self, target: &str, address: &str, pod_name: Option<&str>, node: Option<&str>) -> Result<Target>;
     async fn heartbeat_target(&self, target: &str) -> Result<()>;
     async fn set_target_model(&self, target: &str, run_id: &str, loaded_at: &str) -> Result<()>;
     async fn store_target_resources(&self, target: &str, node: Option<&str>, resources: &ResourceSettings) -> Result<()>;

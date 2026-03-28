@@ -352,6 +352,7 @@ struct RegisterTargetRequest {
     target: String,
     address: String,
     pod_name: Option<String>,
+    node: Option<String>,
 }
 
 async fn register_target(
@@ -359,7 +360,7 @@ async fn register_target(
     Json(req): Json<RegisterTargetRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let target = state.store
-        .register_target(&req.target, &req.address, req.pod_name.as_deref())
+        .register_target(&req.target, &req.address, req.pod_name.as_deref(), req.node.as_deref())
         .await?;
 
     // Check for a pending deployment for this target — trigger the load.

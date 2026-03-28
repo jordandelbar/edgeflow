@@ -14,11 +14,15 @@ impl EdgeflowClient {
     }
 
     /// Register this pod as the active inference server for `target`.
-    pub async fn register_target(&self, target: &str, address: &str) -> Result<()> {
+    pub async fn register_target(&self, target: &str, address: &str, node: Option<&str>) -> Result<()> {
         let url = format!("{}/api/v1/targets/register", self.server);
+        let mut body = serde_json::json!({ "target": target, "address": address });
+        if let Some(n) = node {
+            body["node"] = serde_json::Value::String(n.to_string());
+        }
         self.client
             .post(&url)
-            .json(&serde_json::json!({ "target": target, "address": address }))
+            .json(&body)
             .send()
             .await
             .context("failed to register target with edgeflow-server")?

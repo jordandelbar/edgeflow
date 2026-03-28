@@ -493,14 +493,19 @@ impl Store for SqliteStore {
         Ok(results)
     }
 
-    async fn register_target(&self, target: &str, address: &str, pod_name: Option<&str>) -> Result<Target> {
+    async fn register_target(&self, target: &str, address: &str, pod_name: Option<&str>, node: Option<&str>) -> Result<Target> {
         let now = chrono::Utc::now().timestamp_millis();
-        // ON CONFLICT only updates address/pod_name — resource columns are preserved.
+        // ON CONFLICT updates address/pod_name. Node is backfilled if currently NULL
+        // (e.g. first deploy didn't specify a node), but never overwritten once set.
         sqlx::query(
-            "INSERT INTO targets (target, address, pod_name, registered_at) VALUES (?, ?, ?, ?)
-             ON CONFLICT(target) DO UPDATE SET address = excluded.address, pod_name = excluded.pod_name, registered_at = excluded.registered_at"
+            "INSERT INTO targets (target, address, pod_name, registered_at, node) VALUES (?, ?, ?, ?, ?)
+             ON CONFLICT(target) DO UPDATE SET
+               address      = excluded.address,
+               pod_name     = excluded.pod_name,
+               registered_at = excluded.registered_at,
+               node         = COALESCE(targets.node, excluded.node)"
         )
-        .bind(target).bind(address).bind(pod_name).bind(now)
+        .bind(target).bind(address).bind(pod_name).bind(now).bind(node)
         .execute(&self.pool).await?;
 
         self.get_target(target).await.map(|t| t.unwrap())
