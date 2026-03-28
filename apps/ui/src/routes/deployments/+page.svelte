@@ -168,12 +168,8 @@
     }
   }
 
-  function fmt(ms: number) {
-    return new Date(ms).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-  }
-
-  function fmtLoaded(iso: string) {
-    return new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  function fmt(value: number | string) {
+    return new Date(value).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
   }
 </script>
 
@@ -256,7 +252,7 @@
               <!-- Since -->
               <td class="px-4 py-3 hidden md:table-cell text-xs text-gray-400">
                 {#if status?.loaded_at}
-                  {fmtLoaded(status.loaded_at)}
+                  {fmt(status.loaded_at)}
                 {:else}
                   {fmt(latest.created_at)}
                 {/if}
