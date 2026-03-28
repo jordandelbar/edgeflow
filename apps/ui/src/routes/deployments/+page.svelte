@@ -8,6 +8,7 @@
   let targetList: string[] = [];
   let nodeForTarget: Record<string, string | null> = {};
   let modelStatus: Record<string, ModelStatus | null> = {};
+  let runExpId: Record<string, string> = {};  // run_id → experiment_id for linking
   let podHealth: Record<string, 'up' | 'down' | 'checking'> = {};
   let expanded: Record<string, 'history' | 'test' | null> = {};
   let confirming: Record<string, boolean> = {};
@@ -82,7 +83,15 @@
       // Re-probe all targets without resetting to 'checking' — avoids flicker.
       newTargetList.forEach(t => {
         targets.model(t)
-          .then(s => { modelStatus[t] = s; modelStatus = modelStatus; })
+          .then(s => {
+            modelStatus[t] = s;
+            modelStatus = modelStatus;
+            if (s?.run_id && !(s.run_id in runExpId)) {
+              runs.get(s.run_id)
+                .then(r => { runExpId[s.run_id] = r.run.info.experiment_id; runExpId = runExpId; })
+                .catch(() => {});
+            }
+          })
           .catch(() => { modelStatus[t] = null; modelStatus = modelStatus; });
         targets.health(t)
           .then(() => { podHealth[t] = 'up';   podHealth = podHealth; })
@@ -241,9 +250,15 @@
               <!-- Loaded model -->
               <td class="px-4 py-3 hidden sm:table-cell">
                 {#if status?.run_id}
-                  <span class="font-mono text-xs text-gray-600">
-                    <i class="fa-solid fa-brain text-sage mr-1"></i>{status.run_id.slice(0, 12)}
-                  </span>
+                  {#if runExpId[status.run_id]}
+                    <a href="/experiments/{runExpId[status.run_id]}/runs/{status.run_id}" class="font-mono text-xs text-sage-dark hover:underline">
+                      <i class="fa-solid fa-brain text-sage mr-1"></i>{status.run_id.slice(0, 12)}
+                    </a>
+                  {:else}
+                    <span class="font-mono text-xs text-gray-600">
+                      <i class="fa-solid fa-brain text-sage mr-1"></i>{status.run_id.slice(0, 12)}
+                    </span>
+                  {/if}
                 {:else}
                   <span class="text-xs text-gray-300 italic">no model</span>
                 {/if}
@@ -384,7 +399,13 @@
                     <tbody>
                       {#each deps as dep}
                         <tr class="border-b border-gray-50 last:border-0">
-                          <td class="px-8 py-2 font-mono text-xs text-gray-600">{dep.run_id.slice(0, 12)}</td>
+                          <td class="px-8 py-2 font-mono text-xs">
+                            {#if runExpId[dep.run_id]}
+                              <a href="/experiments/{runExpId[dep.run_id]}/runs/{dep.run_id}" class="text-sage-dark hover:underline">{dep.run_id.slice(0, 12)}</a>
+                            {:else}
+                              <span class="text-gray-600">{dep.run_id.slice(0, 12)}</span>
+                            {/if}
+                          </td>
                           <td class="px-4 py-2"><DeployStateBadge state={dep.state} /></td>
                           <td class="px-4 py-2 text-xs text-gray-400">{fmt(dep.created_at)}</td>
                         </tr>

@@ -5,7 +5,8 @@
   import DeployStateBadge from '$lib/components/DeployStateBadge.svelte';
 
   let items: Run[] = [];
-  let knownTargets: { name: string; state: string; node: string | null }[] = [];
+  let knownTargets: { name: string; state: string; run_id: string; node: string | null }[] = [];
+  let demoting: Record<string, boolean> = {};
   let deployedOn: Record<string, string[]> = {};   // run_id → target names currently deployed
   let nodeList: string[] = [];
   let loadingNodes = false;
@@ -63,6 +64,7 @@
       knownTargets = Object.entries(latestByTarget).map(([name, d]) => ({
         name,
         state: d.state,
+        run_id: d.run_id,
         node: targetNodeMap[name] ?? null,
       }));
 
@@ -206,6 +208,18 @@
     activeIntervals.push(iv);
   }
 
+  async function demote(run_id: string) {
+    demoting[run_id] = true;
+    demoting = demoting;
+    try {
+      await models.demote(run_id);
+      items = items.filter(r => r.info.run_id !== run_id);
+    } finally {
+      demoting[run_id] = false;
+      demoting = demoting;
+    }
+  }
+
   onDestroy(() => { activeIntervals.forEach(clearInterval); });
 </script>
 
@@ -230,22 +244,38 @@
               <i class="fa-solid fa-brain text-sage text-sm"></i>
             </div>
             <div>
-              <p class="font-semibold text-gray-800">{modelName(run)}</p>
+              <a href="/experiments/{run.info.experiment_id}/runs/{run.info.run_id}" class="font-semibold text-gray-800 hover:text-sage-dark transition-colors">
+                {modelName(run)}
+              </a>
               <p class="text-xs text-gray-400 font-mono mt-0.5">{run.info.run_id.slice(0, 12)}</p>
             </div>
           </div>
-          <div class="flex flex-wrap gap-1.5 justify-end shrink-0">
+          <div class="flex flex-wrap gap-1.5 justify-end items-start shrink-0">
             {#each (deployedOn[run.info.run_id] ?? []) as target}
               <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-sage-light/40 text-sage-dark">
                 <i class="fa-solid fa-circle text-xs"></i>{target}
               </span>
             {/each}
+            <button
+              on:click={() => demote(run.info.run_id)}
+              disabled={demoting[run.info.run_id]}
+              title="Demote — remove from Models"
+              class="p-1 rounded text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors disabled:opacity-50"
+            >
+              {#if demoting[run.info.run_id]}
+                <i class="fa-solid fa-spinner fa-spin text-xs"></i>
+              {:else}
+                <i class="fa-solid fa-circle-minus text-xs"></i>
+              {/if}
+            </button>
           </div>
         </div>
 
         <!-- Meta row -->
         <div class="px-5 pb-3 flex items-center gap-4 text-xs text-gray-400">
-          <span><i class="fa-solid fa-flask mr-1"></i>exp {run.info.experiment_id}</span>
+          <a href="/experiments/{run.info.experiment_id}" class="hover:text-gray-600 transition-colors">
+            <i class="fa-solid fa-flask mr-1"></i>exp {run.info.experiment_id}
+          </a>
           <span><i class="fa-solid fa-calendar mr-1"></i>{new Date(run.info.start_time).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
           {#if run.data.metrics.length > 0}
             <span class="ml-auto font-mono text-gray-500">
@@ -302,7 +332,9 @@
                   >
                     <i class="fa-solid fa-server text-xs text-gray-400"></i>
                     {t.name}
-                    <DeployStateBadge state={t.state} />
+                    {#if t.run_id === run.info.run_id}
+                      <DeployStateBadge state={t.state} />
+                    {/if}
                     {#if t.node}
                       <span class="text-xs text-gray-400 font-mono" title={t.node}>{nodeSuffix(t.node)}</span>
                     {/if}

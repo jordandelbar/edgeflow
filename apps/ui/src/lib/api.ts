@@ -161,6 +161,8 @@ export const models = {
   },
   promote: (run_id: string) =>
     mpost('/runs/set-tag', { run_id, key: 'edgeflow.promoted', value: 'true' }),
+  demote: (run_id: string) =>
+    mpost('/runs/set-tag', { run_id, key: 'edgeflow.promoted', value: 'false' }),
 };
 
 // ── Deployments ────────────────────────────────────────────────────────────

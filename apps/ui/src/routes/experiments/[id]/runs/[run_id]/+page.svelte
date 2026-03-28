@@ -50,6 +50,17 @@
       promoting = false;
     }
   }
+
+  async function demote() {
+    if (!run) return;
+    promoting = true;
+    try {
+      await models.demote(run.info.run_id);
+      promoted = false;
+    } finally {
+      promoting = false;
+    }
+  }
 </script>
 
 {#if error}
@@ -74,9 +85,24 @@
     </div>
 
     {#if promoted}
-      <div class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sage-light/30 text-sage-dark text-sm font-medium">
-        <i class="fa-solid fa-check-circle text-xs"></i>
-        Promoted to model
+      <div class="flex items-center gap-2">
+        <div class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sage-light/30 text-sage-dark text-sm font-medium">
+          <i class="fa-solid fa-check-circle text-xs"></i>
+          Promoted to model
+        </div>
+        <button
+          on:click={demote}
+          disabled={promoting}
+          title="Demote — remove from Models"
+          class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-50"
+        >
+          {#if promoting}
+            <i class="fa-solid fa-spinner fa-spin text-xs"></i>
+          {:else}
+            <i class="fa-solid fa-circle-minus text-xs"></i>
+          {/if}
+          Demote
+        </button>
       </div>
     {:else if run.info.status === 'FINISHED'}
       <button
