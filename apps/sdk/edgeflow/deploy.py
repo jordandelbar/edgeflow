@@ -37,6 +37,13 @@ def deploy(
 
     print(f"🚀 Deploying run {run_id[:12]} → target '{target}'")
 
+    # Deploying a run makes it a model — promote it so it appears in the Models page.
+    requests.post(
+        f"{server}/api/2.0/mlflow/runs/set-tag",
+        json={"run_id": run_id, "key": "edgeflow.promoted", "value": "true"},
+        timeout=10,
+    ).raise_for_status()
+
     resp = requests.post(
         f"{server}/api/v1/deployments",
         json={"run_id": run_id, "target": target},

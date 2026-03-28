@@ -8,8 +8,6 @@
     { href: '/models',      label: 'Models',       icon: 'fa-solid fa-brain'  },
     { href: '/deployments', label: 'Deployments',  icon: 'fa-solid fa-rocket' },
   ];
-
-  $: current = nav.find(n => data.pathname.startsWith(n.href)) ?? null;
 </script>
 
 <div class="flex h-screen overflow-hidden bg-cream text-gray-900 font-sans">
@@ -41,12 +39,6 @@
 
   <!-- ── Right pane ──────────────────────────────────────── -->
   <div class="flex-1 flex flex-col overflow-hidden">
-
-    <!-- Top bar -->
-    <header class="h-12 shrink-0 bg-white border-b border-gray-100 flex items-center px-6 gap-2">
-      {#if !current}<i class="fa-solid fa-house text-sage text-sm"></i>{/if}
-      <span class="text-sm font-semibold text-gray-700">{current?.label ?? 'Home'}</span>
-    </header>
 
     <!-- Page content -->
     <main class="flex-1 overflow-y-auto p-6 bg-cream">

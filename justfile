@@ -14,15 +14,22 @@ build-transforms:
         apps/sdk/edgeflow/wasm/standard_pipeline.wasm
     cd apps/sdk && uv run maturin develop --features python
 
-# Build the Svelte UI and copy output to static/
+# Build the Svelte UI and copy output to static/ (used by dev-server)
 build-ui:
-    cd apps/ui && npm install && npm run build
+    cd apps/ui && npm run build
     rm -rf {{static_dir}}
     cp -r apps/ui/build {{static_dir}}
 
 # Build the server in release mode
 build-server:
     cargo build --release -p edgeflow-server
+
+# Build the server image, import into k3d, and rollout restart
+deploy-server:
+    docker build -f deploy/server.Dockerfile -t edgeflow-server:dev .
+    k3d image import edgeflow-server:dev -c edgeflow
+    kubectl rollout restart deployment/edgeflow-server
+    kubectl rollout status deployment/edgeflow-server --timeout=120s
 
 # Run the server in dev mode
 dev-server:

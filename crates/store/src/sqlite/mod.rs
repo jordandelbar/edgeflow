@@ -4,6 +4,24 @@ use sqlx::{Row, SqlitePool};
 use edgeflow_core::*;
 use crate::Store;
 
+/// Parse `tag.\`key\` = 'value'` or `tag.'key' = 'value'` into `(key, value)`.
+fn parse_tag_filter(filter: &str) -> Option<(String, String)> {
+    let s = filter.trim();
+    let s = s.strip_prefix("tag.")?;
+    let (key, rest) = if let Some(inner) = s.strip_prefix('`') {
+        let end = inner.find('`')?;
+        (inner[..end].to_string(), inner[end + 1..].trim())
+    } else if let Some(inner) = s.strip_prefix('\'') {
+        let end = inner.find('\'')?;
+        (inner[..end].to_string(), inner[end + 1..].trim())
+    } else {
+        return None;
+    };
+    let rest = rest.strip_prefix('=')?.trim();
+    let value = rest.strip_prefix('\'')?.strip_suffix('\'')?;
+    Some((key, value.to_string()))
+}
+
 pub struct SqliteStore {
     pool: SqlitePool,
     artifact_root: PathBuf,
@@ -278,13 +296,30 @@ impl Store for SqliteStore {
         Ok(())
     }
 
-    async fn search_runs(&self, experiment_ids: Vec<String>, _filter: Option<&str>, max_results: i64) -> Result<Vec<Run>> {
+    async fn search_runs(&self, experiment_ids: Vec<String>, filter: Option<&str>, max_results: i64) -> Result<Vec<Run>> {
         let placeholders = experiment_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-        let sql = format!(
-            "SELECT run_id FROM runs WHERE experiment_id IN ({}) AND lifecycle_stage = 'active' LIMIT ?",
-            placeholders
-        );
+
+        // Parse a single tag filter of the form: tag.`key` = 'value' or tag.'key' = 'value'
+        let tag_filter = filter.and_then(parse_tag_filter);
+
+        let sql = if tag_filter.is_some() {
+            format!(
+                "SELECT r.run_id FROM runs r \
+                 JOIN run_tags t ON t.run_id = r.run_id AND t.key = ? AND t.value = ? \
+                 WHERE r.experiment_id IN ({}) AND r.lifecycle_stage = 'active' LIMIT ?",
+                placeholders
+            )
+        } else {
+            format!(
+                "SELECT run_id FROM runs WHERE experiment_id IN ({}) AND lifecycle_stage = 'active' LIMIT ?",
+                placeholders
+            )
+        };
+
         let mut q = sqlx::query(&sql);
+        if let Some((key, value)) = &tag_filter {
+            q = q.bind(key).bind(value);
+        }
         for id in &experiment_ids {
             q = q.bind(id);
         }

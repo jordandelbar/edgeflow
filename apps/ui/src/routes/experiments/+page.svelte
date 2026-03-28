@@ -32,7 +32,7 @@
     <table class="w-full text-sm">
       <thead>
         <tr class="border-b border-gray-100 text-left">
-          <th class="px-5 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide">Name</th>
+          <th class="px-5 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide">Experiment</th>
           <th class="px-5 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide hidden sm:table-cell">ID</th>
           <th class="px-5 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide hidden md:table-cell">Created</th>
         </tr>
