@@ -33,7 +33,11 @@ async fn main() -> anyhow::Result<()> {
     std::fs::create_dir_all(&artifact_root)?;
 
     let store = SqliteStore::new(&db_path, artifact_root.clone()).await?;
-    let state = AppState { store: Arc::new(store), artifact_root };
+    let state = AppState {
+        store: Arc::new(store),
+        artifact_root,
+        http_client: reqwest::Client::new(),
+    };
 
     // Background task: time out deployments stuck in deploying/upgrading.
     let timeout_state = state.clone();

@@ -60,7 +60,7 @@ async fn target_model_status(
         .ok_or_else(|| anyhow::anyhow!("target '{target}' not registered"))?;
 
     let url = format!("{}/model", rec.address);
-    let resp = reqwest::Client::new().get(&url).send().await
+    let resp = state.http_client.get(&url).send().await
         .map_err(|e| anyhow::anyhow!("failed to reach inference pod: {e}"))?;
 
     if !resp.status().is_success() {
@@ -83,7 +83,7 @@ async fn target_health(
         .ok_or_else(|| anyhow::anyhow!("target '{target}' not registered"))?;
 
     let url = format!("{}/health", rec.address);
-    let resp = reqwest::Client::new().get(&url)
+    let resp = state.http_client.get(&url)
         .timeout(std::time::Duration::from_secs(3))
         .send().await
         .map_err(|_| anyhow::anyhow!("pod unreachable"))?;
@@ -104,7 +104,7 @@ async fn target_schema(
         .ok_or_else(|| anyhow::anyhow!("target '{target}' not registered"))?;
 
     let url = format!("{}/schema", rec.address);
-    let resp = reqwest::Client::new().get(&url).send().await
+    let resp = state.http_client.get(&url).send().await
         .map_err(|e| anyhow::anyhow!("failed to reach inference pod: {e}"))?;
 
     if !resp.status().is_success() {
@@ -137,7 +137,7 @@ async fn infer_playground(
     let body: Vec<u8> = req.data.iter().flat_map(|&v| v.to_le_bytes()).collect();
     let url = format!("{}/infer", rec.address);
 
-    let resp = reqwest::Client::new()
+    let resp = state.http_client
         .post(&url)
         .header("content-type", "application/octet-stream")
         .body(body)
@@ -192,7 +192,7 @@ async fn create_deployment(
             "deployment_id": deployment.deployment_id,
         });
         let upgrade_url = format!("{}/upgrade", target_rec.address);
-        match reqwest::Client::new().post(&upgrade_url).json(&body).send().await {
+        match state.http_client.post(&upgrade_url).json(&body).send().await {
             Ok(resp) if resp.status().is_success() || resp.status().as_u16() == 202 => {
                 state.store
                     .update_deployment_state(&deployment.deployment_id, DeploymentState::Upgrading)
@@ -342,7 +342,7 @@ async fn register_target(
             "deployment_id": deployment.deployment_id,
         });
         let upgrade_url = format!("{}/upgrade", req.address);
-        match reqwest::Client::new().post(&upgrade_url).json(&body).send().await {
+        match state.http_client.post(&upgrade_url).json(&body).send().await {
             Ok(resp) if resp.status().is_success() || resp.status().as_u16() == 202 => {
                 state.store
                     .update_deployment_state(&deployment.deployment_id, DeploymentState::Deploying)

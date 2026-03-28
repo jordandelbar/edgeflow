@@ -6,4 +6,5 @@ use edgeflow_store::sqlite::SqliteStore;
 pub struct AppState {
     pub store: Arc<SqliteStore>,
     pub artifact_root: PathBuf,
+    pub http_client: reqwest::Client,
 }
