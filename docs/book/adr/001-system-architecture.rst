@@ -3,7 +3,7 @@ ADR-001: System Architecture
 
 **Status:** Accepted
 
-**Date:** 2026-03-24
+**Date:** 2026-03-28 (revised from 2026-03-24)
 
 --------
 
@@ -25,6 +25,7 @@ The system must:
 - Run the server on constrained hardware (single binary, low memory footprint)
 - Communicate reliably with devices on flaky or intermittent network connections
 - Be compatible with existing MLflow Python clients to lower adoption friction
+- Not require additional infrastructure to get started (broker, message queue, sidecar)
 - Provide a path toward a native richer API as the product matures
 
 --------
@@ -32,7 +33,8 @@ The system must:
 Decision
 --------
 
-The system is composed of four distinct components with clearly separated responsibilities:
+The system is composed of **two components** with clearly separated responsibilities.
+A third component (device manager / lifecycle supervisor) was considered and rejected — see Alternatives Considered.
 
 1. edgeflow-server
 ~~~~~~~~~~~~~~~~~~
@@ -48,14 +50,25 @@ The central control plane. Runs in the infrastructure (bare metal, VM, or k3s cl
 - Drift detection evaluation
 - Alert rule management
 - Serving the Svelte UI as static files
-- MQTT broker integration (publishes deployment instructions, subscribes to telemetry)
+- Embedded MQTT broker (``rumqttd``) for device communication
 
-**Stack:** Rust + Axum + SQLite (swappable via ``Store`` trait) + tower-http
+**Stack:** Rust + Axum + SQLite (swappable via ``Store`` trait) + tower-http + rumqttd
+
+**Key design choice:** the MQTT broker is embedded in the server binary via ``rumqttd``.
+No separate broker process is required. For deployments that already operate a managed broker
+(AWS IoT, HiveMQ, Mosquitto), the embedded broker can be disabled and an external URL configured instead:
+
+.. code-block:: toml
+
+    [mqtt]
+    broker = "embedded"          # default — runs rumqttd inside the server process
+    # broker = "mqtt://your-broker.example.com:1883"   # external alternative
 
 2. edgeflow-inference
 ~~~~~~~~~~~~~~~~~~~~~
 
-A standalone process running on each edge device. Responsible purely for model execution.
+A standalone process that runs on each target (edge device, VM, k8s pod, or bare metal server).
+Responsible for model execution and, in managed mode, for its own lifecycle coordination with the server.
 
 **Responsibilities:**
 
@@ -63,49 +76,35 @@ A standalone process running on each edge device. Responsible purely for model e
 - Expose a local HTTP endpoint (``POST /infer``) for the application to call
 - Collect input/output telemetry and latency metrics
 - Detect input distribution drift against a stored baseline
-- Publish telemetry to the device manager via local IPC
 
-**Stack:** Rust + ``ort`` + minimal HTTP server (no axum, weight matters on device)
+In **managed mode** (when ``[server]`` is configured):
 
-**Key design choice:** ``edgeflow-inference`` is useful standalone, without edgeflow.
-A user can run it as a pure ONNX inference server with drift monitoring and never use the rest of the platform.
-This lowers the barrier to adoption and makes the component independently valuable.
-
-3. edgeflow-device
-~~~~~~~~~~~~~~~~~~
-
-A lifecycle manager running on each edge device alongside the inference service.
-
-**Responsibilities:**
-
-- Register the device with edgeflow-server on startup
+- Register with ``edgeflow-server`` on startup
 - Send periodic heartbeats
-- Receive deployment instructions from server via MQTT
+- Listen for deployment instructions (MQTT subscription or HTTP poll fallback)
 - Download model artifacts from the registry
-- Manage the lifecycle of ``edgeflow-inference`` (start, stop, swap model version)
-- Forward telemetry from inference service to server via MQTT
-- Execute rollbacks on server instruction or local degradation threshold breach
+- Hot-swap the loaded model without downtime
+- Confirm deployment status back to the server
 
-**Stack:** Rust + MQTT client (``rumqttc``) + local process management
+**Stack:** Rust + ``ort`` + minimal HTTP server (no axum, weight matters on device) + optional MQTT client
 
-**Key design choice:** ``edgeflow-device`` and ``edgeflow-inference`` are two separate binaries.
-The device manager is purely orchestration, it does not run models.
-The inference service does not know about the server — it only knows about its local model and the device manager.
+**Two modes, one binary:**
 
-4. edgeflow-ui
-~~~~~~~~~~~~~~
+.. code-block:: toml
 
-A Svelte SPA served as static files by ``edgeflow-server``. No separate server process.
+    # Standalone — pure inference server, no server communication
+    # (omit [server] block entirely)
 
-**Responsibilities:**
+    # Managed — full lifecycle coordination
+    [server]
+    url  = "http://edgeflow-server:5000"
+    mqtt = "mqtt://edgeflow-server:1883"   # optional; falls back to HTTP poll if omitted
 
-- Fleet overview (devices, status, what's running where)
-- Model registry browser (versions, lineage, promotion workflow)
-- Deployment management (create, monitor, rollback)
-- Experiment and run browser
-- Drift and alert visualization
-
-**Stack:** SvelteKit + adapter-static + TypeScript
+**Key design choice:** ``edgeflow-inference`` is useful standalone, without edgeflow-server.
+A user can run it as a pure ONNX inference server and never use the rest of the platform.
+This lowers the barrier to adoption and makes the component independently valuable.
+Process supervision (restart on crash) is delegated to the OS layer (systemd, Docker restart policy)
+rather than implemented as a third binary.
 
 --------
 
@@ -116,6 +115,19 @@ Communication Architecture
    :alt: Communication architecture
    :width: 100%
 
+**Transport evolution:**
+
+The managed communication path is designed to evolve without breaking changes:
+
+1. **HTTP pull (v1, no extra infrastructure)** — inference polls server for pending deployments.
+   Works through NAT and firewalls. Acceptable latency for model deployment (not control-plane timing-critical).
+
+2. **MQTT (v2, embedded broker)** — inference subscribes to its deployment topic.
+   Server publishes instructions immediately on deployment creation.
+   Better for large fleets and real-time rollback instructions.
+
+Both transports can coexist. Devices without MQTT connectivity fall back to HTTP poll automatically.
+
 --------
 
 MQTT Topic Structure
@@ -123,14 +135,11 @@ MQTT Topic Structure
 
 .. code-block:: text
 
-    edgeflow/devices/{device_id}/register
-    edgeflow/devices/{device_id}/heartbeat
-    edgeflow/devices/{device_id}/deploy          ← server → device
-    edgeflow/devices/{device_id}/deploy/ack      ← device → server
-    edgeflow/devices/{device_id}/deploy/status   ← device → server (progress)
-    edgeflow/devices/{device_id}/rollback        ← server → device
-    edgeflow/devices/{device_id}/rollback/ack    ← device → server
-    edgeflow/devices/{device_id}/telemetry       ← device → server
+    edgeflow/targets/{target_id}/deploy          ← server → inference (deployment instruction)
+    edgeflow/targets/{target_id}/deploy/ack      ← inference → server (accepted, loading)
+    edgeflow/targets/{target_id}/deploy/status   ← inference → server (deployed / failed)
+    edgeflow/targets/{target_id}/heartbeat       ← inference → server
+    edgeflow/targets/{target_id}/telemetry       ← inference → server
 
 --------
 
@@ -142,10 +151,9 @@ Native API (product identity)
 
 .. code-block:: text
 
-    /api/v1/devices/**
-    /api/v1/fleets/**
-    /api/v1/models/**
+    /api/v1/targets/**       ← target registration, heartbeat, pending deployments
     /api/v1/deployments/**
+    /api/v1/models/**
     /api/v1/experiments/**
     /api/v1/runs/**
     /api/v1/alerts/**
@@ -155,10 +163,10 @@ MLflow Compatibility Shim (adoption layer, frozen surface)
 
 .. code-block:: text
 
-    /mlflow/api/2.0/mlflow/experiments/**
-    /mlflow/api/2.0/mlflow/runs/**
-    /mlflow/api/2.0/mlflow/metrics/**
-    /mlflow/api/2.0/mlflow/artifacts/**
+    /api/2.0/mlflow/experiments/**
+    /api/2.0/mlflow/runs/**
+    /api/2.0/mlflow/metrics/**
+    /api/2.0/mlflow/artifacts/**
 
 The shim is a translation layer over the native data model, not a separate implementation.
 The native data model is designed first; the shim is built on top of it.
@@ -215,34 +223,48 @@ Consequences
 
 **Positive:**
 
-- Two-binary device design means ``edgeflow-inference`` can be adopted standalone, lowering the barrier to entry
-- MQTT handles flaky edge networks gracefully (QoS, persistent sessions, offline buffering)
+- Two-component design keeps the operational surface minimal — one server binary, one inference binary per device
+- ``edgeflow-inference`` can be adopted standalone, lowering the barrier to entry
+- Embedded MQTT broker means zero extra infrastructure for the common case
+- HTTP poll fallback means the system works through NAT and firewalls out of the box
+- MQTT handles flaky edge networks gracefully (QoS, persistent sessions, offline buffering) when available
 - MLflow shim provides immediate compatibility with existing Python training code
 - Single Rust binary for the server is trivially deployable on constrained hardware
 - ``Store`` trait abstraction allows SQLite → Postgres migration without changing business logic
 
 **Negative / risks:**
 
-- MQTT adds an operational dependency (broker must be running), mitigated by bundling a lightweight broker (rumqttd)
-  in the server binary for single-node deployments
-- ONNX-only model format excludes teams using TensorFlow SavedModel or TorchScript directly, acceptable tradeoff for
-  PoC, revisit at v1
-- Maintaining MLflow API compatibility is ongoing work as MLflow evolves treat the shim as frozen at the current
-  API surface, do not track MLflow HEAD
+- ``edgeflow-inference`` now carries both inference logic and lifecycle coordination — these must be kept cleanly separated internally so standalone mode remains truly standalone
+- ONNX-only model format excludes teams using TensorFlow SavedModel or TorchScript directly; acceptable tradeoff for PoC, revisit at v1
+- Maintaining MLflow API compatibility is ongoing work as MLflow evolves; treat the shim as frozen at the current API surface, do not track MLflow HEAD
 
 --------
 
 Alternatives Considered
 ------------------------
 
+**Separate ``edgeflow-device`` binary (device manager)**
+
+Rejected. The responsibilities originally assigned to a separate device manager —
+registration, heartbeats, artifact download, hot-swap, deployment confirmation —
+are already implemented in ``edgeflow-inference``.
+The only remaining concern (process restart on crash) is better handled by systemd or Docker restart policies
+than by a custom-written process supervisor.
+A third binary adds operational surface (a third systemd unit, a third thing to monitor and update)
+with no architectural benefit.
+
 **gRPC instead of MQTT for device communication**
 
 Rejected. gRPC assumes stable connections. MQTT's QoS levels and persistent sessions are designed for exactly the intermittent connectivity pattern of edge devices.
 
-**Single binary on device (device manager + inference in one process)**
-
-Rejected. ``edgeflow-inference`` has standalone value. Merging the two would force users to adopt the full edgeflow ecosystem to get a managed ONNX inference server, which raises the adoption barrier unnecessarily.
-
 **REST polling instead of MQTT**
 
-Rejected for device communication. Polling introduces latency in deployment instructions and wastes bandwidth on heartbeats. Acceptable for the UI/API layer where HTTP semantics are natural.
+Not fully rejected — HTTP poll is the v1 transport precisely because it requires no extra infrastructure
+and works through NAT. MQTT is the v2 transport that replaces polling once the embedded broker is in place.
+The two coexist: devices without MQTT connectivity continue to poll.
+
+**External MQTT broker (Mosquitto, HiveMQ) as a required dependency**
+
+Rejected for the default case. Early adopters should not have to operate a broker to get started.
+``rumqttd`` embedded in the server binary provides a real MQTT broker with zero operational overhead.
+External brokers remain supported for production deployments that already have one.
