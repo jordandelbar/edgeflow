@@ -250,12 +250,14 @@
               <p class="text-xs text-gray-400 font-mono mt-0.5">{run.info.run_id.slice(0, 12)}</p>
             </div>
           </div>
-          <div class="flex flex-wrap gap-1.5 justify-end items-start shrink-0">
-            {#each (deployedOn[run.info.run_id] ?? []) as target}
-              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-sage-light/40 text-sage-dark">
-                <i class="fa-solid fa-circle text-xs"></i>{target}
-              </span>
-            {/each}
+          <div class="flex items-center gap-2 shrink-0">
+            <div class="flex flex-wrap gap-1.5 justify-end">
+              {#each (deployedOn[run.info.run_id] ?? []) as target}
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-sage-light/40 text-sage-dark">
+                  <i class="fa-solid fa-circle text-xs"></i>{target}
+                </span>
+              {/each}
+            </div>
             <button
               on:click={() => demote(run.info.run_id)}
               disabled={demoting[run.info.run_id]}
