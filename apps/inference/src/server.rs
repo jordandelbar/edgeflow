@@ -14,6 +14,22 @@ use tokio::sync::Semaphore;
 use crate::client::EdgeflowClient;
 use crate::pipeline::Pipeline;
 
+fn json_error(status: StatusCode, msg: &str) -> Response<Full<Bytes>> {
+    let body = format!("{{\"error\":{}}}", serde_json::to_string(msg).unwrap_or_default());
+    Response::builder()
+        .status(status)
+        .header("content-type", "application/json")
+        .body(Full::new(Bytes::from(body)))
+        .unwrap()
+}
+
+fn json_ok(body: impl Into<Bytes>) -> Response<Full<Bytes>> {
+    Response::builder()
+        .header("content-type", "application/json")
+        .body(Full::new(body.into()))
+        .unwrap()
+}
+
 #[derive(Default)]
 pub struct Metrics {
     pub requests_total:    AtomicU64,
@@ -103,11 +119,7 @@ async fn handle(
                 Ok(p) => p,
                 Err(_) => {
                     state.metrics.requests_rejected.fetch_add(1, Ordering::Relaxed);
-                    return Ok(Response::builder()
-                        .status(StatusCode::TOO_MANY_REQUESTS)
-                        .header("content-type", "application/json")
-                        .body(Full::new(Bytes::from("{\"error\":\"too many concurrent requests\"}")))
-                        .unwrap());
+                    return Ok(json_error(StatusCode::TOO_MANY_REQUESTS, "too many concurrent requests"));
                 }
             };
 
@@ -124,11 +136,7 @@ async fn handle(
             let Some(pipeline_arc) = pipeline_arc else {
                 state.metrics.requests_active.fetch_sub(1, Ordering::Relaxed);
                 drop(permit);
-                return Ok(Response::builder()
-                    .status(StatusCode::SERVICE_UNAVAILABLE)
-                    .header("content-type", "application/json")
-                    .body(Full::new(Bytes::from("{\"error\":\"no model loaded yet\"}")))
-                    .unwrap());
+                return Ok(json_error(StatusCode::SERVICE_UNAVAILABLE, "no model loaded yet"));
             };
 
             let body = req.collect().await?.to_bytes();
@@ -148,12 +156,7 @@ async fn handle(
                 Err(e) => {
                     metrics.inference_errors.fetch_add(1, Ordering::Relaxed);
                     tracing::error!("inference error: {e:#}");
-                    let msg = format!("{{\"error\":\"{e}\"}}");
-                    Ok(Response::builder()
-                        .status(StatusCode::INTERNAL_SERVER_ERROR)
-                        .header("content-type", "application/json")
-                        .body(Full::new(Bytes::from(msg)))
-                        .unwrap())
+                    Ok(json_error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))
                 }
             }
         }
@@ -163,12 +166,7 @@ async fn handle(
             let upgrade_req: UpgradeRequest = match serde_json::from_slice(&body) {
                 Ok(r) => r,
                 Err(e) => {
-                    let msg = format!("{{\"error\":\"invalid request: {e}\"}}");
-                    return Ok(Response::builder()
-                        .status(StatusCode::BAD_REQUEST)
-                        .header("content-type", "application/json")
-                        .body(Full::new(Bytes::from(msg)))
-                        .unwrap());
+                    return Ok(json_error(StatusCode::BAD_REQUEST, &format!("invalid request: {e}")));
                 }
             };
 
@@ -188,28 +186,14 @@ async fn handle(
                 load_and_swap(upgrade_req, pipeline, model_info, schema, client, target);
             });
 
-            Ok(Response::builder()
-                .status(StatusCode::ACCEPTED)
-                .header("content-type", "application/json")
-                .body(Full::new(Bytes::from("{\"status\":\"loading\"}")))
-                .unwrap())
+            Ok(json_ok(Bytes::from_static(b"{\"status\":\"loading\"}")))
         }
 
         (&Method::GET, "/model") => {
             let info = state.model_info.read().unwrap().clone();
             match info {
-                Some(i) => {
-                    let json = serde_json::to_vec(&i).unwrap_or_default();
-                    Ok(Response::builder()
-                        .header("content-type", "application/json")
-                        .body(Full::new(Bytes::from(json)))
-                        .unwrap())
-                }
-                None => Ok(Response::builder()
-                    .status(StatusCode::SERVICE_UNAVAILABLE)
-                    .header("content-type", "application/json")
-                    .body(Full::new(Bytes::from("{\"error\":\"no model loaded\"}")))
-                    .unwrap()),
+                Some(i) => Ok(json_ok(serde_json::to_vec(&i).unwrap_or_default())),
+                None => Ok(json_error(StatusCode::SERVICE_UNAVAILABLE, "no model loaded")),
             }
         }
 
@@ -222,36 +206,26 @@ async fn handle(
                 "inference_errors":  m.inference_errors.load(Ordering::Relaxed),
                 "concurrency_limit": state.semaphore.available_permits() + m.requests_active.load(Ordering::Relaxed) as usize,
             });
-            Ok(Response::builder()
-                .header("content-type", "application/json")
-                .body(Full::new(Bytes::from(serde_json::to_vec(&json).unwrap())))
-                .unwrap())
+            Ok(json_ok(serde_json::to_vec(&json).unwrap()))
         }
 
         (&Method::GET, "/schema") => {
             let schema = state.schema.read().unwrap().clone();
             match schema {
-                Some(bytes) => Ok(Response::builder()
-                    .header("content-type", "application/json")
-                    .body(Full::new(Bytes::from(bytes)))
-                    .unwrap()),
-                None => Ok(Response::builder()
-                    .status(StatusCode::NOT_FOUND)
-                    .header("content-type", "application/json")
-                    .body(Full::new(Bytes::from("{\"error\":\"no schema available\"}")))
-                    .unwrap()),
+                Some(bytes) => Ok(json_ok(bytes)),
+                None => Ok(json_error(StatusCode::NOT_FOUND, "no schema available")),
             }
         }
 
         (&Method::GET, "/health") => {
             let loaded = state.pipeline.read().unwrap().is_some();
             if loaded {
-                Ok(Response::new(Full::new(Bytes::from("{\"status\":\"ok\"}"))))
+                Ok(json_ok(Bytes::from_static(b"{\"status\":\"ok\"}")))
             } else {
                 Ok(Response::builder()
                     .status(StatusCode::SERVICE_UNAVAILABLE)
                     .header("content-type", "application/json")
-                    .body(Full::new(Bytes::from("{\"status\":\"loading\"}")))
+                    .body(Full::new(Bytes::from_static(b"{\"status\":\"loading\"}")))
                     .unwrap())
             }
         }

@@ -50,14 +50,18 @@ fn tensor_decode(bytes: &[u8]) -> anyhow::Result<(Vec<usize>, Vec<f32>)> {
     Ok((shape, data))
 }
 
+async fn require_target(state: &AppState, target: &str) -> Result<edgeflow_core::Target, ApiError> {
+    state.store.get_target(target).await?
+        .ok_or_else(|| anyhow::anyhow!("target '{target}' not registered").into())
+}
+
 // ── GET /targets/:target/model ────────────────────────────────────────────────
 
 async fn target_model_status(
     State(state): State<AppState>,
     Path(target): Path<String>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let rec = state.store.get_target(&target).await?
-        .ok_or_else(|| anyhow::anyhow!("target '{target}' not registered"))?;
+    let rec = require_target(&state, &target).await?;
 
     let url = format!("{}/model", rec.address);
     let resp = state.http_client.get(&url).send().await
@@ -79,8 +83,7 @@ async fn target_health(
     State(state): State<AppState>,
     Path(target): Path<String>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let rec = state.store.get_target(&target).await?
-        .ok_or_else(|| anyhow::anyhow!("target '{target}' not registered"))?;
+    let rec = require_target(&state, &target).await?;
 
     let url = format!("{}/health", rec.address);
     let resp = state.http_client.get(&url)
@@ -100,8 +103,7 @@ async fn target_schema(
     State(state): State<AppState>,
     Path(target): Path<String>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let rec = state.store.get_target(&target).await?
-        .ok_or_else(|| anyhow::anyhow!("target '{target}' not registered"))?;
+    let rec = require_target(&state, &target).await?;
 
     let url = format!("{}/schema", rec.address);
     let resp = state.http_client.get(&url).send().await
@@ -129,8 +131,7 @@ async fn infer_playground(
     Path(target): Path<String>,
     Json(req): Json<PlaygroundRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let rec = state.store.get_target(&target).await?
-        .ok_or_else(|| anyhow::anyhow!("target '{target}' not registered"))?;
+    let rec = require_target(&state, &target).await?;
 
     // Send raw packed floats — same format as the Python client (struct.pack('<Nf', ...)).
     // The preprocess WASM (FloatBytesToTensor) expects this, not a tensor-encoded header.
