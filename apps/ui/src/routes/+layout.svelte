@@ -44,13 +44,8 @@
 
     <!-- Top bar -->
     <header class="h-12 shrink-0 bg-white border-b border-gray-100 flex items-center px-6 gap-2">
-      {#if current}
-        <i class="{current.icon} text-sage text-sm"></i>
-        <span class="text-sm font-semibold text-gray-700">{current.label}</span>
-      {:else}
-        <i class="fa-solid fa-house text-sage text-sm"></i>
-        <span class="text-sm font-semibold text-gray-700">Home</span>
-      {/if}
+      {#if !current}<i class="fa-solid fa-house text-sage text-sm"></i>{/if}
+      <span class="text-sm font-semibold text-gray-700">{current?.label ?? 'Home'}</span>
     </header>
 
     <!-- Page content -->

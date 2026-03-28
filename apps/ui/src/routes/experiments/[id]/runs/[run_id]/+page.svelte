@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { runs, metrics, artifacts, models, runTag, type Run, type Metric, type FileInfo } from '$lib/api';
+  import { runs, experiments, metrics, artifacts, models, runTag, type Run, type Metric, type FileInfo } from '$lib/api';
   import ErrorCard from '$lib/components/ErrorCard.svelte';
   import BreadcrumbNav from '$lib/components/BreadcrumbNav.svelte';
   import StatusBadge from '$lib/components/StatusBadge.svelte';
@@ -8,6 +8,7 @@
   export let data: { run_id: string };
 
   let run: Run | null = null;
+  let experimentName = '';
   let metricKeys: string[] = [];
   let selectedMetric = '';
   let metricHistory: Metric[] = [];
@@ -21,6 +22,8 @@
     try {
       const res = await runs.get(run_id);
       run = res.run;
+      const expRes = await experiments.get(run.info.experiment_id);
+      experimentName = expRes.experiment?.name ?? run.info.experiment_id;
       promoted = runTag(run, 'edgeflow.promoted') === 'true';
       metricKeys = [...new Set(run.data.metrics.map(m => m.key))];
       if (metricKeys.length > 0) {
@@ -68,7 +71,7 @@
 {:else if run}
   <BreadcrumbNav items={[
     { label: 'Experiments', href: '/experiments' },
-    { label: run.info.experiment_id, href: `/experiments/${run.info.experiment_id}` },
+    { label: experimentName, href: `/experiments/${run.info.experiment_id}` },
     { label: run.info.run_name ?? run.info.run_id.slice(0, 8) },
   ]} />
 
