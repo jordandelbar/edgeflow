@@ -7,6 +7,7 @@ mod tensor;
 mod wasm;
 
 use std::sync::{Arc, RwLock};
+use std::time::Duration;
 use anyhow::{Context, Result};
 use client::EdgeflowClient;
 use edgeflow_common::{backoff::retry_forever, shutdown_signal};
@@ -86,7 +87,53 @@ async fn main() -> Result<()> {
         async move { client.register_target(&target, &self_address).await }
     })
     .await;
-    tracing::info!("registered — waiting for /upgrade calls");
+    tracing::info!("registered — polling for deployments");
+
+    // Background task: heartbeat every 30 s, poll for pending deployments every 5 s.
+    let poll_state  = state.clone();
+    let poll_client = client.clone();
+    let poll_target = target.clone();
+    let poll_cancel = cancel.clone();
+    tokio::spawn(async move {
+        let mut heartbeat = tokio::time::interval(Duration::from_secs(30));
+        let mut poll     = tokio::time::interval(Duration::from_secs(5));
+        // Don't fire both timers immediately on start — stagger them.
+        heartbeat.tick().await;
+
+        loop {
+            tokio::select! {
+                _ = poll_cancel.cancelled() => break,
+
+                _ = heartbeat.tick() => {
+                    if let Err(e) = poll_client.heartbeat(&poll_target).await {
+                        tracing::warn!("heartbeat failed: {e}");
+                    }
+                }
+
+                _ = poll.tick() => {
+                    match poll_client.poll_pending(&poll_target).await {
+                        Ok(Some(instr)) => {
+                            tracing::info!(
+                                run_id = %instr.run_id,
+                                deployment_id = %instr.deployment_id,
+                                "picked up pending deployment via poll"
+                            );
+                            let pipeline   = poll_state.pipeline.clone();
+                            let model_info = poll_state.model_info.clone();
+                            let schema     = poll_state.schema.clone();
+                            let client     = poll_client.clone();
+                            let tgt        = poll_target.clone();
+                            tokio::task::spawn_blocking(move || {
+                                server::load_and_swap(instr, pipeline, model_info, schema, client, tgt);
+                            });
+                        }
+                        Ok(None) => {}
+                        Err(e) => tracing::warn!("deployment poll failed: {e}"),
+                    }
+                }
+            }
+        }
+    });
 
     cancel.cancelled().await;
     tracing::info!("inference service stopped");

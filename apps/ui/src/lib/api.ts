@@ -88,12 +88,16 @@ export type Deployment = {
   created_at: number;
 };
 
+export type TargetHealth = 'healthy' | 'stale' | 'unhealthy' | 'unknown';
+
 export type Target = {
   target: string;
   address: string;
   pod_name: string | null;
   node: string | null;
   registered_at: number;
+  last_seen: number | null;
+  health: TargetHealth;
 };
 
 export type ResourceSettings = {

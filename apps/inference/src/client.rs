@@ -50,6 +50,43 @@ impl EdgeflowClient {
         Ok(())
     }
 
+    /// Record a heartbeat so the server knows this target is alive.
+    pub async fn heartbeat(&self, target: &str) -> Result<()> {
+        let url = format!("{}/api/v1/targets/{}/heartbeat", self.server, target);
+        self.client
+            .post(&url)
+            .send()
+            .await
+            .context("failed to send heartbeat")?
+            .error_for_status()
+            .context("server rejected heartbeat")?;
+        Ok(())
+    }
+
+    /// Poll for the oldest pending deployment for this target. Returns None if
+    /// there is nothing to do.
+    pub async fn poll_pending(&self, target: &str) -> Result<Option<crate::server::DeployInstruction>> {
+        let url = format!("{}/api/v1/targets/{}/pending", self.server, target);
+        let resp: serde_json::Value = self.client
+            .get(&url)
+            .send()
+            .await
+            .context("failed to poll for pending deployment")?
+            .error_for_status()
+            .context("server error on pending poll")?
+            .json()
+            .await?;
+
+        let dep = &resp["deployment"];
+        if dep.is_null() {
+            return Ok(None);
+        }
+        Ok(Some(crate::server::DeployInstruction {
+            run_id:        dep["run_id"].as_str().context("missing run_id")?.to_string(),
+            deployment_id: dep["deployment_id"].as_str().context("missing deployment_id")?.to_string(),
+        }))
+    }
+
     /// Kept for backwards-compat / dev polling.
     #[allow(dead_code)]
     pub async fn latest_run_id(&self, target: &str) -> Result<String> {

@@ -102,6 +102,12 @@ pub async fn serve(state: ServerState, addr: String, cancel: CancellationToken) 
     Ok(())
 }
 
+/// Shared by the HTTP `/upgrade` handler and the background polling loop.
+pub struct DeployInstruction {
+    pub run_id: String,
+    pub deployment_id: String,
+}
+
 #[derive(Deserialize)]
 struct UpgradeRequest {
     run_id: String,
@@ -177,13 +183,17 @@ async fn handle(
             );
 
             // Spawn background task — returns 202 immediately.
+            let instr = DeployInstruction {
+                run_id: upgrade_req.run_id,
+                deployment_id: upgrade_req.deployment_id,
+            };
             let pipeline = state.pipeline.clone();
             let model_info = state.model_info.clone();
             let schema = state.schema.clone();
             let client = state.client.clone();
             let target = state.target.clone();
             tokio::task::spawn_blocking(move || {
-                load_and_swap(upgrade_req, pipeline, model_info, schema, client, target);
+                load_and_swap(instr, pipeline, model_info, schema, client, target);
             });
 
             Ok(json_ok(Bytes::from_static(b"{\"status\":\"loading\"}")))
@@ -239,8 +249,8 @@ async fn handle(
 
 /// Blocking function: download artifacts, build new Pipeline, swap atomically.
 /// Runs in a `spawn_blocking` thread so wasmtime and ORT are happy.
-fn load_and_swap(
-    req: UpgradeRequest,
+pub fn load_and_swap(
+    req: DeployInstruction,
     shared_pipeline: Arc<RwLock<Option<Arc<Mutex<Pipeline>>>>>,
     shared_model_info: Arc<RwLock<Option<ModelInfo>>>,
     shared_schema: Arc<RwLock<Option<Vec<u8>>>>,

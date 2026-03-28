@@ -22,6 +22,8 @@ pub fn router() -> Router<AppState> {
         .route("/targets/:target/model", get(target_model_status))
         .route("/targets/:target/schema", get(target_schema))
         .route("/targets/:target/health", get(target_health))
+        .route("/targets/:target/heartbeat", post(target_heartbeat))
+        .route("/targets/:target/pending", get(target_pending))
         .route("/targets/:target/infer/playground", post(infer_playground))
         .route("/targets/:target", delete(teardown_target))
         .route("/nodes", get(list_nodes))
@@ -95,6 +97,26 @@ async fn target_health(
         .map_err(|e| anyhow::anyhow!("failed to parse health response: {e}"))?;
 
     Ok(Json(json))
+}
+
+// ── POST /targets/:target/heartbeat ──────────────────────────────────────────
+
+async fn target_heartbeat(
+    State(state): State<AppState>,
+    Path(target): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    state.store.heartbeat_target(&target).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// ── GET /targets/:target/pending ──────────────────────────────────────────────
+
+async fn target_pending(
+    State(state): State<AppState>,
+    Path(target): Path<String>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let dep = state.store.get_pending_deployment_for_target(&target).await?;
+    Ok(Json(serde_json::json!({ "deployment": dep })))
 }
 
 // ── GET /targets/:target/schema ───────────────────────────────────────────────

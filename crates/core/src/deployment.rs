@@ -52,6 +52,31 @@ pub struct ResourceSettings {
     pub max_concurrent: Option<i64>,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TargetHealth {
+    /// No heartbeat ever recorded (old pod, newly registered device).
+    Unknown,
+    /// Last heartbeat within 2× the 30 s interval.
+    Healthy,
+    /// Heartbeat overdue but recent enough that it may recover (60 s – 5 min).
+    Stale,
+    /// No heartbeat for > 5 min — device is almost certainly down.
+    Unhealthy,
+}
+
+impl TargetHealth {
+    pub fn from_last_seen(last_seen: Option<i64>) -> Self {
+        let Some(ts) = last_seen else { return Self::Unknown };
+        let age_secs = (chrono::Utc::now().timestamp_millis() - ts).max(0) / 1000;
+        match age_secs {
+            0..=59   => Self::Healthy,
+            60..=299 => Self::Stale,
+            _        => Self::Unhealthy,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Target {
     pub target: String,
@@ -59,5 +84,7 @@ pub struct Target {
     pub pod_name: Option<String>,
     pub node: Option<String>,
     pub registered_at: i64,
+    pub last_seen: Option<i64>,
+    pub health: TargetHealth,
     pub resources: ResourceSettings,
 }

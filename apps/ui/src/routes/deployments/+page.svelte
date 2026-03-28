@@ -1,12 +1,14 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { deployments, targets, runs, type Deployment, type ModelStatus } from '$lib/api';
+  import { deployments, targets, runs, type Deployment, type ModelStatus, type TargetHealth } from '$lib/api';
   import ErrorCard from '$lib/components/ErrorCard.svelte';
   import DeployStateBadge from '$lib/components/DeployStateBadge.svelte';
 
   let byTarget: Record<string, Deployment[]> = {};
   let targetList: string[] = [];
   let nodeForTarget: Record<string, string | null> = {};
+  let targetHealth: Record<string, TargetHealth> = {};
+  let lastSeenAt: Record<string, number | null> = {};
   let modelStatus: Record<string, ModelStatus | null> = {};
   let runExpId: Record<string, string> = {};  // run_id → experiment_id for linking
   let podHealth: Record<string, 'up' | 'down' | 'checking'> = {};
@@ -63,8 +65,12 @@
       // Update node info from target records (preserved across refreshes)
       for (const tg of (tgRes.targets ?? [])) {
         nodeForTarget[tg.target] = tg.node;
+        targetHealth[tg.target]  = tg.health;
+        lastSeenAt[tg.target]    = tg.last_seen;
       }
       nodeForTarget = nodeForTarget;
+      targetHealth  = targetHealth;
+      lastSeenAt    = lastSeenAt;
 
       // Init state only for targets we haven't seen before — preserves
       // expanded panels and playground inputs across refreshes.
@@ -180,6 +186,20 @@
   function fmt(value: number | string) {
     return new Date(value).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
   }
+
+  function fmtAgo(ms: number): string {
+    const secs = Math.floor((Date.now() - ms) / 1000);
+    if (secs < 60)   return `${secs}s ago`;
+    if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
+    return `${Math.floor(secs / 3600)}h ago`;
+  }
+
+  const healthDot: Record<TargetHealth, { colour: string; label: string }> = {
+    healthy:   { colour: 'text-sage',     label: 'healthy'   },
+    stale:     { colour: 'text-amber-400', label: 'stale'    },
+    unhealthy: { colour: 'text-red-400',  label: 'unhealthy' },
+    unknown:   { colour: 'text-gray-300', label: 'unknown'   },
+  };
 </script>
 
 {#if error}
@@ -228,17 +248,25 @@
             {@const status = modelStatus[t]}
             {@const ph = podHealth[t]}
             {@const pg = playground[t]}
+            {@const ls = lastSeenAt[t]}
+            {@const hs = targetHealth[t]}
 
             <!-- Target row -->
             <tr class="border-b border-gray-50 last:border-0 hover:bg-gray-50/50 transition-colors">
-              <!-- Health dot -->
+              <!-- Health dot: server-computed from heartbeat when available, HTTP probe fallback -->
               <td class="pl-4 pr-2 py-3">
-                {#if ph === 'checking'}
-                  <i class="fa-solid fa-spinner fa-spin text-gray-300 text-xs"></i>
+                {#if hs && hs !== 'unknown'}
+                  {@const dot = healthDot[hs]}
+                  <i class="fa-solid fa-circle text-xs {dot.colour}"
+                     title="{dot.label}{ls ? ` — heartbeat ${fmtAgo(ls)}` : ''}"></i>
+                {:else if ph === 'checking'}
+                  <i class="fa-solid fa-spinner fa-spin text-gray-300 text-xs" title="checking…"></i>
                 {:else if ph === 'up'}
                   <i class="fa-solid fa-circle text-sage text-xs" title="healthy"></i>
-                {:else}
+                {:else if ph === 'down'}
                   <i class="fa-solid fa-circle text-red-400 text-xs" title="unreachable"></i>
+                {:else}
+                  <i class="fa-solid fa-circle text-gray-300 text-xs" title="unknown"></i>
                 {/if}
               </td>
 

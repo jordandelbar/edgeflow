@@ -527,9 +527,17 @@ impl Store for SqliteStore {
         Ok(())
     }
 
+    async fn heartbeat_target(&self, target: &str) -> Result<()> {
+        let now = chrono::Utc::now().timestamp_millis();
+        sqlx::query("UPDATE targets SET last_seen = ? WHERE target = ?")
+            .bind(now).bind(target)
+            .execute(&self.pool).await?;
+        Ok(())
+    }
+
     async fn get_target(&self, target: &str) -> Result<Option<Target>> {
         let row = sqlx::query(
-            "SELECT target, address, pod_name, registered_at, node,
+            "SELECT target, address, pod_name, registered_at, last_seen, node,
                     cpu_request, memory_request, memory_limit, max_concurrent
              FROM targets WHERE target = ?"
         )
@@ -537,42 +545,52 @@ impl Store for SqliteStore {
         .fetch_optional(&self.pool)
         .await?;
 
-        Ok(row.map(|r| Target {
-            target:       r.get("target"),
-            address:      r.get("address"),
-            pod_name:     r.get("pod_name"),
-            node:         r.get("node"),
-            registered_at: r.get("registered_at"),
-            resources: ResourceSettings {
-                cpu_request:    r.get("cpu_request"),
-                memory_request: r.get("memory_request"),
-                memory_limit:   r.get("memory_limit"),
-                max_concurrent: r.get("max_concurrent"),
-            },
+        Ok(row.map(|r| {
+            let last_seen: Option<i64> = r.get("last_seen");
+            Target {
+                target:        r.get("target"),
+                address:       r.get("address"),
+                pod_name:      r.get("pod_name"),
+                node:          r.get("node"),
+                registered_at: r.get("registered_at"),
+                last_seen,
+                health: TargetHealth::from_last_seen(last_seen),
+                resources: ResourceSettings {
+                    cpu_request:    r.get("cpu_request"),
+                    memory_request: r.get("memory_request"),
+                    memory_limit:   r.get("memory_limit"),
+                    max_concurrent: r.get("max_concurrent"),
+                },
+            }
         }))
     }
 
     async fn list_targets(&self) -> Result<Vec<Target>> {
         let rows = sqlx::query(
-            "SELECT target, address, pod_name, registered_at, node,
+            "SELECT target, address, pod_name, registered_at, last_seen, node,
                     cpu_request, memory_request, memory_limit, max_concurrent
              FROM targets ORDER BY registered_at DESC"
         )
         .fetch_all(&self.pool)
         .await?;
 
-        Ok(rows.iter().map(|r| Target {
-            target:       r.get("target"),
-            address:      r.get("address"),
-            pod_name:     r.get("pod_name"),
-            node:         r.get("node"),
-            registered_at: r.get("registered_at"),
-            resources: ResourceSettings {
-                cpu_request:    r.get("cpu_request"),
-                memory_request: r.get("memory_request"),
-                memory_limit:   r.get("memory_limit"),
-                max_concurrent: r.get("max_concurrent"),
-            },
+        Ok(rows.iter().map(|r| {
+            let last_seen: Option<i64> = r.get("last_seen");
+            Target {
+                target:        r.get("target"),
+                address:       r.get("address"),
+                pod_name:      r.get("pod_name"),
+                node:          r.get("node"),
+                registered_at: r.get("registered_at"),
+                last_seen,
+                health: TargetHealth::from_last_seen(last_seen),
+                resources: ResourceSettings {
+                    cpu_request:    r.get("cpu_request"),
+                    memory_request: r.get("memory_request"),
+                    memory_limit:   r.get("memory_limit"),
+                    max_concurrent: r.get("max_concurrent"),
+                },
+            }
         }).collect())
     }
 
