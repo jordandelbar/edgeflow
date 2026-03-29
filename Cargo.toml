@@ -5,6 +5,7 @@ members = [
     "crates/common",
     "apps/server",
     "apps/inference",
+    "apps/cli",
 ]
 resolver = "2"
 

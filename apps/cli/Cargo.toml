@@ -1,0 +1,18 @@
+[package]
+name = "edgeflow-cli"
+version = "0.1.0"
+edition = "2021"
+description = "edgeflow command-line interface"
+
+[[bin]]
+name = "edgeflow"
+path = "src/main.rs"
+
+[dependencies]
+clap        = { version = "4", features = ["derive", "env"] }
+reqwest     = { version = "0.12", features = ["blocking", "json"] }
+serde       = { workspace = true }
+serde_json  = { workspace = true }
+anyhow      = { workspace = true }
+comfy-table = "7"
+chrono      = { workspace = true }
