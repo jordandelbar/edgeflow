@@ -1,8 +1,8 @@
+use super::fmt_ts;
+use crate::api::Api;
 use anyhow::Result;
 use clap::Subcommand;
-use comfy_table::{Table, presets::UTF8_BORDERS_ONLY};
-use crate::api::Api;
-use super::fmt_ts;
+use comfy_table::{presets::UTF8_BORDERS_ONLY, Table};
 
 #[derive(Subcommand)]
 pub enum Cmd {
@@ -38,7 +38,12 @@ fn list(api: &Api, health_filter: Option<&str>) -> Result<()> {
     }
 
     if targets.is_empty() {
-        println!("No targets{}.", health_filter.map(|s| format!(" with health '{s}'")).unwrap_or_default());
+        println!(
+            "No targets{}.",
+            health_filter
+                .map(|s| format!(" with health '{s}'"))
+                .unwrap_or_default()
+        );
         return Ok(());
     }
 
@@ -47,7 +52,8 @@ fn list(api: &Api, health_filter: Option<&str>) -> Result<()> {
     table.set_header(["Target", "Health", "Node", "Last seen"]);
 
     for t in &targets {
-        let last_seen = t["last_seen"].as_i64()
+        let last_seen = t["last_seen"]
+            .as_i64()
             .map(|ms| fmt_ts(ms))
             .unwrap_or_else(|| "never".into());
 

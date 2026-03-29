@@ -1,13 +1,13 @@
+use super::ApiError;
+use crate::state::AppState;
 use axum::{
     extract::{Query, State},
     routing::{get, post},
     Json, Router,
 };
-use serde::Deserialize;
 use edgeflow_core::{RunStatus, RunTag};
 use edgeflow_store::Store;
-use crate::state::AppState;
-use super::ApiError;
+use serde::Deserialize;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -33,12 +33,15 @@ async fn create_run(
     State(state): State<AppState>,
     Json(req): Json<CreateRunRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let run = state.store.create_run(
-        &req.experiment_id,
-        req.run_name.as_deref(),
-        req.start_time,
-        req.tags.unwrap_or_default(),
-    ).await?;
+    let run = state
+        .store
+        .create_run(
+            &req.experiment_id,
+            req.run_name.as_deref(),
+            req.start_time,
+            req.tags.unwrap_or_default(),
+        )
+        .await?;
     Ok(Json(serde_json::json!({ "run": run })))
 }
 
@@ -67,12 +70,15 @@ async fn update_run(
     State(state): State<AppState>,
     Json(req): Json<UpdateRunRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let info = state.store.update_run(
-        &req.run_id,
-        req.status.unwrap_or(RunStatus::Running),
-        req.end_time,
-        req.run_name.as_deref(),
-    ).await?;
+    let info = state
+        .store
+        .update_run(
+            &req.run_id,
+            req.status.unwrap_or(RunStatus::Running),
+            req.end_time,
+            req.run_name.as_deref(),
+        )
+        .await?;
     Ok(Json(serde_json::json!({ "run_info": info })))
 }
 
@@ -108,11 +114,14 @@ async fn search_runs(
     State(state): State<AppState>,
     Json(req): Json<SearchRunsRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let runs = state.store.search_runs(
-        req.experiment_ids,
-        req.filter.as_deref(),
-        req.max_results.unwrap_or(1000),
-    ).await?;
+    let runs = state
+        .store
+        .search_runs(
+            req.experiment_ids,
+            req.filter.as_deref(),
+            req.max_results.unwrap_or(1000),
+        )
+        .await?;
     Ok(Json(serde_json::json!({ "runs": runs })))
 }
 
@@ -127,7 +136,10 @@ async fn log_param(
     State(state): State<AppState>,
     Json(req): Json<LogParamRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    state.store.log_param(&req.run_id, &req.key, &req.value).await?;
+    state
+        .store
+        .log_param(&req.run_id, &req.key, &req.value)
+        .await?;
     Ok(Json(serde_json::json!({})))
 }
 
@@ -142,6 +154,9 @@ async fn set_tag(
     State(state): State<AppState>,
     Json(req): Json<SetTagRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    state.store.set_tag(&req.run_id, &req.key, &req.value).await?;
+    state
+        .store
+        .set_tag(&req.run_id, &req.key, &req.value)
+        .await?;
     Ok(Json(serde_json::json!({})))
 }

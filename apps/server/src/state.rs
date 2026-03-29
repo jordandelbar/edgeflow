@@ -1,6 +1,6 @@
+use edgeflow_store::sqlite::SqliteStore;
 use std::path::PathBuf;
 use std::sync::Arc;
-use edgeflow_store::sqlite::SqliteStore;
 
 #[derive(Clone)]
 pub struct AppState {

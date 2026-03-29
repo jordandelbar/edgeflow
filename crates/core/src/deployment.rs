@@ -48,9 +48,9 @@ pub struct Deployment {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ResourceSettings {
-    pub cpu_request:    Option<String>,
+    pub cpu_request: Option<String>,
     pub memory_request: Option<String>,
-    pub memory_limit:   Option<String>,
+    pub memory_limit: Option<String>,
     pub max_concurrent: Option<i64>,
 }
 
@@ -69,12 +69,14 @@ pub enum TargetHealth {
 
 impl TargetHealth {
     pub fn from_last_seen(last_seen: Option<i64>) -> Self {
-        let Some(ts) = last_seen else { return Self::Unknown };
+        let Some(ts) = last_seen else {
+            return Self::Unknown;
+        };
         let age_secs = (chrono::Utc::now().timestamp_millis() - ts).max(0) / 1000;
         match age_secs {
-            0..=59   => Self::Healthy,
+            0..=59 => Self::Healthy,
             60..=299 => Self::Stale,
-            _        => Self::Unhealthy,
+            _ => Self::Unhealthy,
         }
     }
 }

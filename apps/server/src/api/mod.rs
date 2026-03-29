@@ -5,9 +5,13 @@ mod metrics;
 mod model_registry;
 mod runs;
 
-use axum::{http::StatusCode, response::{IntoResponse, Response}, Json};
-use axum::Router;
 use crate::state::AppState;
+use axum::Router;
+use axum::{
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    Json,
+};
 
 /// MLflow-compatible API surface (/api/2.0/mlflow/*)
 pub fn mlflow_router() -> Router<AppState> {
@@ -26,13 +30,11 @@ pub fn mlflow_artifacts_router() -> Router<AppState> {
 
 /// Native edgeflow API (/api/v1/*)
 pub fn v1_router() -> Router<AppState> {
-    Router::new()
-        .merge(deployments::router())
+    Router::new().merge(deployments::router())
 }
 
 /// Unified error type that maps to MLflow-style error JSON.
 pub struct ApiError(anyhow::Error);
-
 
 impl<E: Into<anyhow::Error>> From<E> for ApiError {
     fn from(e: E) -> Self {

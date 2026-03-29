@@ -5,7 +5,9 @@ use anyhow::Result;
 use bytes::Bytes;
 use edgeflow_common::CancellationToken;
 use http_body_util::{BodyExt, Full};
-use hyper::{body::Incoming, server::conn::http1, service::service_fn, Method, Request, Response, StatusCode};
+use hyper::{
+    body::Incoming, server::conn::http1, service::service_fn, Method, Request, Response, StatusCode,
+};
 use hyper_util::rt::TokioIo;
 use serde::Deserialize;
 use tokio::net::TcpListener;
@@ -15,7 +17,10 @@ use crate::client::EdgeflowClient;
 use crate::deployment::{self, ActiveDeployment, DeployInstruction};
 
 fn json_error(status: StatusCode, msg: &str) -> Response<Full<Bytes>> {
-    let body = format!("{{\"error\":{}}}", serde_json::to_string(msg).unwrap_or_default());
+    let body = format!(
+        "{{\"error\":{}}}",
+        serde_json::to_string(msg).unwrap_or_default()
+    );
     Response::builder()
         .status(status)
         .header("content-type", "application/json")
@@ -32,18 +37,18 @@ fn json_ok(body: impl Into<Bytes>) -> Response<Full<Bytes>> {
 
 #[derive(Default)]
 pub struct Metrics {
-    pub requests_total:    AtomicU64,
-    pub requests_active:   AtomicU64,
+    pub requests_total: AtomicU64,
+    pub requests_active: AtomicU64,
     pub requests_rejected: AtomicU64,
-    pub inference_errors:  AtomicU64,
+    pub inference_errors: AtomicU64,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ModelInfo {
-    pub run_id:        String,
+    pub run_id: String,
     pub deployment_id: String,
-    pub target:        String,
-    pub loaded_at:     String,
+    pub target: String,
+    pub loaded_at: String,
 }
 
 pub struct ServerState {
@@ -54,21 +59,21 @@ pub struct ServerState {
     /// lock) only waits for the cheap clone — not for in-flight inference.
     /// The inner Mutex serialises concurrent infer calls on the same Pipeline
     /// instance (required because wasmtime Store needs &mut).
-    pub active:    Arc<RwLock<Option<Arc<ActiveDeployment>>>>,
+    pub active: Arc<RwLock<Option<Arc<ActiveDeployment>>>>,
     pub semaphore: Arc<Semaphore>,
-    pub metrics:   Arc<Metrics>,
-    pub client:    Arc<EdgeflowClient>,
-    pub target:    String,
+    pub metrics: Arc<Metrics>,
+    pub client: Arc<EdgeflowClient>,
+    pub target: String,
 }
 
 impl Clone for ServerState {
     fn clone(&self) -> Self {
         Self {
-            active:    self.active.clone(),
+            active: self.active.clone(),
             semaphore: self.semaphore.clone(),
-            metrics:   self.metrics.clone(),
-            client:    self.client.clone(),
-            target:    self.target.clone(),
+            metrics: self.metrics.clone(),
+            client: self.client.clone(),
+            target: self.target.clone(),
         }
     }
 }
@@ -102,7 +107,7 @@ pub async fn serve(state: ServerState, addr: String, cancel: CancellationToken) 
 
 #[derive(Deserialize)]
 struct UpgradeRequest {
-    run_id:        String,
+    run_id: String,
     deployment_id: String,
 }
 
@@ -116,21 +121,36 @@ async fn handle(
             let permit = match state.semaphore.clone().try_acquire_owned() {
                 Ok(p) => p,
                 Err(_) => {
-                    state.metrics.requests_rejected.fetch_add(1, Ordering::Relaxed);
-                    return Ok(json_error(StatusCode::TOO_MANY_REQUESTS, "too many concurrent requests"));
+                    state
+                        .metrics
+                        .requests_rejected
+                        .fetch_add(1, Ordering::Relaxed);
+                    return Ok(json_error(
+                        StatusCode::TOO_MANY_REQUESTS,
+                        "too many concurrent requests",
+                    ));
                 }
             };
 
             state.metrics.requests_total.fetch_add(1, Ordering::Relaxed);
-            state.metrics.requests_active.fetch_add(1, Ordering::Relaxed);
+            state
+                .metrics
+                .requests_active
+                .fetch_add(1, Ordering::Relaxed);
 
             // Acquire read lock only long enough to clone the inner Arc.
             let active = state.active.read().unwrap().as_ref().map(Arc::clone);
 
             let Some(active) = active else {
-                state.metrics.requests_active.fetch_sub(1, Ordering::Relaxed);
+                state
+                    .metrics
+                    .requests_active
+                    .fetch_sub(1, Ordering::Relaxed);
                 drop(permit);
-                return Ok(json_error(StatusCode::SERVICE_UNAVAILABLE, "no model loaded yet"));
+                return Ok(json_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "no model loaded yet",
+                ));
             };
 
             let body = req.collect().await?.to_bytes();
@@ -150,7 +170,10 @@ async fn handle(
                 Err(e) => {
                     metrics.inference_errors.fetch_add(1, Ordering::Relaxed);
                     tracing::error!("inference error: {e:#}");
-                    Ok(json_error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))
+                    Ok(json_error(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        &e.to_string(),
+                    ))
                 }
             }
         }
@@ -160,7 +183,10 @@ async fn handle(
             let upgrade_req: UpgradeRequest = match serde_json::from_slice(&body) {
                 Ok(r) => r,
                 Err(e) => {
-                    return Ok(json_error(StatusCode::BAD_REQUEST, &format!("invalid request: {e}")));
+                    return Ok(json_error(
+                        StatusCode::BAD_REQUEST,
+                        &format!("invalid request: {e}"),
+                    ));
                 }
             };
 
@@ -171,7 +197,7 @@ async fn handle(
             );
 
             let instr = DeployInstruction {
-                run_id:        upgrade_req.run_id,
+                run_id: upgrade_req.run_id,
                 deployment_id: upgrade_req.deployment_id,
             };
             let active = state.active.clone();
@@ -185,10 +211,18 @@ async fn handle(
         }
 
         (&Method::GET, "/model") => {
-            let info = state.active.read().unwrap().as_ref().map(|a| a.model_info.clone());
+            let info = state
+                .active
+                .read()
+                .unwrap()
+                .as_ref()
+                .map(|a| a.model_info.clone());
             match info {
                 Some(i) => Ok(json_ok(serde_json::to_vec(&i).unwrap_or_default())),
-                None => Ok(json_error(StatusCode::SERVICE_UNAVAILABLE, "no model loaded")),
+                None => Ok(json_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "no model loaded",
+                )),
             }
         }
 
@@ -205,7 +239,12 @@ async fn handle(
         }
 
         (&Method::GET, "/schema") => {
-            let schema = state.active.read().unwrap().as_ref().and_then(|a| a.schema.clone());
+            let schema = state
+                .active
+                .read()
+                .unwrap()
+                .as_ref()
+                .and_then(|a| a.schema.clone());
             match schema {
                 Some(bytes) => Ok(json_ok(bytes)),
                 None => Ok(json_error(StatusCode::NOT_FOUND, "no schema available")),

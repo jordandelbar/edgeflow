@@ -16,5 +16,9 @@ pub fn fmt_ts(ms: i64) -> String {
 
 /// Truncate a string to at most `n` characters.
 pub fn trunc(s: &str, n: usize) -> String {
-    if s.len() <= n { s.to_string() } else { format!("{}…", &s[..n - 1]) }
+    if s.len() <= n {
+        s.to_string()
+    } else {
+        format!("{}…", &s[..n - 1])
+    }
 }

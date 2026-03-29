@@ -10,7 +10,6 @@
 ///
 /// Legacy componentize-py components (transform world, no init export) fall
 /// back to the original dynamic Val API — they are deprecated and rare.
-
 use anyhow::{Context, Result};
 use wasmtime::{
     component::{Component, Func, Linker, Val},
@@ -81,19 +80,19 @@ impl WasmTransform {
             .context("failed to add WASI to component linker")?;
 
         let state = State {
-            ctx: WasiCtxBuilder::new().inherit_stdout().inherit_stderr().build(),
+            ctx: WasiCtxBuilder::new()
+                .inherit_stdout()
+                .inherit_stderr()
+                .build(),
             table: ResourceTable::new(),
         };
         let mut store = Store::new(engine, state);
 
         let inner = if let Some(cfg_bytes) = config {
             // Standard Rust pipeline: static bindings give us a memcpy boundary.
-            let component_bindings = bindings::ConfigurableTransform::instantiate(
-                &mut store,
-                &component,
-                &linker,
-            )
-            .context("failed to instantiate standard WASM component")?;
+            let component_bindings =
+                bindings::ConfigurableTransform::instantiate(&mut store, &component, &linker)
+                    .context("failed to instantiate standard WASM component")?;
 
             component_bindings
                 .call_init(&mut store, cfg_bytes)

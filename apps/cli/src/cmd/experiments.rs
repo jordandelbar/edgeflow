@@ -1,8 +1,8 @@
+use super::fmt_ts;
+use crate::api::Api;
 use anyhow::Result;
 use clap::Subcommand;
-use comfy_table::{Table, presets::UTF8_BORDERS_ONLY};
-use crate::api::Api;
-use super::fmt_ts;
+use comfy_table::{presets::UTF8_BORDERS_ONLY, Table};
 
 #[derive(Subcommand)]
 pub enum Cmd {
@@ -49,7 +49,9 @@ fn list(api: &Api) -> Result<()> {
 
 fn runs(api: &Api, experiment: &str) -> Result<()> {
     let exp = api.resolve_experiment(experiment)?;
-    let exp_id = exp["experiment"]["experiment_id"].as_str().unwrap_or(experiment);
+    let exp_id = exp["experiment"]["experiment_id"]
+        .as_str()
+        .unwrap_or(experiment);
     let name = exp["experiment"]["name"].as_str().unwrap_or(experiment);
 
     let res = api.search_runs(exp_id)?;
@@ -73,18 +75,18 @@ fn runs(api: &Api, experiment: &str) -> Result<()> {
         let status = info["status"].as_str().unwrap_or("—");
         let start = info["start_time"].as_i64().unwrap_or(0);
         let end = info["end_time"].as_i64();
-        let duration = end.map(|e| {
-            let secs = (e - start) / 1000;
-            if secs < 60 { format!("{secs}s") } else { format!("{}m{}s", secs / 60, secs % 60) }
-        }).unwrap_or_else(|| "running".into());
+        let duration = end
+            .map(|e| {
+                let secs = (e - start) / 1000;
+                if secs < 60 {
+                    format!("{secs}s")
+                } else {
+                    format!("{}m{}s", secs / 60, secs % 60)
+                }
+            })
+            .unwrap_or_else(|| "running".into());
 
-        table.add_row([
-            run_id,
-            run_name,
-            status,
-            &fmt_ts(start),
-            &duration,
-        ]);
+        table.add_row([run_id, run_name, status, &fmt_ts(start), &duration]);
     }
 
     println!("{table}");

@@ -1,8 +1,8 @@
+use super::{fmt_ts, trunc};
+use crate::api::Api;
 use anyhow::Result;
 use clap::Subcommand;
-use comfy_table::{Table, presets::UTF8_BORDERS_ONLY};
-use crate::api::Api;
-use super::{fmt_ts, trunc};
+use comfy_table::{presets::UTF8_BORDERS_ONLY, Table};
 
 #[derive(Subcommand)]
 pub enum Cmd {
@@ -45,18 +45,25 @@ pub enum Cmd {
 
 pub fn run(cmd: Cmd, api: &Api) -> Result<()> {
     match cmd {
-        Cmd::List                       => list(api),
-        Cmd::Versions { name }          => versions(api, &name),
-        Cmd::Register { run_id, name }  => register(api, &run_id, &name),
-        Cmd::Stage { name, version, stage } => stage_cmd(api, &name, &version, &stage),
-        Cmd::Delete { name }            => delete(api, &name),
+        Cmd::List => list(api),
+        Cmd::Versions { name } => versions(api, &name),
+        Cmd::Register { run_id, name } => register(api, &run_id, &name),
+        Cmd::Stage {
+            name,
+            version,
+            stage,
+        } => stage_cmd(api, &name, &version, &stage),
+        Cmd::Delete { name } => delete(api, &name),
         Cmd::DeleteVersion { name, version } => delete_version(api, &name, &version),
     }
 }
 
 fn list(api: &Api) -> Result<()> {
     let res = api.list_registered_models()?;
-    let models = res["registered_models"].as_array().cloned().unwrap_or_default();
+    let models = res["registered_models"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
 
     if models.is_empty() {
         println!("No registered models.");
@@ -71,13 +78,20 @@ fn list(api: &Api) -> Result<()> {
         let name = m["name"].as_str().unwrap_or("—");
         let versions = m["latest_versions"].as_array().cloned().unwrap_or_default();
         let count = versions.len();
-        let latest = versions.iter()
-            .max_by_key(|v| v["version"].as_str().unwrap_or("0").parse::<i64>().unwrap_or(0));
+        let latest = versions.iter().max_by_key(|v| {
+            v["version"]
+                .as_str()
+                .unwrap_or("0")
+                .parse::<i64>()
+                .unwrap_or(0)
+        });
         let (latest_v, stage) = latest
-            .map(|v| (
-                format!("v{}", v["version"].as_str().unwrap_or("?")),
-                v["current_stage"].as_str().unwrap_or("None").to_string(),
-            ))
+            .map(|v| {
+                (
+                    format!("v{}", v["version"].as_str().unwrap_or("?")),
+                    v["current_stage"].as_str().unwrap_or("None").to_string(),
+                )
+            })
             .unwrap_or_else(|| ("—".into(), "—".into()));
 
         table.add_row([
@@ -95,7 +109,10 @@ fn list(api: &Api) -> Result<()> {
 
 fn versions(api: &Api, name: &str) -> Result<()> {
     let res = api.list_model_versions(name)?;
-    let versions = res["model_versions"].as_array().cloned().unwrap_or_default();
+    let versions = res["model_versions"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
 
     if versions.is_empty() {
         println!("No versions for model '{name}'.");

@@ -2,9 +2,9 @@ mod api;
 mod k8s;
 mod state;
 
+use axum::Router;
 use std::path::PathBuf;
 use std::sync::Arc;
-use axum::Router;
 use tower_http::cors::CorsLayer;
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
@@ -19,14 +19,17 @@ use state::AppState;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::registry()
-        .with(tracing_subscriber::EnvFilter::try_from_default_env()
-            .unwrap_or_else(|_| "edgeflow_server=debug,tower_http=debug".into()))
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "edgeflow_server=debug,tower_http=debug".into()),
+        )
         .with(tracing_subscriber::fmt::layer())
         .init();
 
     let cancel = shutdown_signal();
 
-    let data_dir = PathBuf::from(std::env::var("EDGEFLOW_DATA_DIR").unwrap_or_else(|_| "./data".into()));
+    let data_dir =
+        PathBuf::from(std::env::var("EDGEFLOW_DATA_DIR").unwrap_or_else(|_| "./data".into()));
     let artifact_root = data_dir.join("artifacts");
     let db_path = data_dir.join("edgeflow.db");
 
@@ -55,7 +58,8 @@ async fn main() -> anyhow::Result<()> {
                 _ = timeout_cancel.cancelled() => { break; }
             }
 
-            match timeout_state.store
+            match timeout_state
+                .store
                 .get_stale_deployments(&["deploying", "upgrading"], timeout_ms)
                 .await
             {
@@ -67,7 +71,8 @@ async fn main() -> anyhow::Result<()> {
                             state = %d.state.as_str(),
                             "deployment timed out — marking failed"
                         );
-                        let _ = timeout_state.store
+                        let _ = timeout_state
+                            .store
                             .update_deployment_state(&d.deployment_id, DeploymentState::Failed)
                             .await;
                     }
@@ -83,7 +88,9 @@ async fn main() -> anyhow::Result<()> {
         .nest("/api/v1", api::v1_router())
         .nest("/api/2.0/mlflow", api::mlflow_router())
         .nest("/api/2.0/mlflow-artifacts", api::mlflow_artifacts_router())
-        .fallback_service(ServeDir::new(&static_dir).fallback(ServeFile::new(format!("{static_dir}/index.html"))))
+        .fallback_service(
+            ServeDir::new(&static_dir).fallback(ServeFile::new(format!("{static_dir}/index.html"))),
+        )
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state);

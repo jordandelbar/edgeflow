@@ -1,8 +1,8 @@
+use super::fmt_ts;
+use crate::api::Api;
 use anyhow::Result;
 use clap::Subcommand;
-use comfy_table::{Table, presets::UTF8_BORDERS_ONLY};
-use crate::api::Api;
-use super::fmt_ts;
+use comfy_table::{presets::UTF8_BORDERS_ONLY, Table};
 
 #[derive(Subcommand)]
 pub enum Cmd {
@@ -43,7 +43,10 @@ fn list(api: &Api, target: Option<&str>) -> Result<()> {
         let dep_id = d["deployment_id"].as_str().unwrap_or("—");
         let model = match (d["model_name"].as_str(), d["model_version"].as_str()) {
             (Some(n), Some(v)) => format!("{n} v{v}"),
-            _ => d["run_id"].as_str().map(|id| id[..12.min(id.len())].to_string()).unwrap_or_else(|| "—".into()),
+            _ => d["run_id"]
+                .as_str()
+                .map(|id| id[..12.min(id.len())].to_string())
+                .unwrap_or_else(|| "—".into()),
         };
 
         table.add_row([
@@ -65,7 +68,10 @@ fn status(api: &Api, target: &str) -> Result<()> {
 
     let model = match (d["model_name"].as_str(), d["model_version"].as_str()) {
         (Some(n), Some(v)) => format!("{n} v{v}"),
-        _ => d["run_id"].as_str().map(|id| id[..12.min(id.len())].to_string()).unwrap_or_else(|| "—".into()),
+        _ => d["run_id"]
+            .as_str()
+            .map(|id| id[..12.min(id.len())].to_string())
+            .unwrap_or_else(|| "—".into()),
     };
 
     let state = d["state"].as_str().unwrap_or("—");

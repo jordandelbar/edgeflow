@@ -1,3 +1,5 @@
+use super::ApiError;
+use crate::state::AppState;
 use axum::{
     body::Body,
     extract::{Path, Query, Request, State},
@@ -6,13 +8,11 @@ use axum::{
     routing::{get, put},
     Json, Router,
 };
+use edgeflow_store::Store;
 use serde::Deserialize;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt as _;
 use tokio_util::io::ReaderStream;
-use edgeflow_store::Store;
-use crate::state::AppState;
-use super::ApiError;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -22,8 +22,7 @@ pub fn router() -> Router<AppState> {
 
 /// Router for /api/2.0/mlflow-artifacts — handles artifact proxy uploads/downloads.
 pub fn mlflow_artifacts_router() -> Router<AppState> {
-    Router::new()
-        .route("/artifacts/*path", put(upload_artifact))
+    Router::new().route("/artifacts/*path", put(upload_artifact))
 }
 
 #[derive(Deserialize)]
@@ -36,7 +35,10 @@ async fn list_artifacts(
     State(state): State<AppState>,
     Query(q): Query<ListArtifactsQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let files = state.store.list_artifacts(&q.run_id, q.path.as_deref()).await?;
+    let files = state
+        .store
+        .list_artifacts(&q.run_id, q.path.as_deref())
+        .await?;
     let root = state.store.artifact_root(&q.run_id).await?;
     Ok(Json(serde_json::json!({
         "root_uri": root.display().to_string(),
@@ -58,13 +60,19 @@ async fn get_artifact(
     let file_path = root.join(&q.path);
 
     // Prevent path traversal
-    let canonical = file_path.canonicalize().map_err(|_| ApiError::from(anyhow::anyhow!("not found")))?;
-    let canonical_root = root.canonicalize().map_err(|_| ApiError::from(anyhow::anyhow!("not found")))?;
+    let canonical = file_path
+        .canonicalize()
+        .map_err(|_| ApiError::from(anyhow::anyhow!("not found")))?;
+    let canonical_root = root
+        .canonicalize()
+        .map_err(|_| ApiError::from(anyhow::anyhow!("not found")))?;
     if !canonical.starts_with(&canonical_root) {
         return Err(ApiError::from(anyhow::anyhow!("not found")));
     }
 
-    let file = File::open(&canonical).await.map_err(|_| ApiError::from(anyhow::anyhow!("not found")))?;
+    let file = File::open(&canonical)
+        .await
+        .map_err(|_| ApiError::from(anyhow::anyhow!("not found")))?;
     let stream = ReaderStream::new(file);
     let body = Body::from_stream(stream);
 
@@ -82,14 +90,18 @@ async fn upload_artifact(
 ) -> Result<StatusCode, ApiError> {
     let dest = state.artifact_root.join(&rel_path);
     if let Some(parent) = dest.parent() {
-        tokio::fs::create_dir_all(parent).await
+        tokio::fs::create_dir_all(parent)
+            .await
             .map_err(|e| ApiError::from(anyhow::anyhow!("failed to create dirs: {e}")))?;
     }
-    let body_bytes = axum::body::to_bytes(request.into_body(), usize::MAX).await
+    let body_bytes = axum::body::to_bytes(request.into_body(), usize::MAX)
+        .await
         .map_err(|e| ApiError::from(anyhow::anyhow!("{e}")))?;
-    let mut file = tokio::fs::File::create(&dest).await
+    let mut file = tokio::fs::File::create(&dest)
+        .await
         .map_err(|e| ApiError::from(anyhow::anyhow!("{e}")))?;
-    file.write_all(&body_bytes).await
+    file.write_all(&body_bytes)
+        .await
         .map_err(|e| ApiError::from(anyhow::anyhow!("{e}")))?;
     Ok(StatusCode::OK)
 }

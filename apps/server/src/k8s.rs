@@ -1,15 +1,15 @@
 use std::collections::BTreeMap;
 
+use edgeflow_core::ResourceSettings;
 use k8s_openapi::api::apps::v1::{Deployment, DeploymentSpec};
 use k8s_openapi::api::core::v1::{
-    Container, ContainerPort, EnvVar, EnvVarSource, HTTPGetAction, ObjectFieldSelector,
-    PodSpec, PodTemplateSpec, Probe, ResourceRequirements,
+    Container, ContainerPort, EnvVar, EnvVarSource, HTTPGetAction, ObjectFieldSelector, PodSpec,
+    PodTemplateSpec, Probe, ResourceRequirements,
 };
 use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::{LabelSelector, ObjectMeta};
 use k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
 use kube::api::{Api, DeleteParams, ListParams, PostParams};
-use edgeflow_core::ResourceSettings;
 
 /// Sanitise a target name into a valid k8s resource name.
 /// k8s names: lowercase alphanumeric + `-`, max 63 chars.
@@ -19,7 +19,10 @@ fn k8s_name(target: &str) -> String {
         .chars()
         .map(|c| if c.is_alphanumeric() { c } else { '-' })
         .collect();
-    format!("edgeflow-inference-{}", &sanitized[..sanitized.len().min(45)])
+    format!(
+        "edgeflow-inference-{}",
+        &sanitized[..sanitized.len().min(45)]
+    )
 }
 
 /// Create a k8s Deployment for an inference pod serving `target`.
@@ -35,23 +38,33 @@ pub async fn create_inference_pod(target: &str, node: Option<&str>, resources: &
         .unwrap_or_else(|_| "edgeflow-inference:latest".into());
     let server_url = std::env::var("EDGEFLOW_SERVER_URL")
         .unwrap_or_else(|_| "http://edgeflow-server:5000".into());
-    let namespace = std::env::var("EDGEFLOW_NAMESPACE")
-        .unwrap_or_else(|_| "default".into());
-    let pull_policy = std::env::var("EDGEFLOW_IMAGE_PULL_POLICY")
-        .unwrap_or_else(|_| "IfNotPresent".into());
+    let namespace = std::env::var("EDGEFLOW_NAMESPACE").unwrap_or_else(|_| "default".into());
+    let pull_policy =
+        std::env::var("EDGEFLOW_IMAGE_PULL_POLICY").unwrap_or_else(|_| "IfNotPresent".into());
 
     // Per-target resource settings, falling back to env var defaults.
-    let cpu_request = resources.cpu_request.clone()
+    let cpu_request = resources
+        .cpu_request
+        .clone()
         .or_else(|| std::env::var("EDGEFLOW_INFERENCE_CPU_REQUEST").ok())
         .unwrap_or_else(|| "100m".into());
-    let memory_request = resources.memory_request.clone()
+    let memory_request = resources
+        .memory_request
+        .clone()
         .or_else(|| std::env::var("EDGEFLOW_INFERENCE_MEMORY_REQUEST").ok())
         .unwrap_or_else(|| "256Mi".into());
-    let memory_limit = resources.memory_limit.clone()
+    let memory_limit = resources
+        .memory_limit
+        .clone()
         .or_else(|| std::env::var("EDGEFLOW_INFERENCE_MEMORY_LIMIT").ok())
         .unwrap_or_else(|| "512Mi".into());
-    let max_concurrent = resources.max_concurrent
-        .or_else(|| std::env::var("EDGEFLOW_MAX_CONCURRENT_INFER").ok().and_then(|s| s.parse().ok()))
+    let max_concurrent = resources
+        .max_concurrent
+        .or_else(|| {
+            std::env::var("EDGEFLOW_MAX_CONCURRENT_INFER")
+                .ok()
+                .and_then(|s| s.parse().ok())
+        })
         .unwrap_or(8);
     // No CPU limit — throttling degrades inference latency more than an OOM would.
 
@@ -146,13 +159,14 @@ pub async fn create_inference_pod(target: &str, node: Option<&str>, resources: &
                             },
                         ]),
                         resources: Some(ResourceRequirements {
-                            requests: Some([
-                                ("cpu".into(),    Quantity(cpu_request)),
-                                ("memory".into(), Quantity(memory_request)),
-                            ].into()),
-                            limits: Some([
-                                ("memory".into(), Quantity(memory_limit)),
-                            ].into()),
+                            requests: Some(
+                                [
+                                    ("cpu".into(), Quantity(cpu_request)),
+                                    ("memory".into(), Quantity(memory_request)),
+                                ]
+                                .into(),
+                            ),
+                            limits: Some([("memory".into(), Quantity(memory_limit))].into()),
                             ..Default::default()
                         }),
                         readiness_probe: Some(Probe {
@@ -207,8 +221,7 @@ pub async fn create_inference_pod(target: &str, node: Option<&str>, resources: &
 /// Delete the k8s Deployment for `target`.
 /// No-ops gracefully if the cluster is unreachable or the Deployment doesn't exist.
 pub async fn delete_inference_pod(target: &str) {
-    let namespace = std::env::var("EDGEFLOW_NAMESPACE")
-        .unwrap_or_else(|_| "default".into());
+    let namespace = std::env::var("EDGEFLOW_NAMESPACE").unwrap_or_else(|_| "default".into());
 
     let client = match kube::Client::try_default().await {
         Ok(c) => c,
@@ -246,7 +259,9 @@ pub async fn list_nodes() -> Vec<String> {
     };
     let api: Api<k8s_openapi::api::core::v1::Node> = Api::all(client);
     match api.list(&ListParams::default()).await {
-        Ok(list) => list.items.into_iter()
+        Ok(list) => list
+            .items
+            .into_iter()
             .filter_map(|n| n.metadata.name)
             .collect(),
         Err(e) => {

@@ -25,25 +25,42 @@ impl Api {
     }
 
     fn get<T: DeserializeOwned>(&self, url: &str) -> Result<T> {
-        self.client.get(url).send()?.error_for_status()
+        self.client
+            .get(url)
+            .send()?
+            .error_for_status()
             .context("request failed")?
-            .json::<T>().context("failed to parse response")
+            .json::<T>()
+            .context("failed to parse response")
     }
 
     fn get_params<T: DeserializeOwned>(&self, url: &str, params: &[(&str, &str)]) -> Result<T> {
-        self.client.get(url).query(params).send()?.error_for_status()
+        self.client
+            .get(url)
+            .query(params)
+            .send()?
+            .error_for_status()
             .context("request failed")?
-            .json::<T>().context("failed to parse response")
+            .json::<T>()
+            .context("failed to parse response")
     }
 
     fn post<T: DeserializeOwned>(&self, url: &str, body: &Value) -> Result<T> {
-        self.client.post(url).json(body).send()?.error_for_status()
+        self.client
+            .post(url)
+            .json(body)
+            .send()?
+            .error_for_status()
             .context("request failed")?
-            .json::<T>().context("failed to parse response")
+            .json::<T>()
+            .context("failed to parse response")
     }
 
     fn delete(&self, url: &str) -> Result<()> {
-        self.client.delete(url).send()?.error_for_status()
+        self.client
+            .delete(url)
+            .send()?
+            .error_for_status()
             .context("request failed")?;
         Ok(())
     }
@@ -59,7 +76,10 @@ impl Api {
     }
 
     pub fn get_experiment_by_name(&self, name: &str) -> Result<Value> {
-        self.get_params(&self.mlflow("/experiments/get-by-name"), &[("experiment_name", name)])
+        self.get_params(
+            &self.mlflow("/experiments/get-by-name"),
+            &[("experiment_name", name)],
+        )
     }
 
     /// Resolve an experiment by name or ID — tries name first.
@@ -71,9 +91,12 @@ impl Api {
     // ── Runs ──────────────────────────────────────────────────────────────────
 
     pub fn search_runs(&self, experiment_id: &str) -> Result<Value> {
-        self.post(&self.mlflow("/runs/search"), &serde_json::json!({
-            "experiment_ids": [experiment_id],
-        }))
+        self.post(
+            &self.mlflow("/runs/search"),
+            &serde_json::json!({
+                "experiment_ids": [experiment_id],
+            }),
+        )
     }
 
     pub fn get_run(&self, run_id: &str) -> Result<Value> {
@@ -87,10 +110,16 @@ impl Api {
         }
         let exps = self.list_experiments()?;
         for exp in exps["experiments"].as_array().cloned().unwrap_or_default() {
-            let exp_id = exp["experiment_id"].as_str().unwrap_or_default().to_string();
+            let exp_id = exp["experiment_id"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string();
             if let Ok(res) = self.search_runs(&exp_id) {
                 for run in res["runs"].as_array().cloned().unwrap_or_default() {
-                    let id = run["info"]["run_id"].as_str().unwrap_or_default().to_string();
+                    let id = run["info"]["run_id"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .to_string();
                     if id.starts_with(prefix) {
                         return Ok(id);
                     }
@@ -107,48 +136,74 @@ impl Api {
     }
 
     pub fn list_model_versions(&self, name: &str) -> Result<Value> {
-        self.post(&self.mlflow("/model-versions/search"), &serde_json::json!({
-            "filter": format!("name = '{name}'"),
-        }))
+        self.post(
+            &self.mlflow("/model-versions/search"),
+            &serde_json::json!({
+                "filter": format!("name = '{name}'"),
+            }),
+        )
     }
 
     pub fn register_model(&self, run_id: &str, name: &str) -> Result<Value> {
         // Create registered model (idempotent).
-        let _ = self.post::<Value>(&self.mlflow("/registered-models/create"), &serde_json::json!({ "name": name }));
+        let _ = self.post::<Value>(
+            &self.mlflow("/registered-models/create"),
+            &serde_json::json!({ "name": name }),
+        );
         // Create version.
-        self.post(&self.mlflow("/model-versions/create"), &serde_json::json!({
-            "name": name,
-            "run_id": run_id,
-        }))
+        self.post(
+            &self.mlflow("/model-versions/create"),
+            &serde_json::json!({
+                "name": name,
+                "run_id": run_id,
+            }),
+        )
     }
 
     pub fn transition_stage(&self, name: &str, version: &str, stage: &str) -> Result<Value> {
-        self.post(&self.mlflow("/model-versions/transition-stage"), &serde_json::json!({
-            "name": name,
-            "version": version,
-            "stage": stage,
-        }))
+        self.post(
+            &self.mlflow("/model-versions/transition-stage"),
+            &serde_json::json!({
+                "name": name,
+                "version": version,
+                "stage": stage,
+            }),
+        )
     }
 
     pub fn delete_registered_model(&self, name: &str) -> Result<Value> {
-        self.post(&self.mlflow("/registered-models/delete"), &serde_json::json!({ "name": name }))
+        self.post(
+            &self.mlflow("/registered-models/delete"),
+            &serde_json::json!({ "name": name }),
+        )
     }
 
     pub fn delete_model_version(&self, name: &str, version: &str) -> Result<Value> {
-        self.post(&self.mlflow("/model-versions/delete"), &serde_json::json!({
-            "name": name,
-            "version": version,
-        }))
+        self.post(
+            &self.mlflow("/model-versions/delete"),
+            &serde_json::json!({
+                "name": name,
+                "version": version,
+            }),
+        )
     }
 
     // ── Deployments ───────────────────────────────────────────────────────────
 
-    pub fn create_deployment(&self, model_name: &str, model_version: &str, target: &str) -> Result<Value> {
-        self.post(&self.v1("/deployments"), &serde_json::json!({
-            "model_name": model_name,
-            "model_version": model_version,
-            "target": target,
-        }))
+    pub fn create_deployment(
+        &self,
+        model_name: &str,
+        model_version: &str,
+        target: &str,
+    ) -> Result<Value> {
+        self.post(
+            &self.v1("/deployments"),
+            &serde_json::json!({
+                "model_name": model_name,
+                "model_version": model_version,
+                "target": target,
+            }),
+        )
     }
 
     pub fn list_deployments(&self, target: Option<&str>) -> Result<Value> {

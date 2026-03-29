@@ -6,13 +6,13 @@ use crate::tensor;
 use crate::wasm::WasmTransform;
 
 pub struct Pipeline {
-    pre:        Option<WasmTransform>,
-    backend:    Box<dyn InferenceBackend>,
-    post:       Option<WasmTransform>,
+    pre: Option<WasmTransform>,
+    backend: Box<dyn InferenceBackend>,
+    post: Option<WasmTransform>,
     /// Determined from schema.json at load time.
     input_mode: InputMode,
     /// Non-empty only for Named mode.
-    specs:      Vec<InputSpec>,
+    specs: Vec<InputSpec>,
 }
 
 impl Pipeline {
@@ -30,7 +30,7 @@ impl Pipeline {
     pub fn new(
         mut backend: Box<dyn InferenceBackend>,
         model_bytes: &[u8],
-        pre:  Option<(&[u8], Option<&[u8]>)>,
+        pre: Option<(&[u8], Option<&[u8]>)>,
         post: Option<(&[u8], Option<&[u8]>)>,
         schema: Option<&[u8]>,
     ) -> Result<Self> {
@@ -56,14 +56,20 @@ impl Pipeline {
         let (input_mode, specs) = inputs::parse_schema(schema);
         tracing::info!(mode = ?input_mode, "pipeline input mode");
 
-        Ok(Self { pre, backend, post, input_mode, specs })
+        Ok(Self {
+            pre,
+            backend,
+            post,
+            input_mode,
+            specs,
+        })
     }
 
     pub fn infer(&mut self, raw_input: &[u8]) -> Result<Vec<u8>> {
         // Apply pre-transform (if any).
         let body = match &mut self.pre {
             Some(t) => t.run(raw_input)?,
-            None    => raw_input.to_vec(),
+            None => raw_input.to_vec(),
         };
 
         // Parse body into a flat f32 tensor according to input mode.
@@ -74,10 +80,8 @@ impl Pipeline {
                 anyhow::ensure!(data.len() == n, "tensor data length mismatch");
                 (shape, data)
             }
-            InputMode::Named => {
-                inputs::json_to_tensor(&body, &self.specs)
-                    .context("failed to encode JSON input to tensor")?
-            }
+            InputMode::Named => inputs::json_to_tensor(&body, &self.specs)
+                .context("failed to encode JSON input to tensor")?,
         };
 
         // Run inference backend.
@@ -87,7 +91,7 @@ impl Pipeline {
         // Apply post-transform (if any).
         match &mut self.post {
             Some(t) => t.run(&output_tensor_bytes),
-            None    => Ok(output_tensor_bytes),
+            None => Ok(output_tensor_bytes),
         }
     }
 }

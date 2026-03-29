@@ -2,13 +2,17 @@ mod api;
 mod cmd;
 
 use anyhow::Result;
-use clap::{Parser, Subcommand};
 use api::Api;
+use clap::{Parser, Subcommand};
 
 const DEFAULT_SERVER: &str = "http://localhost:5000";
 
 #[derive(Parser)]
-#[command(name = "edgeflow", about = "Manage edgeflow experiments, models and deployments", version)]
+#[command(
+    name = "edgeflow",
+    about = "Manage edgeflow experiments, models and deployments",
+    version
+)]
 struct Cli {
     /// edgeflow server URL
     #[arg(long, env = "EDGEFLOW_SERVER", global = true, default_value = DEFAULT_SERVER)]
@@ -67,18 +71,29 @@ fn main() -> Result<()> {
 
     match cli.command {
         Command::Experiments(cmd) => cmd::experiments::run(cmd, &api),
-        Command::Runs(cmd)        => cmd::runs::run(cmd, &api),
-        Command::Models(cmd)      => cmd::models::run(cmd, &api),
+        Command::Runs(cmd) => cmd::runs::run(cmd, &api),
+        Command::Models(cmd) => cmd::models::run(cmd, &api),
         Command::Deployments(cmd) => cmd::deployments::run(cmd, &api),
-        Command::Targets(cmd)     => cmd::targets::run(cmd, &api),
-        Command::Nodes(cmd)       => cmd::nodes::run(cmd, &api),
-        Command::Deploy { model_name, model_version, target, wait, timeout } => {
-            deploy(&api, &model_name, &model_version, &target, wait, timeout)
-        }
+        Command::Targets(cmd) => cmd::targets::run(cmd, &api),
+        Command::Nodes(cmd) => cmd::nodes::run(cmd, &api),
+        Command::Deploy {
+            model_name,
+            model_version,
+            target,
+            wait,
+            timeout,
+        } => deploy(&api, &model_name, &model_version, &target, wait, timeout),
     }
 }
 
-fn deploy(api: &Api, model_name: &str, model_version: &str, target: &str, wait: bool, timeout: u64) -> Result<()> {
+fn deploy(
+    api: &Api,
+    model_name: &str,
+    model_version: &str,
+    target: &str,
+    wait: bool,
+    timeout: u64,
+) -> Result<()> {
     println!("Deploying {model_name} v{model_version} → '{target}'");
 
     let res = api.create_deployment(model_name, model_version, target)?;
@@ -100,7 +115,10 @@ fn deploy(api: &Api, model_name: &str, model_version: &str, target: &str, wait: 
         std::thread::sleep(std::time::Duration::from_secs(2));
 
         let res = api.get_deployment(dep_id)?;
-        let state = res["deployment"]["state"].as_str().unwrap_or("?").to_string();
+        let state = res["deployment"]["state"]
+            .as_str()
+            .unwrap_or("?")
+            .to_string();
 
         if state != last_state {
             println!("{last_state} → {state}");
@@ -108,8 +126,11 @@ fn deploy(api: &Api, model_name: &str, model_version: &str, target: &str, wait: 
         }
 
         match state.as_str() {
-            "deployed"   => { println!("Deployment live on '{target}'."); return Ok(()); }
-            "failed"     => anyhow::bail!("deployment failed"),
+            "deployed" => {
+                println!("Deployment live on '{target}'.");
+                return Ok(());
+            }
+            "failed" => anyhow::bail!("deployment failed"),
             "superseded" => anyhow::bail!("deployment was superseded"),
             _ => {}
         }

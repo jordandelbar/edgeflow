@@ -26,7 +26,10 @@ pub fn decode(bytes: &[u8]) -> anyhow::Result<(Vec<usize>, Vec<f32>)> {
     let ndim = bytes[pos] as usize;
     pos += 1;
 
-    anyhow::ensure!(bytes.len() >= pos + ndim * 4 + 1, "tensor buffer too short for shape");
+    anyhow::ensure!(
+        bytes.len() >= pos + ndim * 4 + 1,
+        "tensor buffer too short for shape"
+    );
     let mut shape = Vec::with_capacity(ndim);
     for _ in 0..ndim {
         let dim = u32::from_le_bytes(bytes[pos..pos + 4].try_into().unwrap()) as usize;
@@ -36,7 +39,10 @@ pub fn decode(bytes: &[u8]) -> anyhow::Result<(Vec<usize>, Vec<f32>)> {
 
     let dtype = bytes[pos];
     pos += 1;
-    anyhow::ensure!(dtype == DTYPE_F32, "unsupported dtype {dtype}, only f32 (1) is supported");
+    anyhow::ensure!(
+        dtype == DTYPE_F32,
+        "unsupported dtype {dtype}, only f32 (1) is supported"
+    );
 
     let data: Vec<f32> = bytes[pos..]
         .chunks_exact(4)

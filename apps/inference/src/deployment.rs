@@ -16,9 +16,9 @@ pub struct DeployInstruction {
 /// by writing a new `Arc<ActiveDeployment>` under a single write lock, so
 /// readers always see a consistent snapshot.
 pub struct ActiveDeployment {
-    pub pipeline:   Arc<Mutex<Pipeline>>,
+    pub pipeline: Arc<Mutex<Pipeline>>,
     pub model_info: ModelInfo,
-    pub schema:     Option<Vec<u8>>,
+    pub schema: Option<Vec<u8>>,
 }
 
 /// Blocking function: download artifacts, build new Pipeline, swap atomically.
@@ -36,18 +36,33 @@ pub fn load_and_swap(
             tracing::info!(run_id = %req.run_id, "downloading model.onnx");
             let model = client.download_artifact(&req.run_id, "model.onnx").await?;
 
-            let pre_wasm = client.download_artifact(&req.run_id, "preprocess.wasm").await.ok();
-            let pre_cfg  = client.download_artifact(&req.run_id, "preprocess.json").await.ok();
+            let pre_wasm = client
+                .download_artifact(&req.run_id, "preprocess.wasm")
+                .await
+                .ok();
+            let pre_cfg = client
+                .download_artifact(&req.run_id, "preprocess.json")
+                .await
+                .ok();
 
-            let post_wasm = client.download_artifact(&req.run_id, "postprocess.wasm").await.ok();
-            let post_cfg  = client.download_artifact(&req.run_id, "postprocess.json").await.ok();
+            let post_wasm = client
+                .download_artifact(&req.run_id, "postprocess.wasm")
+                .await
+                .ok();
+            let post_cfg = client
+                .download_artifact(&req.run_id, "postprocess.json")
+                .await
+                .ok();
 
-            let schema = client.download_artifact(&req.run_id, "schema.json").await.ok();
+            let schema = client
+                .download_artifact(&req.run_id, "schema.json")
+                .await
+                .ok();
 
             Ok((model, pre_wasm, pre_cfg, post_wasm, post_cfg, schema))
         })
         .and_then(|(model, pre_wasm, pre_cfg, post_wasm, post_cfg, schema)| {
-            let pre  = pre_wasm.as_deref().map(|w| (w, pre_cfg.as_deref()));
+            let pre = pre_wasm.as_deref().map(|w| (w, pre_cfg.as_deref()));
             let post = post_wasm.as_deref().map(|w| (w, post_cfg.as_deref()));
             let backend = crate::backend::build_backend();
             let pipeline = Pipeline::new(backend, &model, pre, post, schema.as_deref())?;
@@ -57,12 +72,12 @@ pub fn load_and_swap(
     match result {
         Ok((new_pipeline, schema)) => {
             *shared_active.write().unwrap() = Some(Arc::new(ActiveDeployment {
-                pipeline:   Arc::new(Mutex::new(new_pipeline)),
+                pipeline: Arc::new(Mutex::new(new_pipeline)),
                 model_info: ModelInfo {
-                    run_id:        req.run_id,
+                    run_id: req.run_id,
                     deployment_id: req.deployment_id.clone(),
                     target,
-                    loaded_at:     chrono::Utc::now().to_rfc3339(),
+                    loaded_at: chrono::Utc::now().to_rfc3339(),
                 },
                 schema,
             }));
@@ -73,9 +88,11 @@ pub fn load_and_swap(
         }
         Err(e) => {
             tracing::error!(deployment_id = %req.deployment_id, error = %e, "pipeline load failed");
-            let _ = rt.block_on(
-                client.confirm_deployment(&req.deployment_id, "failed", Some(&e.to_string())),
-            );
+            let _ = rt.block_on(client.confirm_deployment(
+                &req.deployment_id,
+                "failed",
+                Some(&e.to_string()),
+            ));
         }
     }
 }

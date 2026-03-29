@@ -1,8 +1,8 @@
-use std::path::{Path, PathBuf};
-use anyhow::{Context, Result};
-use sqlx::{Row, SqlitePool};
-use edgeflow_core::*;
 use crate::Store;
+use anyhow::{Context, Result};
+use edgeflow_core::*;
+use sqlx::{Row, SqlitePool};
+use std::path::{Path, PathBuf};
 
 /// Parse `tag.\`key\` = 'value'` or `tag.'key' = 'value'` into `(key, value)`.
 fn parse_tag_filter(filter: &str) -> Option<(String, String)> {
@@ -24,14 +24,14 @@ fn parse_tag_filter(filter: &str) -> Option<(String, String)> {
 
 fn row_to_model_version(row: sqlx::sqlite::SqliteRow) -> ModelVersion {
     ModelVersion {
-        name:              row.get("name"),
-        version:           row.get::<i64, _>("version").to_string(),
-        run_id:            row.get("run_id"),
-        source:            row.get("source"),
-        description:       row.get("description"),
-        current_stage:     row.get("current_stage"),
-        status:            row.get("status"),
-        creation_time:     row.get("creation_time"),
+        name: row.get("name"),
+        version: row.get::<i64, _>("version").to_string(),
+        run_id: row.get("run_id"),
+        source: row.get("source"),
+        description: row.get("description"),
+        current_stage: row.get("current_stage"),
+        status: row.get("status"),
+        creation_time: row.get("creation_time"),
         last_updated_time: row.get("last_updated_time"),
     }
 }
@@ -68,7 +68,10 @@ impl SqliteStore {
             .await
             .context("failed to run migrations")?;
 
-        Ok(Self { pool, artifact_root })
+        Ok(Self {
+            pool,
+            artifact_root,
+        })
     }
 }
 
@@ -86,7 +89,12 @@ fn row_to_deployment(row: &sqlx::sqlite::SqliteRow) -> Deployment {
 
 #[async_trait::async_trait]
 impl Store for SqliteStore {
-    async fn create_experiment(&self, name: &str, artifact_location: Option<&str>, tags: Vec<ExperimentTag>) -> Result<Experiment> {
+    async fn create_experiment(
+        &self,
+        name: &str,
+        artifact_location: Option<&str>,
+        tags: Vec<ExperimentTag>,
+    ) -> Result<Experiment> {
         let id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Utc::now().timestamp_millis();
         let location = artifact_location
@@ -102,8 +110,11 @@ impl Store for SqliteStore {
 
         for tag in &tags {
             sqlx::query("INSERT INTO experiment_tags (experiment_id, key, value) VALUES (?, ?, ?)")
-                .bind(&id).bind(&tag.key).bind(&tag.value)
-                .execute(&self.pool).await?;
+                .bind(&id)
+                .bind(&tag.key)
+                .bind(&tag.value)
+                .execute(&self.pool)
+                .await?;
         }
 
         self.get_experiment(&id).await
@@ -119,15 +130,19 @@ impl Store for SqliteStore {
         .await
         .context("experiment not found")?;
 
-        let tag_rows = sqlx::query("SELECT key, value FROM experiment_tags WHERE experiment_id = ?")
-            .bind(experiment_id)
-            .fetch_all(&self.pool)
-            .await?;
+        let tag_rows =
+            sqlx::query("SELECT key, value FROM experiment_tags WHERE experiment_id = ?")
+                .bind(experiment_id)
+                .fetch_all(&self.pool)
+                .await?;
 
-        let tags = tag_rows.iter().map(|r| ExperimentTag {
-            key: r.get("key"),
-            value: r.get("value"),
-        }).collect();
+        let tags = tag_rows
+            .iter()
+            .map(|r| ExperimentTag {
+                key: r.get("key"),
+                value: r.get("value"),
+            })
+            .collect();
 
         Ok(Experiment {
             experiment_id: row.get("experiment_id"),
@@ -146,7 +161,7 @@ impl Store for SqliteStore {
 
     async fn get_experiment_by_name(&self, name: &str) -> Result<Experiment> {
         let row = sqlx::query(
-            "SELECT experiment_id FROM experiments WHERE name = ? AND lifecycle_stage = 'active'"
+            "SELECT experiment_id FROM experiments WHERE name = ? AND lifecycle_stage = 'active'",
         )
         .bind(name)
         .fetch_one(&self.pool)
@@ -156,7 +171,10 @@ impl Store for SqliteStore {
         self.get_experiment(row.get("experiment_id")).await
     }
 
-    async fn list_experiments(&self, lifecycle_stage: Option<LifecycleStage>) -> Result<Vec<Experiment>> {
+    async fn list_experiments(
+        &self,
+        lifecycle_stage: Option<LifecycleStage>,
+    ) -> Result<Vec<Experiment>> {
         let stage = match lifecycle_stage {
             Some(LifecycleStage::Deleted) => "deleted",
             _ => "active",
@@ -196,23 +214,37 @@ impl Store for SqliteStore {
 
     async fn update_experiment(&self, experiment_id: &str, new_name: &str) -> Result<()> {
         let now = chrono::Utc::now().timestamp_millis();
-        sqlx::query("UPDATE experiments SET name = ?, last_update_time = ? WHERE experiment_id = ?")
-            .bind(new_name).bind(now).bind(experiment_id)
-            .execute(&self.pool).await?;
+        sqlx::query(
+            "UPDATE experiments SET name = ?, last_update_time = ? WHERE experiment_id = ?",
+        )
+        .bind(new_name)
+        .bind(now)
+        .bind(experiment_id)
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
     async fn set_experiment_tag(&self, experiment_id: &str, key: &str, value: &str) -> Result<()> {
         sqlx::query(
             "INSERT INTO experiment_tags (experiment_id, key, value) VALUES (?, ?, ?)
-             ON CONFLICT(experiment_id, key) DO UPDATE SET value = excluded.value"
+             ON CONFLICT(experiment_id, key) DO UPDATE SET value = excluded.value",
         )
-        .bind(experiment_id).bind(key).bind(value)
-        .execute(&self.pool).await?;
+        .bind(experiment_id)
+        .bind(key)
+        .bind(value)
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
-    async fn create_run(&self, experiment_id: &str, run_name: Option<&str>, start_time: Option<i64>, tags: Vec<RunTag>) -> Result<Run> {
+    async fn create_run(
+        &self,
+        experiment_id: &str,
+        run_name: Option<&str>,
+        start_time: Option<i64>,
+        tags: Vec<RunTag>,
+    ) -> Result<Run> {
         let run_id = uuid::Uuid::new_v4().simple().to_string();
         let now = chrono::Utc::now().timestamp_millis();
         let start = start_time.unwrap_or(now);
@@ -229,10 +261,13 @@ impl Store for SqliteStore {
         for tag in &tags {
             sqlx::query(
                 "INSERT INTO run_tags (run_id, key, value) VALUES (?, ?, ?)
-                 ON CONFLICT(run_id, key) DO UPDATE SET value = excluded.value"
+                 ON CONFLICT(run_id, key) DO UPDATE SET value = excluded.value",
             )
-            .bind(&run_id).bind(&tag.key).bind(&tag.value)
-            .execute(&self.pool).await?;
+            .bind(&run_id)
+            .bind(&tag.key)
+            .bind(&tag.value)
+            .execute(&self.pool)
+            .await?;
         }
 
         self.get_run(&run_id).await
@@ -249,15 +284,21 @@ impl Store for SqliteStore {
         .context("run not found")?;
 
         let metric_rows = sqlx::query(
-            "SELECT key, value, timestamp, step FROM metrics WHERE run_id = ? ORDER BY step ASC"
+            "SELECT key, value, timestamp, step FROM metrics WHERE run_id = ? ORDER BY step ASC",
         )
-        .bind(run_id).fetch_all(&self.pool).await?;
+        .bind(run_id)
+        .fetch_all(&self.pool)
+        .await?;
 
         let param_rows = sqlx::query("SELECT key, value FROM params WHERE run_id = ?")
-            .bind(run_id).fetch_all(&self.pool).await?;
+            .bind(run_id)
+            .fetch_all(&self.pool)
+            .await?;
 
         let tag_rows = sqlx::query("SELECT key, value FROM run_tags WHERE run_id = ?")
-            .bind(run_id).fetch_all(&self.pool).await?;
+            .bind(run_id)
+            .fetch_all(&self.pool)
+            .await?;
 
         let status = match row.get::<String, _>("status").as_str() {
             "RUNNING" => RunStatus::Running,
@@ -280,25 +321,40 @@ impl Store for SqliteStore {
                 lifecycle_stage: row.get("lifecycle_stage"),
             },
             data: RunData {
-                metrics: metric_rows.iter().map(|r| Metric {
-                    key: r.get("key"),
-                    value: r.get("value"),
-                    timestamp: r.get("timestamp"),
-                    step: r.get("step"),
-                }).collect(),
-                params: param_rows.iter().map(|r| Param {
-                    key: r.get("key"),
-                    value: r.get("value"),
-                }).collect(),
-                tags: tag_rows.iter().map(|r| RunTag {
-                    key: r.get("key"),
-                    value: r.get("value"),
-                }).collect(),
+                metrics: metric_rows
+                    .iter()
+                    .map(|r| Metric {
+                        key: r.get("key"),
+                        value: r.get("value"),
+                        timestamp: r.get("timestamp"),
+                        step: r.get("step"),
+                    })
+                    .collect(),
+                params: param_rows
+                    .iter()
+                    .map(|r| Param {
+                        key: r.get("key"),
+                        value: r.get("value"),
+                    })
+                    .collect(),
+                tags: tag_rows
+                    .iter()
+                    .map(|r| RunTag {
+                        key: r.get("key"),
+                        value: r.get("value"),
+                    })
+                    .collect(),
             },
         })
     }
 
-    async fn update_run(&self, run_id: &str, status: RunStatus, end_time: Option<i64>, run_name: Option<&str>) -> Result<RunInfo> {
+    async fn update_run(
+        &self,
+        run_id: &str,
+        status: RunStatus,
+        end_time: Option<i64>,
+        run_name: Option<&str>,
+    ) -> Result<RunInfo> {
         let status_str = match status {
             RunStatus::Running => "RUNNING",
             RunStatus::Scheduled => "SCHEDULED",
@@ -317,18 +373,31 @@ impl Store for SqliteStore {
 
     async fn delete_run(&self, run_id: &str) -> Result<()> {
         sqlx::query("UPDATE runs SET lifecycle_stage = 'deleted' WHERE run_id = ?")
-            .bind(run_id).execute(&self.pool).await?;
+            .bind(run_id)
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 
     async fn restore_run(&self, run_id: &str) -> Result<()> {
         sqlx::query("UPDATE runs SET lifecycle_stage = 'active' WHERE run_id = ?")
-            .bind(run_id).execute(&self.pool).await?;
+            .bind(run_id)
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 
-    async fn search_runs(&self, experiment_ids: Vec<String>, filter: Option<&str>, max_results: i64) -> Result<Vec<Run>> {
-        let placeholders = experiment_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+    async fn search_runs(
+        &self,
+        experiment_ids: Vec<String>,
+        filter: Option<&str>,
+        max_results: i64,
+    ) -> Result<Vec<Run>> {
+        let placeholders = experiment_ids
+            .iter()
+            .map(|_| "?")
+            .collect::<Vec<_>>()
+            .join(",");
 
         // Parse a single tag filter of the form: tag.`key` = 'value' or tag.'key' = 'value'
         let tag_filter = filter.and_then(parse_tag_filter);
@@ -365,36 +434,61 @@ impl Store for SqliteStore {
     }
 
     async fn log_metric(&self, run_id: &str, metric: Metric) -> Result<()> {
-        sqlx::query("INSERT INTO metrics (run_id, key, value, timestamp, step) VALUES (?, ?, ?, ?, ?)")
-            .bind(run_id).bind(&metric.key).bind(metric.value).bind(metric.timestamp).bind(metric.step)
-            .execute(&self.pool).await?;
+        sqlx::query(
+            "INSERT INTO metrics (run_id, key, value, timestamp, step) VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind(run_id)
+        .bind(&metric.key)
+        .bind(metric.value)
+        .bind(metric.timestamp)
+        .bind(metric.step)
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
-    async fn log_batch(&self, run_id: &str, metrics: Vec<Metric>, params: Vec<Param>, tags: Vec<RunTag>) -> Result<()> {
-        for m in metrics { self.log_metric(run_id, m).await?; }
-        for p in params { self.log_param(run_id, &p.key, &p.value).await?; }
-        for t in tags { self.set_tag(run_id, &t.key, &t.value).await?; }
+    async fn log_batch(
+        &self,
+        run_id: &str,
+        metrics: Vec<Metric>,
+        params: Vec<Param>,
+        tags: Vec<RunTag>,
+    ) -> Result<()> {
+        for m in metrics {
+            self.log_metric(run_id, m).await?;
+        }
+        for p in params {
+            self.log_param(run_id, &p.key, &p.value).await?;
+        }
+        for t in tags {
+            self.set_tag(run_id, &t.key, &t.value).await?;
+        }
         Ok(())
     }
 
     async fn log_param(&self, run_id: &str, key: &str, value: &str) -> Result<()> {
         sqlx::query(
             "INSERT INTO params (run_id, key, value) VALUES (?, ?, ?)
-             ON CONFLICT(run_id, key) DO UPDATE SET value = excluded.value"
+             ON CONFLICT(run_id, key) DO UPDATE SET value = excluded.value",
         )
-        .bind(run_id).bind(key).bind(value)
-        .execute(&self.pool).await?;
+        .bind(run_id)
+        .bind(key)
+        .bind(value)
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
     async fn set_tag(&self, run_id: &str, key: &str, value: &str) -> Result<()> {
         sqlx::query(
             "INSERT INTO run_tags (run_id, key, value) VALUES (?, ?, ?)
-             ON CONFLICT(run_id, key) DO UPDATE SET value = excluded.value"
+             ON CONFLICT(run_id, key) DO UPDATE SET value = excluded.value",
         )
-        .bind(run_id).bind(key).bind(value)
-        .execute(&self.pool).await?;
+        .bind(run_id)
+        .bind(key)
+        .bind(value)
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
@@ -405,12 +499,15 @@ impl Store for SqliteStore {
         .bind(run_id).bind(metric_key)
         .fetch_all(&self.pool).await?;
 
-        Ok(rows.iter().map(|r| Metric {
-            key: r.get("key"),
-            value: r.get("value"),
-            timestamp: r.get("timestamp"),
-            step: r.get("step"),
-        }).collect())
+        Ok(rows
+            .iter()
+            .map(|r| Metric {
+                key: r.get("key"),
+                value: r.get("value"),
+                timestamp: r.get("timestamp"),
+                step: r.get("step"),
+            })
+            .collect())
     }
 
     async fn list_artifacts(&self, run_id: &str, path: Option<&str>) -> Result<Vec<FileInfo>> {
@@ -425,14 +522,19 @@ impl Store for SqliteStore {
             for entry in std::fs::read_dir(&dir)? {
                 let entry = entry?;
                 let meta = entry.metadata()?;
-                let relative = entry.path()
+                let relative = entry
+                    .path()
                     .strip_prefix(&self.artifact_root)
                     .map(|p| p.display().to_string())
                     .unwrap_or_else(|_| entry.path().display().to_string());
                 files.push(FileInfo {
                     path: relative,
                     is_dir: meta.is_dir(),
-                    file_size: if meta.is_file() { Some(meta.len() as i64) } else { None },
+                    file_size: if meta.is_file() {
+                        Some(meta.len() as i64)
+                    } else {
+                        None
+                    },
                 });
             }
         }
@@ -449,7 +551,13 @@ impl Store for SqliteStore {
         Ok(self.artifact_root.join(rel))
     }
 
-    async fn create_deployment(&self, run_id: &str, target: &str, model_name: Option<&str>, model_version: Option<&str>) -> Result<Deployment> {
+    async fn create_deployment(
+        &self,
+        run_id: &str,
+        target: &str,
+        model_name: Option<&str>,
+        model_version: Option<&str>,
+    ) -> Result<Deployment> {
         let id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Utc::now().timestamp_millis();
         sqlx::query(
@@ -511,10 +619,16 @@ impl Store for SqliteStore {
         Ok(row_to_deployment(&row))
     }
 
-    async fn update_deployment_state(&self, deployment_id: &str, state: DeploymentState) -> Result<()> {
+    async fn update_deployment_state(
+        &self,
+        deployment_id: &str,
+        state: DeploymentState,
+    ) -> Result<()> {
         sqlx::query("UPDATE deployments SET state = ? WHERE deployment_id = ?")
-            .bind(state.as_str()).bind(deployment_id)
-            .execute(&self.pool).await?;
+            .bind(state.as_str())
+            .bind(deployment_id)
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 
@@ -533,14 +647,20 @@ impl Store for SqliteStore {
     async fn supersede_previous_deployments(&self, target: &str, except_id: &str) -> Result<()> {
         sqlx::query(
             "UPDATE deployments SET state = 'superseded'
-             WHERE target = ? AND state = 'deployed' AND deployment_id != ?"
+             WHERE target = ? AND state = 'deployed' AND deployment_id != ?",
         )
-        .bind(target).bind(except_id)
-        .execute(&self.pool).await?;
+        .bind(target)
+        .bind(except_id)
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
-    async fn get_stale_deployments(&self, states: &[&str], older_than_ms: i64) -> Result<Vec<Deployment>> {
+    async fn get_stale_deployments(
+        &self,
+        states: &[&str],
+        older_than_ms: i64,
+    ) -> Result<Vec<Deployment>> {
         // SQLite doesn't support array parameters; run one query per state.
         let mut results = Vec::new();
         let cutoff = chrono::Utc::now().timestamp_millis() - older_than_ms;
@@ -561,14 +681,22 @@ impl Store for SqliteStore {
 
     // ── Model Registry ────────────────────────────────────────────────────────
 
-    async fn create_registered_model(&self, name: &str, description: Option<&str>) -> Result<RegisteredModel> {
+    async fn create_registered_model(
+        &self,
+        name: &str,
+        description: Option<&str>,
+    ) -> Result<RegisteredModel> {
         let now = chrono::Utc::now().timestamp_millis();
         sqlx::query(
             "INSERT INTO registered_models (name, description, creation_time, last_updated_time)
-             VALUES (?, ?, ?, ?)"
+             VALUES (?, ?, ?, ?)",
         )
-        .bind(name).bind(description).bind(now).bind(now)
-        .execute(&self.pool).await
+        .bind(name)
+        .bind(description)
+        .bind(now)
+        .bind(now)
+        .execute(&self.pool)
+        .await
         .map_err(|e| {
             if e.to_string().contains("UNIQUE") {
                 anyhow::anyhow!("already exists: registered model '{name}'")
@@ -586,11 +714,11 @@ impl Store for SqliteStore {
             .ok_or_else(|| anyhow::anyhow!("not found: registered model '{name}'"))?;
 
         let mut model = RegisteredModel {
-            name:              row.get("name"),
-            description:       row.get("description"),
-            creation_time:     row.get("creation_time"),
+            name: row.get("name"),
+            description: row.get("description"),
+            creation_time: row.get("creation_time"),
             last_updated_time: row.get("last_updated_time"),
-            latest_versions:   vec![],
+            latest_versions: vec![],
         };
         model.latest_versions = self.list_model_versions(name).await?;
         Ok(model)
@@ -598,7 +726,8 @@ impl Store for SqliteStore {
 
     async fn list_registered_models(&self) -> Result<Vec<RegisteredModel>> {
         let rows = sqlx::query("SELECT name FROM registered_models ORDER BY creation_time DESC")
-            .fetch_all(&self.pool).await?;
+            .fetch_all(&self.pool)
+            .await?;
         let mut models = Vec::new();
         for row in rows {
             let name: String = row.get("name");
@@ -607,27 +736,46 @@ impl Store for SqliteStore {
         Ok(models)
     }
 
-    async fn update_registered_model(&self, name: &str, description: Option<&str>) -> Result<RegisteredModel> {
+    async fn update_registered_model(
+        &self,
+        name: &str,
+        description: Option<&str>,
+    ) -> Result<RegisteredModel> {
         let now = chrono::Utc::now().timestamp_millis();
-        sqlx::query("UPDATE registered_models SET description = ?, last_updated_time = ? WHERE name = ?")
-            .bind(description).bind(now).bind(name)
-            .execute(&self.pool).await?;
+        sqlx::query(
+            "UPDATE registered_models SET description = ?, last_updated_time = ? WHERE name = ?",
+        )
+        .bind(description)
+        .bind(now)
+        .bind(name)
+        .execute(&self.pool)
+        .await?;
         self.get_registered_model(name).await
     }
 
     async fn delete_registered_model(&self, name: &str) -> Result<()> {
         sqlx::query("DELETE FROM registered_models WHERE name = ?")
-            .bind(name).execute(&self.pool).await?;
+            .bind(name)
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 
-    async fn create_model_version(&self, name: &str, run_id: Option<&str>, source: Option<&str>, description: Option<&str>) -> Result<ModelVersion> {
+    async fn create_model_version(
+        &self,
+        name: &str,
+        run_id: Option<&str>,
+        source: Option<&str>,
+        description: Option<&str>,
+    ) -> Result<ModelVersion> {
         let now = chrono::Utc::now().timestamp_millis();
         // Auto-increment version within this model name
         let next_version: i64 = sqlx::query_scalar(
-            "SELECT COALESCE(MAX(version), 0) + 1 FROM model_versions WHERE name = ?"
+            "SELECT COALESCE(MAX(version), 0) + 1 FROM model_versions WHERE name = ?",
         )
-        .bind(name).fetch_one(&self.pool).await?;
+        .bind(name)
+        .fetch_one(&self.pool)
+        .await?;
 
         sqlx::query(
             "INSERT INTO model_versions (name, version, run_id, source, description, current_stage, status, creation_time, last_updated_time)
@@ -638,7 +786,10 @@ impl Store for SqliteStore {
         .execute(&self.pool).await?;
 
         sqlx::query("UPDATE registered_models SET last_updated_time = ? WHERE name = ?")
-            .bind(now).bind(name).execute(&self.pool).await?;
+            .bind(now)
+            .bind(name)
+            .execute(&self.pool)
+            .await?;
 
         self.get_model_version(name, next_version).await
     }
@@ -664,7 +815,11 @@ impl Store for SqliteStore {
         Ok(rows.into_iter().map(row_to_model_version).collect())
     }
 
-    async fn get_latest_model_versions(&self, name: &str, stages: &[&str]) -> Result<Vec<ModelVersion>> {
+    async fn get_latest_model_versions(
+        &self,
+        name: &str,
+        stages: &[&str],
+    ) -> Result<Vec<ModelVersion>> {
         // If no stages requested, return latest version per each stage that exists.
         // If stages are specified, return the latest version for each requested stage.
         let rows = if stages.is_empty() {
@@ -693,13 +848,20 @@ impl Store for SqliteStore {
                  ORDER BY version DESC"
             );
             let mut q = sqlx::query(&sql).bind(name);
-            for s in stages { q = q.bind(s); }
+            for s in stages {
+                q = q.bind(s);
+            }
             q.bind(name).fetch_all(&self.pool).await?
         };
         Ok(rows.into_iter().map(row_to_model_version).collect())
     }
 
-    async fn transition_model_version_stage(&self, name: &str, version: i64, stage: &str) -> Result<ModelVersion> {
+    async fn transition_model_version_stage(
+        &self,
+        name: &str,
+        version: i64,
+        stage: &str,
+    ) -> Result<ModelVersion> {
         let now = chrono::Utc::now().timestamp_millis();
         sqlx::query(
             "UPDATE model_versions SET current_stage = ?, last_updated_time = ? WHERE name = ? AND version = ?"
@@ -707,11 +869,19 @@ impl Store for SqliteStore {
         .bind(stage).bind(now).bind(name).bind(version)
         .execute(&self.pool).await?;
         sqlx::query("UPDATE registered_models SET last_updated_time = ? WHERE name = ?")
-            .bind(now).bind(name).execute(&self.pool).await?;
+            .bind(now)
+            .bind(name)
+            .execute(&self.pool)
+            .await?;
         self.get_model_version(name, version).await
     }
 
-    async fn update_model_version(&self, name: &str, version: i64, description: Option<&str>) -> Result<ModelVersion> {
+    async fn update_model_version(
+        &self,
+        name: &str,
+        version: i64,
+        description: Option<&str>,
+    ) -> Result<ModelVersion> {
         let now = chrono::Utc::now().timestamp_millis();
         sqlx::query(
             "UPDATE model_versions SET description = ?, last_updated_time = ? WHERE name = ? AND version = ?"
@@ -723,7 +893,10 @@ impl Store for SqliteStore {
 
     async fn delete_model_version(&self, name: &str, version: i64) -> Result<()> {
         sqlx::query("DELETE FROM model_versions WHERE name = ? AND version = ?")
-            .bind(name).bind(version).execute(&self.pool).await?;
+            .bind(name)
+            .bind(version)
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 
@@ -747,8 +920,12 @@ impl Store for SqliteStore {
         };
 
         let mut q = sqlx::query(&sql);
-        if let Some(n) = &name_filter { q = q.bind(n); }
-        if let Some(r) = &run_id_filter { q = q.bind(r); }
+        if let Some(n) = &name_filter {
+            q = q.bind(n);
+        }
+        if let Some(r) = &run_id_filter {
+            q = q.bind(r);
+        }
 
         let rows = q.fetch_all(&self.pool).await?;
         Ok(rows.into_iter().map(row_to_model_version).collect())
@@ -756,7 +933,13 @@ impl Store for SqliteStore {
 
     // ── Targets ───────────────────────────────────────────────────────────────
 
-    async fn register_target(&self, target: &str, address: &str, pod_name: Option<&str>, node: Option<&str>) -> Result<Target> {
+    async fn register_target(
+        &self,
+        target: &str,
+        address: &str,
+        pod_name: Option<&str>,
+        node: Option<&str>,
+    ) -> Result<Target> {
         let now = chrono::Utc::now().timestamp_millis();
         // ON CONFLICT updates address/pod_name. Node is backfilled if currently NULL
         // (e.g. first deploy didn't specify a node), but never overwritten once set.
@@ -774,7 +957,12 @@ impl Store for SqliteStore {
         self.get_target(target).await.map(|t| t.unwrap())
     }
 
-    async fn store_target_resources(&self, target: &str, node: Option<&str>, resources: &ResourceSettings) -> Result<()> {
+    async fn store_target_resources(
+        &self,
+        target: &str,
+        node: Option<&str>,
+        resources: &ResourceSettings,
+    ) -> Result<()> {
         sqlx::query(
             "INSERT INTO targets (target, address, pod_name, registered_at, node, cpu_request, memory_request, memory_limit, max_concurrent)
              VALUES (?, '', NULL, 0, ?, ?, ?, ?, ?)
@@ -798,15 +986,20 @@ impl Store for SqliteStore {
     async fn heartbeat_target(&self, target: &str) -> Result<()> {
         let now = chrono::Utc::now().timestamp_millis();
         sqlx::query("UPDATE targets SET last_seen = ? WHERE target = ?")
-            .bind(now).bind(target)
-            .execute(&self.pool).await?;
+            .bind(now)
+            .bind(target)
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 
     async fn set_target_model(&self, target: &str, run_id: &str, loaded_at: &str) -> Result<()> {
         sqlx::query("UPDATE targets SET current_run_id = ?, model_loaded_at = ? WHERE target = ?")
-            .bind(run_id).bind(loaded_at).bind(target)
-            .execute(&self.pool).await?;
+            .bind(run_id)
+            .bind(loaded_at)
+            .bind(target)
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 
@@ -815,7 +1008,7 @@ impl Store for SqliteStore {
             "SELECT target, address, pod_name, registered_at, last_seen, node,
                     cpu_request, memory_request, memory_limit, max_concurrent,
                     current_run_id, model_loaded_at
-             FROM targets WHERE target = ?"
+             FROM targets WHERE target = ?",
         )
         .bind(target)
         .fetch_optional(&self.pool)
@@ -824,19 +1017,19 @@ impl Store for SqliteStore {
         Ok(row.map(|r| {
             let last_seen: Option<i64> = r.get("last_seen");
             Target {
-                target:        r.get("target"),
-                address:       r.get("address"),
-                pod_name:      r.get("pod_name"),
-                node:          r.get("node"),
+                target: r.get("target"),
+                address: r.get("address"),
+                pod_name: r.get("pod_name"),
+                node: r.get("node"),
                 registered_at: r.get("registered_at"),
                 last_seen,
                 health: TargetHealth::from_last_seen(last_seen),
-                current_run_id:  r.get("current_run_id"),
+                current_run_id: r.get("current_run_id"),
                 model_loaded_at: r.get("model_loaded_at"),
                 resources: ResourceSettings {
-                    cpu_request:    r.get("cpu_request"),
+                    cpu_request: r.get("cpu_request"),
                     memory_request: r.get("memory_request"),
-                    memory_limit:   r.get("memory_limit"),
+                    memory_limit: r.get("memory_limit"),
                     max_concurrent: r.get("max_concurrent"),
                 },
             }
@@ -848,45 +1041,50 @@ impl Store for SqliteStore {
             "SELECT target, address, pod_name, registered_at, last_seen, node,
                     cpu_request, memory_request, memory_limit, max_concurrent,
                     current_run_id, model_loaded_at
-             FROM targets ORDER BY registered_at DESC"
+             FROM targets ORDER BY registered_at DESC",
         )
         .fetch_all(&self.pool)
         .await?;
 
-        Ok(rows.iter().map(|r| {
-            let last_seen: Option<i64> = r.get("last_seen");
-            Target {
-                target:        r.get("target"),
-                address:       r.get("address"),
-                pod_name:      r.get("pod_name"),
-                node:          r.get("node"),
-                registered_at: r.get("registered_at"),
-                last_seen,
-                health: TargetHealth::from_last_seen(last_seen),
-                current_run_id:  r.get("current_run_id"),
-                model_loaded_at: r.get("model_loaded_at"),
-                resources: ResourceSettings {
-                    cpu_request:    r.get("cpu_request"),
-                    memory_request: r.get("memory_request"),
-                    memory_limit:   r.get("memory_limit"),
-                    max_concurrent: r.get("max_concurrent"),
-                },
-            }
-        }).collect())
+        Ok(rows
+            .iter()
+            .map(|r| {
+                let last_seen: Option<i64> = r.get("last_seen");
+                Target {
+                    target: r.get("target"),
+                    address: r.get("address"),
+                    pod_name: r.get("pod_name"),
+                    node: r.get("node"),
+                    registered_at: r.get("registered_at"),
+                    last_seen,
+                    health: TargetHealth::from_last_seen(last_seen),
+                    current_run_id: r.get("current_run_id"),
+                    model_loaded_at: r.get("model_loaded_at"),
+                    resources: ResourceSettings {
+                        cpu_request: r.get("cpu_request"),
+                        memory_request: r.get("memory_request"),
+                        memory_limit: r.get("memory_limit"),
+                        max_concurrent: r.get("max_concurrent"),
+                    },
+                }
+            })
+            .collect())
     }
 
     async fn delete_target(&self, target: &str) -> Result<()> {
         // Supersede any active deployments first so history is preserved.
         sqlx::query(
             "UPDATE deployments SET state = 'superseded'
-             WHERE target = ? AND state NOT IN ('superseded', 'failed')"
+             WHERE target = ? AND state NOT IN ('superseded', 'failed')",
         )
         .bind(target)
-        .execute(&self.pool).await?;
+        .execute(&self.pool)
+        .await?;
 
         sqlx::query("DELETE FROM targets WHERE target = ?")
             .bind(target)
-            .execute(&self.pool).await?;
+            .execute(&self.pool)
+            .await?;
 
         Ok(())
     }

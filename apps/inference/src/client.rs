@@ -14,7 +14,12 @@ impl EdgeflowClient {
     }
 
     /// Register this pod as the active inference server for `target`.
-    pub async fn register_target(&self, target: &str, address: &str, node: Option<&str>) -> Result<()> {
+    pub async fn register_target(
+        &self,
+        target: &str,
+        address: &str,
+        node: Option<&str>,
+    ) -> Result<()> {
         let url = format!("{}/api/v1/targets/register", self.server);
         let mut body = serde_json::json!({ "target": target, "address": address });
         if let Some(n) = node {
@@ -38,7 +43,10 @@ impl EdgeflowClient {
         status: &str,
         reason: Option<&str>,
     ) -> Result<()> {
-        let url = format!("{}/api/v1/deployments/{}/confirm", self.server, deployment_id);
+        let url = format!(
+            "{}/api/v1/deployments/{}/confirm",
+            self.server, deployment_id
+        );
         let mut body = serde_json::json!({ "status": status });
         if let Some(r) = reason {
             body["reason"] = serde_json::Value::String(r.to_string());
@@ -69,14 +77,23 @@ impl EdgeflowClient {
 
     /// Poll for the oldest pending deployment for this target. Returns None if
     /// there is nothing to do.
-    pub async fn poll_pending(&self, target: &str) -> Result<Option<crate::deployment::DeployInstruction>> {
+    pub async fn poll_pending(
+        &self,
+        target: &str,
+    ) -> Result<Option<crate::deployment::DeployInstruction>> {
         #[derive(serde::Deserialize)]
-        struct PendingResponse { deployment: Option<PendingDeployment> }
+        struct PendingResponse {
+            deployment: Option<PendingDeployment>,
+        }
         #[derive(serde::Deserialize)]
-        struct PendingDeployment { run_id: String, deployment_id: String }
+        struct PendingDeployment {
+            run_id: String,
+            deployment_id: String,
+        }
 
         let url = format!("{}/api/v1/targets/{}/pending", self.server, target);
-        let resp: PendingResponse = self.client
+        let resp: PendingResponse = self
+            .client
             .get(&url)
             .send()
             .await
@@ -86,17 +103,23 @@ impl EdgeflowClient {
             .json()
             .await?;
 
-        Ok(resp.deployment.map(|d| crate::deployment::DeployInstruction {
-            run_id:        d.run_id,
-            deployment_id: d.deployment_id,
-        }))
+        Ok(resp
+            .deployment
+            .map(|d| crate::deployment::DeployInstruction {
+                run_id: d.run_id,
+                deployment_id: d.deployment_id,
+            }))
     }
 
     /// Kept for backwards-compat / dev polling.
     #[allow(dead_code)]
     pub async fn latest_run_id(&self, target: &str) -> Result<String> {
-        let url = format!("{}/api/v1/deployments/latest?target={}", self.server, target);
-        let resp: serde_json::Value = self.client
+        let url = format!(
+            "{}/api/v1/deployments/latest?target={}",
+            self.server, target
+        );
+        let resp: serde_json::Value = self
+            .client
             .get(&url)
             .send()
             .await
@@ -117,7 +140,8 @@ impl EdgeflowClient {
             "{}/api/2.0/mlflow/artifacts/get-artifact?run_id={}&path={}",
             self.server, run_id, path
         );
-        let bytes = self.client
+        let bytes = self
+            .client
             .get(&url)
             .send()
             .await

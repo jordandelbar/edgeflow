@@ -7,12 +7,12 @@ mod server;
 mod tensor;
 mod wasm;
 
-use std::sync::{Arc, RwLock};
-use std::time::Duration;
 use anyhow::{Context, Result};
 use client::EdgeflowClient;
 use edgeflow_common::{backoff::retry_forever, shutdown_signal};
 use server::{Metrics, ServerState};
+use std::sync::{Arc, RwLock};
+use std::time::Duration;
 use tokio::sync::Semaphore;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -32,8 +32,7 @@ async fn main() -> Result<()> {
         .context("EDGEFLOW_SERVER env var required (e.g. http://edgeflow-server:5000)")?;
     let target = std::env::var("EDGEFLOW_TARGET")
         .context("EDGEFLOW_TARGET env var required (e.g. iris-inference)")?;
-    let infer_addr =
-        std::env::var("EDGEFLOW_INFER_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".into());
+    let infer_addr = std::env::var("EDGEFLOW_INFER_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".into());
 
     let node_name = std::env::var("EDGEFLOW_NODE_NAME").ok();
 
@@ -56,16 +55,16 @@ async fn main() -> Result<()> {
     let client = Arc::new(EdgeflowClient::new(&server_url));
 
     let state = ServerState {
-        active:    Arc::new(RwLock::new(None)),
+        active: Arc::new(RwLock::new(None)),
         semaphore: Arc::new(Semaphore::new(max_concurrent)),
-        metrics:   Arc::new(Metrics::default()),
-        client:    client.clone(),
-        target:    target.clone(),
+        metrics: Arc::new(Metrics::default()),
+        client: client.clone(),
+        target: target.clone(),
     };
 
     // Start HTTP server in background so we're ready before registering.
-    let serve_state  = state.clone();
-    let serve_addr   = infer_addr.clone();
+    let serve_state = state.clone();
+    let serve_addr = infer_addr.clone();
     let serve_cancel = cancel.clone();
     tokio::spawn(async move {
         if let Err(e) = server::serve(serve_state, serve_addr, serve_cancel).await {
@@ -78,11 +77,15 @@ async fn main() -> Result<()> {
 
     tracing::info!(target = %target, address = %self_address, node = ?node_name, "registering with edgeflow-server");
     retry_forever("register with edgeflow-server", || {
-        let client       = client.clone();
-        let target       = target.clone();
+        let client = client.clone();
+        let target = target.clone();
         let self_address = self_address.clone();
-        let node         = node_name.clone();
-        async move { client.register_target(&target, &self_address, node.as_deref()).await }
+        let node = node_name.clone();
+        async move {
+            client
+                .register_target(&target, &self_address, node.as_deref())
+                .await
+        }
     })
     .await;
     tracing::info!("registered — polling for deployments");
@@ -94,7 +97,7 @@ async fn main() -> Result<()> {
     let poll_cancel = cancel.clone();
     tokio::spawn(async move {
         let mut heartbeat = tokio::time::interval(Duration::from_secs(30));
-        let mut poll      = tokio::time::interval(Duration::from_secs(5));
+        let mut poll = tokio::time::interval(Duration::from_secs(5));
         heartbeat.tick().await;
 
         loop {

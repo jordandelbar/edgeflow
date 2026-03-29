@@ -1,7 +1,7 @@
+use super::fmt_ts;
+use crate::api::Api;
 use anyhow::Result;
 use clap::Subcommand;
-use crate::api::Api;
-use super::fmt_ts;
 
 #[derive(Subcommand)]
 pub enum Cmd {
@@ -43,7 +43,11 @@ fn get(api: &Api, run_id: &str) -> Result<()> {
         if !params.is_empty() {
             println!("\nParams:");
             for p in params {
-                println!("  {} = {}", p["key"].as_str().unwrap_or("?"), p["value"].as_str().unwrap_or("?"));
+                println!(
+                    "  {} = {}",
+                    p["key"].as_str().unwrap_or("?"),
+                    p["value"].as_str().unwrap_or("?")
+                );
             }
         }
     }
@@ -58,13 +62,18 @@ fn get(api: &Api, run_id: &str) -> Result<()> {
     }
 
     if let Some(tags) = data["tags"].as_array() {
-        let visible: Vec<_> = tags.iter()
+        let visible: Vec<_> = tags
+            .iter()
             .filter(|t| !t["key"].as_str().unwrap_or("").starts_with("mlflow."))
             .collect();
         if !visible.is_empty() {
             println!("\nTags:");
             for t in visible {
-                println!("  {} = {}", t["key"].as_str().unwrap_or("?"), t["value"].as_str().unwrap_or("?"));
+                println!(
+                    "  {} = {}",
+                    t["key"].as_str().unwrap_or("?"),
+                    t["value"].as_str().unwrap_or("?")
+                );
             }
         }
     }

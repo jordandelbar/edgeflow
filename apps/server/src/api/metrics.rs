@@ -1,13 +1,13 @@
+use super::ApiError;
+use crate::state::AppState;
 use axum::{
     extract::{Query, State},
     routing::{get, post},
     Json, Router,
 };
-use serde::Deserialize;
 use edgeflow_core::{Metric, Param, RunTag};
 use edgeflow_store::Store;
-use crate::state::AppState;
-use super::ApiError;
+use serde::Deserialize;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -29,12 +29,18 @@ async fn log_metric(
     State(state): State<AppState>,
     Json(req): Json<LogMetricRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    state.store.log_metric(&req.run_id, Metric {
-        key: req.key,
-        value: req.value,
-        timestamp: req.timestamp,
-        step: req.step.unwrap_or(0),
-    }).await?;
+    state
+        .store
+        .log_metric(
+            &req.run_id,
+            Metric {
+                key: req.key,
+                value: req.value,
+                timestamp: req.timestamp,
+                step: req.step.unwrap_or(0),
+            },
+        )
+        .await?;
     Ok(Json(serde_json::json!({})))
 }
 
@@ -50,12 +56,15 @@ async fn log_batch(
     State(state): State<AppState>,
     Json(req): Json<LogBatchRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    state.store.log_batch(
-        &req.run_id,
-        req.metrics.unwrap_or_default(),
-        req.params.unwrap_or_default(),
-        req.tags.unwrap_or_default(),
-    ).await?;
+    state
+        .store
+        .log_batch(
+            &req.run_id,
+            req.metrics.unwrap_or_default(),
+            req.params.unwrap_or_default(),
+            req.tags.unwrap_or_default(),
+        )
+        .await?;
     Ok(Json(serde_json::json!({})))
 }
 
@@ -69,6 +78,9 @@ async fn get_metric_history(
     State(state): State<AppState>,
     Query(q): Query<MetricHistoryQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let metrics = state.store.get_metric_history(&q.run_id, &q.metric_key).await?;
+    let metrics = state
+        .store
+        .get_metric_history(&q.run_id, &q.metric_key)
+        .await?;
     Ok(Json(serde_json::json!({ "metrics": metrics })))
 }

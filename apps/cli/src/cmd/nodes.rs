@@ -1,7 +1,7 @@
+use crate::api::Api;
 use anyhow::Result;
 use clap::Subcommand;
-use comfy_table::{Table, presets::UTF8_BORDERS_ONLY};
-use crate::api::Api;
+use comfy_table::{presets::UTF8_BORDERS_ONLY, Table};
 
 #[derive(Subcommand)]
 pub enum Cmd {
@@ -25,8 +25,13 @@ fn list(api: &Api) -> Result<()> {
     }
 
     // Enrich with target counts per node.
-    let targets_res = api.list_targets().unwrap_or_else(|_| serde_json::json!({ "targets": [] }));
-    let targets = targets_res["targets"].as_array().cloned().unwrap_or_default();
+    let targets_res = api
+        .list_targets()
+        .unwrap_or_else(|_| serde_json::json!({ "targets": [] }));
+    let targets = targets_res["targets"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
 
     let mut table = Table::new();
     table.load_preset(UTF8_BORDERS_ONLY);
@@ -34,10 +39,12 @@ fn list(api: &Api) -> Result<()> {
 
     for n in &nodes {
         let name = n.as_str().unwrap_or("?");
-        let node_targets: Vec<_> = targets.iter()
+        let node_targets: Vec<_> = targets
+            .iter()
             .filter(|t| t["node"].as_str() == Some(name))
             .collect();
-        let unhealthy = node_targets.iter()
+        let unhealthy = node_targets
+            .iter()
             .filter(|t| matches!(t["health"].as_str(), Some("unhealthy") | Some("stale")))
             .count();
         let unhealthy_str = if unhealthy > 0 {

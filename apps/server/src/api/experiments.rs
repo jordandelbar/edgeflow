@@ -1,13 +1,13 @@
+use super::ApiError;
+use crate::state::AppState;
 use axum::{
     extract::{Query, State},
     routing::{get, post},
     Json, Router,
 };
-use serde::{Deserialize, Serialize};
 use edgeflow_core::ExperimentTag;
 use edgeflow_store::Store;
-use crate::state::AppState;
-use super::ApiError;
+use serde::{Deserialize, Serialize};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -38,12 +38,17 @@ async fn create_experiment(
     State(state): State<AppState>,
     Json(req): Json<CreateExperimentRequest>,
 ) -> Result<Json<CreateExperimentResponse>, ApiError> {
-    let exp = state.store.create_experiment(
-        &req.name,
-        req.artifact_location.as_deref(),
-        req.tags.unwrap_or_default(),
-    ).await?;
-    Ok(Json(CreateExperimentResponse { experiment_id: exp.experiment_id }))
+    let exp = state
+        .store
+        .create_experiment(
+            &req.name,
+            req.artifact_location.as_deref(),
+            req.tags.unwrap_or_default(),
+        )
+        .await?;
+    Ok(Json(CreateExperimentResponse {
+        experiment_id: exp.experiment_id,
+    }))
 }
 
 #[derive(Deserialize)]
@@ -68,7 +73,10 @@ async fn get_experiment_by_name(
     State(state): State<AppState>,
     Query(q): Query<GetByNameQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let exp = state.store.get_experiment_by_name(&q.experiment_name).await?;
+    let exp = state
+        .store
+        .get_experiment_by_name(&q.experiment_name)
+        .await?;
     Ok(Json(serde_json::json!({ "experiment": exp })))
 }
 
@@ -148,7 +156,10 @@ async fn update_experiment(
     State(state): State<AppState>,
     Json(req): Json<UpdateExperimentRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    state.store.update_experiment(&req.experiment_id, &req.new_name).await?;
+    state
+        .store
+        .update_experiment(&req.experiment_id, &req.new_name)
+        .await?;
     Ok(Json(serde_json::json!({})))
 }
 
@@ -163,6 +174,9 @@ async fn set_experiment_tag(
     State(state): State<AppState>,
     Json(req): Json<SetExperimentTagRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    state.store.set_experiment_tag(&req.experiment_id, &req.key, &req.value).await?;
+    state
+        .store
+        .set_experiment_tag(&req.experiment_id, &req.key, &req.value)
+        .await?;
     Ok(Json(serde_json::json!({})))
 }

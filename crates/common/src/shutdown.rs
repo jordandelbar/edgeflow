@@ -1,4 +1,4 @@
-use tokio::signal::unix::{SignalKind, signal};
+use tokio::signal::unix::{signal, SignalKind};
 use tokio_util::sync::CancellationToken;
 
 /// Spawns a background task that listens for SIGINT (ctrl-c) and SIGTERM,

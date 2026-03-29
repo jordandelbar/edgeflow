@@ -19,7 +19,6 @@
 ///   - `ordinal`: category → f32 ordinal index (OrdinalEncoder)
 ///   - `one_hot`:  category → binary vector of length `|categories|` (OneHotEncoder)
 ///   - `passthrough`: numeric field passed through unchanged
-
 use std::collections::HashMap;
 
 use anyhow::{anyhow, Result};
@@ -115,7 +114,10 @@ pub fn parse_schema(bytes: Option<&[u8]>) -> (InputMode, Vec<InputSpec>) {
             return (InputMode::Single, vec![]);
         }
         other => {
-            tracing::info!(format = other, "unrecognised input format, using Single mode");
+            tracing::info!(
+                format = other,
+                "unrecognised input format, using Single mode"
+            );
             return (InputMode::Single, vec![]);
         }
     }
@@ -123,7 +125,9 @@ pub fn parse_schema(bytes: Option<&[u8]>) -> (InputMode, Vec<InputSpec>) {
     let fields = match input.fields {
         Some(f) if !f.is_empty() => f,
         _ => {
-            tracing::warn!("schema.json has format=json but no fields, falling back to Single mode");
+            tracing::warn!(
+                "schema.json has format=json but no fields, falling back to Single mode"
+            );
             return (InputMode::Single, vec![]);
         }
     };
@@ -141,7 +145,10 @@ pub fn parse_schema(bytes: Option<&[u8]>) -> (InputMode, Vec<InputSpec>) {
                     Encoding::Ordinal(HashMap::new())
                 }
             });
-            InputSpec { name: f.name, encoding }
+            InputSpec {
+                name: f.name,
+                encoding,
+            }
         })
         .collect();
 
