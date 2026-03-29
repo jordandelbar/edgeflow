@@ -52,13 +52,6 @@ pub struct ModelInfo {
 }
 
 pub struct ServerState {
-    /// Single RwLock over the entire active deployment: pipeline, model info,
-    /// and schema are always updated together, so readers see a consistent
-    /// snapshot.  Readers clone the inner Arc in microseconds, releasing the
-    /// read lock before any heavy work begins, so a concurrent swap (write
-    /// lock) only waits for the cheap clone — not for in-flight inference.
-    /// The inner Mutex serialises concurrent infer calls on the same Pipeline
-    /// instance (required because wasmtime Store needs &mut).
     pub active: Arc<RwLock<Option<Arc<ActiveDeployment>>>>,
     pub semaphore: Arc<Semaphore>,
     pub metrics: Arc<Metrics>,

@@ -62,7 +62,7 @@ async fn main() -> Result<()> {
         target: target.clone(),
     };
 
-    // Start HTTP server in background so we're ready before registering.
+    // Start the HTTP server in the background so we're ready before registering.
     let serve_state = state.clone();
     let serve_addr = infer_addr.clone();
     let serve_cancel = cancel.clone();
@@ -73,7 +73,7 @@ async fn main() -> Result<()> {
     });
 
     // Small pause to let the listener bind before we register.
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
 
     tracing::info!(target = %target, address = %self_address, node = ?node_name, "registering with edgeflow-server");
     retry_forever("register with edgeflow-server", || {

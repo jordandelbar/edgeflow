@@ -7,9 +7,6 @@
 /// lowers list<u8> crossing the component boundary to a single memcpy per
 /// call instead of per-byte Val::U8 heap allocations, which was the dominant
 /// latency cost for large tensors.
-///
-/// Legacy componentize-py components (transform world, no init export) fall
-/// back to the original dynamic Val API — they are deprecated and rare.
 use anyhow::{Context, Result};
 use wasmtime::{
     component::{Component, Func, Linker, Val},
@@ -33,11 +30,11 @@ struct State {
 }
 
 impl WasiView for State {
-    fn ctx(&mut self) -> &mut WasiCtx {
-        &mut self.ctx
-    }
     fn table(&mut self) -> &mut ResourceTable {
         &mut self.table
+    }
+    fn ctx(&mut self) -> &mut WasiCtx {
+        &mut self.ctx
     }
 }
 

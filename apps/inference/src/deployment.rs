@@ -21,7 +21,7 @@ pub struct ActiveDeployment {
     pub schema: Option<Vec<u8>>,
 }
 
-/// Blocking function: download artifacts, build new Pipeline, swap atomically.
+/// Blocking function: download artifacts, build a new Pipeline, swap atomically.
 /// Runs in a `spawn_blocking` thread so wasmtime and ORT are happy.
 pub fn load_and_swap(
     req: DeployInstruction,

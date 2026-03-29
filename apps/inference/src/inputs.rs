@@ -17,7 +17,7 @@
 ///
 /// Supported encodings (matching sklearn transform types):
 ///   - `ordinal`: category → f32 ordinal index (OrdinalEncoder)
-///   - `one_hot`:  category → binary vector of length `|categories|` (OneHotEncoder)
+///   - `one_hot`: category → binary vector of length `|categories|` (OneHotEncoder)
 ///   - `passthrough`: numeric field passed through unchanged
 use std::collections::HashMap;
 
@@ -65,7 +65,7 @@ struct InputSection {
 #[derive(Deserialize)]
 struct FieldJson {
     name: String,
-    // Kept for schema completeness; encoding presence implies string type.
+    // Kept for schema completeness; encoding presence implies a string type.
     #[allow(dead_code)]
     #[serde(rename = "type")]
     dtype: String,
