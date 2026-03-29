@@ -65,11 +65,3 @@ print(f"run_id: {run_id}")
 
 mv = edgeflow.register(run_id, "iris-classifier", server=EDGEFLOW_SERVER)
 deployment = edgeflow.deploy(mv.name, mv.version, EDGEFLOW_TARGET, server=EDGEFLOW_SERVER, wait=False)
-
-print()
-print("done. to test inference:")
-print(
-    '  python3 -c "import struct, sys; sys.stdout.buffer.write('
-    "struct.pack('<4f', 5.1, 3.5, 1.4, 0.2))\" \\"
-)
-print("  | curl -s -X POST http://localhost:8080/infer --data-binary @-")

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { registeredModels, deployments, targets, type RegisteredModel, type Deployment } from '$lib/api';
   import ErrorCard from '$lib/components/ErrorCard.svelte';
   import DeployModal from '$lib/components/DeployModal.svelte';
@@ -12,8 +12,9 @@
   let deployModalModel: RegisteredModel | null = null;
   let deletingModel: Record<string, boolean> = {};
   let error = '';
+  let interval: ReturnType<typeof setInterval>;
 
-  onMount(async () => {
+  async function load() {
     try {
       const [modelsRes, depsRes, tgRes] = await Promise.all([
         registeredModels.list(),
@@ -48,7 +49,10 @@
     } catch (e) {
       error = String(e);
     }
-  });
+  }
+
+  onMount(() => { load(); interval = setInterval(load, 10000); });
+  onDestroy(() => clearInterval(interval));
 
   async function deleteModel(name: string) {
     deletingModel[name] = true;

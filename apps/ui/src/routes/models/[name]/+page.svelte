@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { registeredModels, deployments, targets, runs, type ModelVersion, type Deployment, type Run } from '$lib/api';
   import ErrorCard from '$lib/components/ErrorCard.svelte';
   import BreadcrumbNav from '$lib/components/BreadcrumbNav.svelte';
@@ -19,10 +19,11 @@
   let savingStage: Record<string, boolean> = {};
   let deletingVersion: Record<string, boolean> = {};
   let error = '';
+  let interval: ReturnType<typeof setInterval>;
 
   function mvKey(mv: ModelVersion) { return `${mv.name}:${mv.version}`; }
 
-  onMount(async () => {
+  async function load() {
     try {
       const [mvRes, depsRes, tgRes] = await Promise.all([
         registeredModels.listVersions(data.name),
@@ -57,7 +58,10 @@
     } catch (e) {
       error = String(e);
     }
-  });
+  }
+
+  onMount(() => { load(); interval = setInterval(load, 10000); });
+  onDestroy(() => clearInterval(interval));
 
   async function getRun(run_id: string): Promise<Run | null> {
     if (runCache[run_id]) return runCache[run_id];
