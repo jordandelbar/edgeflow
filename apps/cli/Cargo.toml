@@ -3,6 +3,10 @@ name = "edgeflow-cli"
 version = "0.1.0"
 edition = "2021"
 description = "edgeflow command-line interface"
+license = "Apache-2.0"
+repository = "https://github.com/edgeflow-rs/edgeflow"
+keywords = ["ml", "inference", "edge", "onnx"]
+categories = ["command-line-utilities"]
 
 [[bin]]
 name = "edgeflow"
