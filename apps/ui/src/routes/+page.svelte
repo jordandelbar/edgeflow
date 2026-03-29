@@ -4,7 +4,7 @@
       href:        '/experiments',
       label:       'Experiments',
       icon:        'fa-solid fa-flask',
-      description: 'Browse MLflow runs, inspect parameters, metrics, and artifacts.',
+      description: 'Browse runs, inspect parameters, metrics, and artifacts.',
     },
     {
       href:        '/models',

@@ -30,7 +30,7 @@ def register(
     Creates the registered model if it does not exist yet (idempotent).
 
     Args:
-        run_id: MLflow run ID to register.
+        run_id: Run ID to register.
         name:   Registered model name (e.g. ``"iris-classifier"``).
         server: edgeflow server URL.  Defaults to ``EDGEFLOW_SERVER`` env var,
                 then ``http://localhost:5000``.
