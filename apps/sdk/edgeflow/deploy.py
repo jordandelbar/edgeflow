@@ -21,7 +21,7 @@ class ModelVersion:
 
 def register(
     run_id: str,
-    name: str | None = None,
+    name: str,
     *,
     server: str | None = None,
 ) -> ModelVersion:
@@ -31,8 +31,7 @@ def register(
 
     Args:
         run_id: MLflow run ID to register.
-        name:   Registered model name.  Defaults to the run name, or a
-                truncated run ID if the run has no name.
+        name:   Registered model name (e.g. ``"iris-classifier"``).
         server: edgeflow server URL.  Defaults to ``EDGEFLOW_SERVER`` env var,
                 then ``http://localhost:5000``.
 
@@ -40,9 +39,6 @@ def register(
         A :class:`ModelVersion` with ``.name`` and ``.version``.
     """
     server = server or os.environ.get("EDGEFLOW_SERVER", _DEFAULT_SERVER)
-
-    if name is None:
-        name = _run_name(run_id, server)
 
     # Create registered model (idempotent).
     resp = requests.post(
@@ -141,18 +137,3 @@ def deploy(
     raise RuntimeError(f"deployment {deployment_id} ended in state: {state}")
 
 
-def _run_name(run_id: str, server: str) -> str:
-    """Return the run name if available, otherwise a truncated run ID."""
-    try:
-        resp = requests.get(
-            f"{server}/api/2.0/mlflow/runs/get",
-            params={"run_id": run_id},
-            timeout=5,
-        )
-        if resp.ok:
-            run_name = resp.json().get("run", {}).get("info", {}).get("run_name")
-            if run_name:
-                return run_name
-    except Exception:
-        pass
-    return run_id[:12]
