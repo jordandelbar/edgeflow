@@ -8,3 +8,4 @@ tokio = { workspace = true }
 tokio-util = { version = "0.7", features = ["rt"] }
 tracing = { workspace = true }
 rand = "0.9"
+anyhow = { workspace = true }

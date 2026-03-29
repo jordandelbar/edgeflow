@@ -1,6 +1,7 @@
 mod api;
 mod k8s;
 mod state;
+mod target_client;
 
 use axum::Router;
 use std::path::PathBuf;

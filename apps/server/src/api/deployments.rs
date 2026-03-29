@@ -1,5 +1,6 @@
 use super::ApiError;
 use crate::state::AppState;
+use crate::target_client::TargetClient;
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
@@ -27,33 +28,6 @@ pub fn router() -> Router<AppState> {
         .route("/targets/:target/infer/playground", post(infer_playground))
         .route("/targets/:target", delete(teardown_target))
         .route("/nodes", get(list_nodes))
-}
-
-// ── Tensor helpers (mirrors edgeflow-inference tensor format) ─────────────────
-
-fn tensor_decode(bytes: &[u8]) -> anyhow::Result<(Vec<usize>, Vec<f32>)> {
-    anyhow::ensure!(!bytes.is_empty(), "empty tensor buffer");
-    let mut pos = 0;
-    let ndim = bytes[pos] as usize;
-    pos += 1;
-    anyhow::ensure!(
-        bytes.len() >= pos + ndim * 4 + 1,
-        "buffer too short for shape"
-    );
-    let mut shape = Vec::with_capacity(ndim);
-    for _ in 0..ndim {
-        let dim = u32::from_le_bytes(bytes[pos..pos + 4].try_into().unwrap()) as usize;
-        shape.push(dim);
-        pos += 4;
-    }
-    let dtype = bytes[pos];
-    pos += 1;
-    anyhow::ensure!(dtype == 1, "unsupported dtype {dtype}, only f32 supported");
-    let data = bytes[pos..]
-        .chunks_exact(4)
-        .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
-        .collect();
-    Ok((shape, data))
 }
 
 async fn require_target(state: &AppState, target: &str) -> Result<edgeflow_core::Target, ApiError> {
@@ -95,21 +69,9 @@ async fn target_health(
     Path(target): Path<String>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let rec = require_target(&state, &target).await?;
-
-    let url = format!("{}/health", rec.address);
-    let resp = state
-        .http_client
-        .get(&url)
-        .timeout(std::time::Duration::from_secs(3))
-        .send()
-        .await
-        .map_err(|_| anyhow::anyhow!("pod unreachable"))?;
-
-    let json: serde_json::Value = resp
-        .json()
-        .await
-        .map_err(|e| anyhow::anyhow!("failed to parse health response: {e}"))?;
-
+    let json = TargetClient::new(&state.http_client, &rec.address)
+        .health()
+        .await?;
     Ok(Json(json))
 }
 
@@ -143,24 +105,10 @@ async fn target_schema(
     Path(target): Path<String>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let rec = require_target(&state, &target).await?;
-
-    let url = format!("{}/schema", rec.address);
-    let resp = state
-        .http_client
-        .get(&url)
-        .send()
+    let json = TargetClient::new(&state.http_client, &rec.address)
+        .schema()
         .await
-        .map_err(|e| anyhow::anyhow!("failed to reach inference pod: {e}"))?;
-
-    if !resp.status().is_success() {
-        return Err(anyhow::anyhow!("no schema available on target '{target}'").into());
-    }
-
-    let json: serde_json::Value = resp
-        .json()
-        .await
-        .map_err(|e| anyhow::anyhow!("failed to parse schema: {e}"))?;
-
+        .map_err(|e| anyhow::anyhow!("no schema available on target '{target}': {e}"))?;
     Ok(Json(json))
 }
 
@@ -181,33 +129,15 @@ async fn infer_playground(
     // Send raw packed floats — same format as the Python client (struct.pack('<Nf', ...)).
     // The preprocess WASM (FloatBytesToTensor) expects this, not a tensor-encoded header.
     let body: Vec<u8> = req.data.iter().flat_map(|&v| v.to_le_bytes()).collect();
-    let url = format!("{}/infer", rec.address);
-
-    let resp = state
-        .http_client
-        .post(&url)
-        .header("content-type", "application/octet-stream")
-        .body(body)
-        .send()
-        .await
-        .map_err(|e| anyhow::anyhow!("failed to reach inference pod: {e}"))?;
-
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let msg = resp.text().await.unwrap_or_default();
-        return Err(anyhow::anyhow!("inference pod returned {status}: {msg}").into());
-    }
-
-    let bytes = resp
-        .bytes()
-        .await
-        .map_err(|e| anyhow::anyhow!("failed to read response: {e}"))?;
+    let infer_result = TargetClient::new(&state.http_client, &rec.address)
+        .infer(body)
+        .await?;
 
     // The postprocess WASM can return anything. Try JSON first (ClassifierOutput,
     // custom transforms), then fall back to tensor decode (no postprocess).
-    let result = if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&bytes) {
+    let result = if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&infer_result) {
         json
-    } else if let Ok((shape, data)) = tensor_decode(&bytes) {
+    } else if let Ok((shape, data)) = edgeflow_common::tensor::decode(&infer_result) {
         serde_json::json!({ "shape": shape, "data": data })
     } else {
         return Err(anyhow::anyhow!("unrecognised response format from inference pod").into());
@@ -270,28 +200,19 @@ async fn create_deployment(
     // Check if we already have a registered address for this target.
     if let Some(target_rec) = state.store.get_target(&req.target).await? {
         // Upgrade path: pod is alive, tell it to load the new run.
-        let body = serde_json::json!({
-            "run_id": deployment.run_id,
-            "deployment_id": deployment.deployment_id,
-        });
-        let upgrade_url = format!("{}/upgrade", target_rec.address);
-        match state
-            .http_client
-            .post(&upgrade_url)
-            .json(&body)
-            .send()
+        match TargetClient::new(&state.http_client, &target_rec.address)
+            .upgrade(&deployment.run_id, &deployment.deployment_id)
             .await
         {
-            Ok(resp) if resp.status().is_success() || resp.status().as_u16() == 202 => {
+            Ok(true) => {
                 state
                     .store
                     .update_deployment_state(&deployment.deployment_id, DeploymentState::Upgrading)
                     .await?;
             }
-            Ok(resp) => {
+            Ok(false) => {
                 tracing::warn!(
                     deployment_id = %deployment.deployment_id,
-                    status = %resp.status(),
                     "upgrade call to pod returned non-success"
                 );
             }
@@ -452,19 +373,11 @@ async fn register_target(
         .get_pending_deployment_for_target(&req.target)
         .await?
     {
-        let body = serde_json::json!({
-            "run_id": deployment.run_id,
-            "deployment_id": deployment.deployment_id,
-        });
-        let upgrade_url = format!("{}/upgrade", req.address);
-        match state
-            .http_client
-            .post(&upgrade_url)
-            .json(&body)
-            .send()
+        match TargetClient::new(&state.http_client, &req.address)
+            .upgrade(&deployment.run_id, &deployment.deployment_id)
             .await
         {
-            Ok(resp) if resp.status().is_success() || resp.status().as_u16() == 202 => {
+            Ok(true) => {
                 state
                     .store
                     .update_deployment_state(&deployment.deployment_id, DeploymentState::Deploying)
@@ -475,11 +388,8 @@ async fn register_target(
                     "triggered first deploy on newly registered pod"
                 );
             }
-            Ok(resp) => {
-                tracing::warn!(
-                    status = %resp.status(),
-                    "upgrade call to pod after registration returned non-success"
-                );
+            Ok(false) => {
+                tracing::warn!("upgrade call to pod after registration returned non-success");
             }
             Err(e) => {
                 tracing::warn!(error = %e, "failed to reach newly registered pod");
