@@ -20,7 +20,7 @@ def encode_tensor(shape: list, data: bytes) -> bytes:
     buf = len(shape).to_bytes(1, "little")
     for dim in shape:
         buf += dim.to_bytes(4, "little")
-    buf += (1).to_bytes(1, "little")   # dtype = f32
+    buf += (1).to_bytes(1, "little")  # dtype = f32
     return buf + data
 
 
@@ -32,15 +32,18 @@ def decode_tensor(buf: bytes) -> tuple:
     outputs (confidence scores, argmax, etc.).
     """
     pos = 0
-    ndim = buf[pos]; pos += 1
+    ndim = buf[pos]
+    pos += 1
     shape = []
     for _ in range(ndim):
-        dim = int.from_bytes(buf[pos:pos + 4], "little"); pos += 4
+        dim = int.from_bytes(buf[pos : pos + 4], "little")
+        pos += 4
         shape.append(dim)
-    _dtype = buf[pos]; pos += 1   # must be 1 (f32); skip validation for speed
+    _dtype = buf[pos]
+    pos += 1  # must be 1 (f32); skip validation for speed
     values = []
     while pos + 4 <= len(buf):
-        values.append(_f32_from_le(buf[pos:pos + 4]))
+        values.append(_f32_from_le(buf[pos : pos + 4]))
         pos += 4
     return shape, values
 
@@ -53,7 +56,7 @@ def _f32_from_le(b: bytes) -> float:
     mant = bits & 0x7FFFFF
     if exp == 0:
         # Subnormal
-        return sign * (mant / 8388608.0) * 1.1754943508222875e-38   # 2^-126
+        return sign * (mant / 8388608.0) * 1.1754943508222875e-38  # 2^-126
     if exp == 255:
         return float("nan") if mant else sign * float("inf")
     return sign * (1.0 + mant / 8388608.0) * (2.0 ** (exp - 127))

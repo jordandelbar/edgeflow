@@ -1,0 +1,40 @@
+default_install_hook_types: [pre-commit, commit-msg]
+
+repos:
+  - repo: https://github.com/alessandrojcm/commitlint-pre-commit-hook
+    rev: v9.24.0
+    hooks:
+      - id: commitlint
+        stages: [commit-msg]
+        additional_dependencies: ["@commitlint/config-conventional"]
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+      - id: check-added-large-files
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.14
+    hooks:
+      - id: ruff-check
+        args: [ --fix ]
+      - id: ruff-format
+
+  - repo: https://github.com/doublify/pre-commit-rust
+    rev: v1.0
+    hooks:
+      - id: fmt
+
+  - repo: local
+    hooks:
+      - id: eslint-ui
+        name: eslint (ui)
+        language: system
+        # Change dir and strip the 'apps/manager-frontend/' prefix from the file paths passed by pre-commit
+        entry: bash -c 'cd apps/ui && npx eslint --fix "${@#apps/ui/}"' --
+        files: ^apps/ui/.*\.(js|ts|svelte|json)$
+        pass_filenames: true

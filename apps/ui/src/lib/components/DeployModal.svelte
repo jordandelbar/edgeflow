@@ -204,7 +204,7 @@
       <!-- ── Step 1: version picker ─────────────────────────────────── -->
       <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Choose version</p>
       <div class="space-y-1.5">
-        {#each (registeredModel?.latest_versions ?? []) as mv}
+        {#each (registeredModel?.latest_versions ?? []) as mv (mv.version)}
           {@const badge = stageBadge(mv.current_stage)}
           <button
             on:click={() => { resolvedVersion = mv; }}
@@ -226,7 +226,7 @@
     {:else if activeDeps.length > 0}
       <!-- ── Deployment results ──────────────────────────────────────── -->
       <div class="space-y-2">
-        {#each activeDeps as { target, dep }}
+        {#each activeDeps as { target, dep } (target)}
           <div class="flex items-center gap-2 text-sm">
             <DeployStateBadge state={dep.state} />
             <span class="text-gray-400 text-xs">→ {target}</span>
@@ -249,7 +249,7 @@
       <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Deploy to target</p>
 
       <div class="flex flex-wrap gap-2">
-        {#each knownTargets as t}
+        {#each knownTargets as t (t.name)}
           <button
             on:click={() => deployToExisting(t.name)}
             class="flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors
@@ -301,7 +301,7 @@
               <p class="text-xs text-gray-500 font-mono">{nodeList[0]}</p>
             {:else}
               <div class="flex flex-wrap gap-2">
-                {#each nodeList as n}
+                {#each nodeList as n (n)}
                   {@const selected = selectedNodes.includes(n)}
                   <button
                     on:click={() => toggleNode(n)}

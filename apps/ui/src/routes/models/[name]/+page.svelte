@@ -168,7 +168,7 @@
         </tr>
       </thead>
       <tbody>
-        {#each versions as mv}
+        {#each versions as mv (mv.version)}
           {@const k = mvKey(mv)}
           <tr class="border-b border-gray-50 last:border-0 hover:bg-gray-50/50 transition-colors">
 
@@ -240,7 +240,7 @@
             <!-- Deployed on -->
             <td class="px-5 py-3.5">
               <div class="flex flex-wrap gap-1">
-                {#each (deployedOn[k] ?? []) as target}
+                {#each (deployedOn[k] ?? []) as target (target)}
                   <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-sage-light/40 text-sage-dark">
                     <i class="fa-solid fa-circle text-xs"></i>{target}
                   </span>

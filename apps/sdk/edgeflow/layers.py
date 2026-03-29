@@ -6,6 +6,7 @@ standard_pipeline.wasm component shipped in this package.  Calling
 Pipeline([...]).transform() locally runs the exact same Rust logic via
 the native PyO3 extension — server results are guaranteed to match.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -26,6 +27,7 @@ class FloatBytesToTensor(Layer):
     Args:
         n_features: number of f32 values expected in the input bytes.
     """
+
     n_features: int
 
     def to_config(self) -> dict:
@@ -43,6 +45,7 @@ class Normalize(Layer):
         mean: per-feature mean values.
         std:  per-feature standard deviation values.
     """
+
     mean: list[float]
     std: list[float]
 
@@ -59,6 +62,7 @@ class ClassifierOutput(Layer):
     Args:
         labels: ordered list of class label strings.
     """
+
     labels: list[str]
 
     def to_config(self) -> dict:

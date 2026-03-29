@@ -33,12 +33,12 @@ X_train, X_test, y_train, y_test = train_test_split(
 )
 
 mean = X_train.mean(axis=0).tolist()
-std  = X_train.std(axis=0).tolist()
+std = X_train.std(axis=0).tolist()
 print(f"feature mean: {[round(m, 4) for m in mean]}")
 print(f"feature std:  {[round(s, 4) for s in std]}")
 
 X_train_norm = (X_train - np.array(mean)) / np.array(std)
-X_test_norm  = (X_test  - np.array(mean)) / np.array(std)
+X_test_norm = (X_test - np.array(mean)) / np.array(std)
 
 print("training on z-scored features...")
 clf = LogisticRegression(max_iter=200)
@@ -52,22 +52,30 @@ print(f"pushing to edgeflow at {EDGEFLOW_SERVER}...")
 mlflow.set_tracking_uri(EDGEFLOW_SERVER)
 exp = mlflow.set_experiment("iris-poc")
 
-with mlflow.start_run(experiment_id=exp.experiment_id, run_name="iris-normalized") as run:
-    mlflow.log_params({
-        "model": "LogisticRegression",
-        "preprocessing": "z-score",
-        "mean": mean,
-        "std": std,
-    })
+with mlflow.start_run(
+    experiment_id=exp.experiment_id, run_name="iris-normalized"
+) as run:
+    mlflow.log_params(
+        {
+            "model": "LogisticRegression",
+            "preprocessing": "z-score",
+            "mean": mean,
+            "std": std,
+        }
+    )
     mlflow.log_metric("accuracy", accuracy)
     edgeflow.log_model(
         model_bytes=sklearn_to_onnx(clf),
-        preprocess=edgeflow.Pipeline([
-            edgeflow.Normalize(mean=mean, std=std),
-        ]),
-        postprocess=edgeflow.Pipeline([
-            edgeflow.ClassifierOutput(labels=list(iris.target_names)),
-        ]),
+        preprocess=edgeflow.Pipeline(
+            [
+                edgeflow.Normalize(mean=mean, std=std),
+            ]
+        ),
+        postprocess=edgeflow.Pipeline(
+            [
+                edgeflow.ClassifierOutput(labels=list(iris.target_names)),
+            ]
+        ),
     )
     run_id = run.info.run_id
 
@@ -76,4 +84,6 @@ print(f"run_id: {run_id}")
 # ── register + deploy ──────────────────────────────────────────────────────────
 
 mv = edgeflow.register(run_id, "iris-classifier", server=EDGEFLOW_SERVER)
-deployment = edgeflow.deploy(mv.name, mv.version, EDGEFLOW_TARGET, server=EDGEFLOW_SERVER, wait=True)
+deployment = edgeflow.deploy(
+    mv.name, mv.version, EDGEFLOW_TARGET, server=EDGEFLOW_SERVER, wait=True
+)

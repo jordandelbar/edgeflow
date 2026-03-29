@@ -1,6 +1,6 @@
 use std::sync::OnceLock;
 
-use crate::layers::{PipelineConfig, run_pipeline};
+use crate::layers::{run_pipeline, PipelineConfig};
 
 wit_bindgen::generate!({
     world: "configurable-transform",

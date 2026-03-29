@@ -34,19 +34,23 @@ def sklearn_to_onnx(clf, n_features: int | None = None) -> bytes:
 
     n_classes = len(clf.classes_)
 
-    W = clf.coef_.astype(np.float32)         # (n_classes, n_features)
-    b = clf.intercept_.astype(np.float32)    # (n_classes,)
+    W = clf.coef_.astype(np.float32)  # (n_classes, n_features)
+    b = clf.intercept_.astype(np.float32)  # (n_classes,)
 
     nodes = [
         oh.make_node("MatMul", ["X", "W"], ["logits_t"]),
-        oh.make_node("Add",    ["logits_t", "b"], ["logits"]),
+        oh.make_node("Add", ["logits_t", "b"], ["logits"]),
         oh.make_node("Softmax", ["logits"], ["probabilities"], axis=1),
     ]
     graph = oh.make_graph(
         nodes,
         "lr",
         [oh.make_tensor_value_info("X", onnx.TensorProto.FLOAT, [1, n_features])],
-        [oh.make_tensor_value_info("probabilities", onnx.TensorProto.FLOAT, [None, n_classes])],
+        [
+            oh.make_tensor_value_info(
+                "probabilities", onnx.TensorProto.FLOAT, [None, n_classes]
+            )
+        ],
         initializer=[onh.from_array(W.T, name="W"), onh.from_array(b, name="b")],
     )
     model = oh.make_model(graph, opset_imports=[oh.make_opsetid("", 17)])

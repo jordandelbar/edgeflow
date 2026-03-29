@@ -13,6 +13,7 @@ _DEFAULT_SERVER = "http://localhost:5000"
 @dataclass
 class ModelVersion:
     """A registered model version returned by :func:`register`."""
+
     name: str
     version: str
     run_id: str | None = None
@@ -99,7 +100,11 @@ def deploy(
 
     resp = requests.post(
         f"{server}/api/v1/deployments",
-        json={"model_name": model_name, "model_version": model_version, "target": target},
+        json={
+            "model_name": model_name,
+            "model_version": model_version,
+            "target": target,
+        },
         timeout=10,
     )
     resp.raise_for_status()
@@ -135,5 +140,3 @@ def deploy(
             f"deployment {deployment_id} timed out after {timeout}s — last state: {state}"
         )
     raise RuntimeError(f"deployment {deployment_id} ended in state: {state}")
-
-

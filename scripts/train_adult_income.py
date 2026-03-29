@@ -67,17 +67,23 @@ print(f"class balance: {y.mean():.1%} >50K")
 # ── preprocessing ──────────────────────────────────────────────────────────────
 
 categorical_cols = [col for col in X.columns if X[col].dtype.name == "category"]
-numerical_cols   = [col for col in X.columns if col not in categorical_cols]
+numerical_cols = [col for col in X.columns if col not in categorical_cols]
 
 print(f"\ncategorical features ({len(categorical_cols)}): {categorical_cols}")
 print(f"numerical features  ({len(numerical_cols)}): {numerical_cols}")
 
 # OrdinalEncoder for all categoricals — no OHE expansion needed for tree models.
 # unknown_value=-1 handles unseen categories at inference time gracefully.
-preprocessor = ColumnTransformer([
-    ("cat", OrdinalEncoder(handle_unknown="use_encoded_value", unknown_value=-1), categorical_cols),
-    ("num", "passthrough", numerical_cols),
-])
+preprocessor = ColumnTransformer(
+    [
+        (
+            "cat",
+            OrdinalEncoder(handle_unknown="use_encoded_value", unknown_value=-1),
+            categorical_cols,
+        ),
+        ("num", "passthrough", numerical_cols),
+    ]
+)
 
 # ── train ──────────────────────────────────────────────────────────────────────
 
@@ -86,7 +92,7 @@ X_train, X_test, y_train, y_test = train_test_split(
 )
 
 X_train_enc = preprocessor.fit_transform(X_train).astype(np.float32)
-X_test_enc  = preprocessor.transform(X_test).astype(np.float32)
+X_test_enc = preprocessor.transform(X_test).astype(np.float32)
 
 print(f"\nencoded feature count: {X_train_enc.shape[1]}")
 print("training HistGradientBoostingClassifier...")
@@ -99,9 +105,9 @@ clf = HistGradientBoostingClassifier(
 )
 clf.fit(X_train_enc, y_train)
 
-y_pred  = clf.predict(X_test_enc)
+y_pred = clf.predict(X_test_enc)
 y_proba = clf.predict_proba(X_test_enc)[:, 1]
-f1  = f1_score(y_test, y_pred)
+f1 = f1_score(y_test, y_pred)
 auc = roc_auc_score(y_test, y_proba)
 print(f"F1: {f1:.4f}  AUC-ROC: {auc:.4f}")
 
@@ -111,17 +117,21 @@ print(f"\npushing to edgeflow at {EDGEFLOW_SERVER}...")
 mlflow.set_tracking_uri(EDGEFLOW_SERVER)
 exp = mlflow.set_experiment("adult-income-poc")
 
-with mlflow.start_run(experiment_id=exp.experiment_id, run_name="adult-income-gbm") as run:
-    mlflow.log_params({
-        "model": "HistGradientBoostingClassifier",
-        "max_iter": N_ESTIMATORS,
-        "max_depth": MAX_DEPTH,
-        "learning_rate": LEARNING_RATE,
-        "n_features_raw": X.shape[1],
-        "n_features_encoded": X_train_enc.shape[1],
-        "categorical_features": len(categorical_cols),
-        "numerical_features": len(numerical_cols),
-    })
+with mlflow.start_run(
+    experiment_id=exp.experiment_id, run_name="adult-income-gbm"
+) as run:
+    mlflow.log_params(
+        {
+            "model": "HistGradientBoostingClassifier",
+            "max_iter": N_ESTIMATORS,
+            "max_depth": MAX_DEPTH,
+            "learning_rate": LEARNING_RATE,
+            "n_features_raw": X.shape[1],
+            "n_features_encoded": X_train_enc.shape[1],
+            "categorical_features": len(categorical_cols),
+            "numerical_features": len(numerical_cols),
+        }
+    )
     mlflow.log_metric("f1_score", f1)
     mlflow.log_metric("roc_auc", auc)
 
@@ -130,9 +140,9 @@ with mlflow.start_run(experiment_id=exp.experiment_id, run_name="adult-income-gb
     # encoding tables to schema.json — the server applies them at request time.
     edgeflow.log_model(
         model_bytes=clf_to_onnx(clf),
-        postprocess=edgeflow.Pipeline([
-            edgeflow.ClassifierOutput(labels=["<=50K", ">50K"])
-        ]),
+        postprocess=edgeflow.Pipeline(
+            [edgeflow.ClassifierOutput(labels=["<=50K", ">50K"])]
+        ),
         column_transformer=preprocessor,
     )
     run_id = run.info.run_id
@@ -142,4 +152,6 @@ print(f"run_id: {run_id}")
 # ── register + deploy ──────────────────────────────────────────────────────────
 
 mv = edgeflow.register(run_id, "adult-income-classifier", server=EDGEFLOW_SERVER)
-deployment = edgeflow.deploy(mv.name, mv.version, EDGEFLOW_TARGET, server=EDGEFLOW_SERVER, wait=False)
+deployment = edgeflow.deploy(
+    mv.name, mv.version, EDGEFLOW_TARGET, server=EDGEFLOW_SERVER, wait=False
+)

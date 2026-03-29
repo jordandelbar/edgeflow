@@ -6,6 +6,7 @@ standard_pipeline.wasm (pre-compiled Rust, ~150 KB).  Calling
 Pipeline.transform() locally runs the same Rust logic via the native
 PyO3 extension for fast, guaranteed-accurate local testing.
 """
+
 from __future__ import annotations
 
 import json
@@ -14,6 +15,7 @@ from edgeflow.layers import Layer
 
 try:
     from edgeflow import _lib as _native
+
     _NATIVE_AVAILABLE = True
 except ImportError:
     _NATIVE_AVAILABLE = False

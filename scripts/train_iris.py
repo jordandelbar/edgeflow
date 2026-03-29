@@ -50,12 +50,19 @@ exp = mlflow.set_experiment("iris-poc")
 
 with mlflow.start_run(experiment_id=exp.experiment_id, run_name="iris-logistic") as run:
     mlflow.log_params(
-        {"model": "LogisticRegression", "max_iter": 200, "n_features": 4, "n_classes": 3}
+        {
+            "model": "LogisticRegression",
+            "max_iter": 200,
+            "n_features": 4,
+            "n_classes": 3,
+        }
     )
     mlflow.log_metric("accuracy", accuracy)
     edgeflow.log_model(
         model_bytes=sklearn_to_onnx(clf),
-        postprocess=edgeflow.Pipeline([edgeflow.ClassifierOutput(labels=list(iris.target_names))]),
+        postprocess=edgeflow.Pipeline(
+            [edgeflow.ClassifierOutput(labels=list(iris.target_names))]
+        ),
     )
     run_id = run.info.run_id
 
@@ -64,4 +71,6 @@ print(f"run_id: {run_id}")
 # ── register + deploy ──────────────────────────────────────────────────────────
 
 mv = edgeflow.register(run_id, "iris-classifier", server=EDGEFLOW_SERVER)
-deployment = edgeflow.deploy(mv.name, mv.version, EDGEFLOW_TARGET, server=EDGEFLOW_SERVER, wait=False)
+deployment = edgeflow.deploy(
+    mv.name, mv.version, EDGEFLOW_TARGET, server=EDGEFLOW_SERVER, wait=False
+)

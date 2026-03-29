@@ -39,30 +39,98 @@ EDGEFLOW_SERVER = os.environ.get("EDGEFLOW_SERVER", "http://localhost:5000")
 EDGEFLOW_TARGET = os.environ.get("EDGEFLOW_TARGET", "yolo-inference")
 
 MODEL_VARIANT = os.environ.get("YOLO_VARIANT", "yolov8n")  # n / s / m / l / x
-INPUT_SIZE    = 640
+INPUT_SIZE = 640
 CONF_THRESHOLD = float(os.environ.get("YOLO_CONF_THRESHOLD", "0.5"))
-IOU_THRESHOLD  = float(os.environ.get("YOLO_IOU_THRESHOLD",  "0.7"))
+IOU_THRESHOLD = float(os.environ.get("YOLO_IOU_THRESHOLD", "0.7"))
 
 # COCO 80-class labels in index order.
 COCO_LABELS = [
-    "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train",
-    "truck", "boat", "traffic light", "fire hydrant", "stop sign",
-    "parking meter", "bench", "bird", "cat", "dog", "horse", "sheep", "cow",
-    "elephant", "bear", "zebra", "giraffe", "backpack", "umbrella", "handbag",
-    "tie", "suitcase", "frisbee", "skis", "snowboard", "sports ball", "kite",
-    "baseball bat", "baseball glove", "skateboard", "surfboard", "tennis racket",
-    "bottle", "wine glass", "cup", "fork", "knife", "spoon", "bowl", "banana",
-    "apple", "sandwich", "orange", "broccoli", "carrot", "hot dog", "pizza",
-    "donut", "cake", "chair", "couch", "potted plant", "bed", "dining table",
-    "toilet", "tv", "laptop", "mouse", "remote", "keyboard", "cell phone",
-    "microwave", "oven", "toaster", "sink", "refrigerator", "book", "clock",
-    "vase", "scissors", "teddy bear", "hair drier", "toothbrush",
+    "person",
+    "bicycle",
+    "car",
+    "motorcycle",
+    "airplane",
+    "bus",
+    "train",
+    "truck",
+    "boat",
+    "traffic light",
+    "fire hydrant",
+    "stop sign",
+    "parking meter",
+    "bench",
+    "bird",
+    "cat",
+    "dog",
+    "horse",
+    "sheep",
+    "cow",
+    "elephant",
+    "bear",
+    "zebra",
+    "giraffe",
+    "backpack",
+    "umbrella",
+    "handbag",
+    "tie",
+    "suitcase",
+    "frisbee",
+    "skis",
+    "snowboard",
+    "sports ball",
+    "kite",
+    "baseball bat",
+    "baseball glove",
+    "skateboard",
+    "surfboard",
+    "tennis racket",
+    "bottle",
+    "wine glass",
+    "cup",
+    "fork",
+    "knife",
+    "spoon",
+    "bowl",
+    "banana",
+    "apple",
+    "sandwich",
+    "orange",
+    "broccoli",
+    "carrot",
+    "hot dog",
+    "pizza",
+    "donut",
+    "cake",
+    "chair",
+    "couch",
+    "potted plant",
+    "bed",
+    "dining table",
+    "toilet",
+    "tv",
+    "laptop",
+    "mouse",
+    "remote",
+    "keyboard",
+    "cell phone",
+    "microwave",
+    "oven",
+    "toaster",
+    "sink",
+    "refrigerator",
+    "book",
+    "clock",
+    "vase",
+    "scissors",
+    "teddy bear",
+    "hair drier",
+    "toothbrush",
 ]
 
 # ── export to ONNX ─────────────────────────────────────────────────────────────
 
 print(f"loading {MODEL_VARIANT} pretrained weights (downloads on first run)...")
-from ultralytics import YOLO
+from ultralytics import YOLO  # noqa: E402
 
 model = YOLO(f"{MODEL_VARIANT}.pt")
 
@@ -73,8 +141,8 @@ with tempfile.TemporaryDirectory() as tmp:
         format="onnx",
         imgsz=INPUT_SIZE,
         opset=12,
-        simplify=False,   # no onnxsim dependency
-        nms=False,        # raw [1, 84, 8400] output; NMS handled in postprocess WASM
+        simplify=False,  # no onnxsim dependency
+        nms=False,  # raw [1, 84, 8400] output; NMS handled in postprocess WASM
     )
     onnx_bytes = Path(onnx_path).read_bytes()
 
@@ -86,29 +154,37 @@ print(f"\npushing to edgeflow at {EDGEFLOW_SERVER}...")
 mlflow.set_tracking_uri(EDGEFLOW_SERVER)
 exp = mlflow.set_experiment("yolov8-object-detection")
 
-with mlflow.start_run(experiment_id=exp.experiment_id, run_name=f"{MODEL_VARIANT}-coco") as run:
-    mlflow.log_params({
-        "model": MODEL_VARIANT,
-        "input_size": INPUT_SIZE,
-        "num_classes": len(COCO_LABELS),
-        "conf_threshold": CONF_THRESHOLD,
-        "iou_threshold": IOU_THRESHOLD,
-        "weights": "coco-pretrained",
-    })
+with mlflow.start_run(
+    experiment_id=exp.experiment_id, run_name=f"{MODEL_VARIANT}-coco"
+) as run:
+    mlflow.log_params(
+        {
+            "model": MODEL_VARIANT,
+            "input_size": INPUT_SIZE,
+            "num_classes": len(COCO_LABELS),
+            "conf_threshold": CONF_THRESHOLD,
+            "iou_threshold": IOU_THRESHOLD,
+            "weights": "coco-pretrained",
+        }
+    )
 
     edgeflow.log_model(
         model_bytes=onnx_bytes,
-        preprocess=edgeflow.Pipeline([
-            edgeflow.ImageToTensor(width=INPUT_SIZE, height=INPUT_SIZE),
-        ]),
-        postprocess=edgeflow.Pipeline([
-            edgeflow.DetectionOutput(
-                labels=COCO_LABELS,
-                conf_threshold=CONF_THRESHOLD,
-                iou_threshold=IOU_THRESHOLD,
-                model_size=INPUT_SIZE,
-            ),
-        ]),
+        preprocess=edgeflow.Pipeline(
+            [
+                edgeflow.ImageToTensor(width=INPUT_SIZE, height=INPUT_SIZE),
+            ]
+        ),
+        postprocess=edgeflow.Pipeline(
+            [
+                edgeflow.DetectionOutput(
+                    labels=COCO_LABELS,
+                    conf_threshold=CONF_THRESHOLD,
+                    iou_threshold=IOU_THRESHOLD,
+                    model_size=INPUT_SIZE,
+                ),
+            ]
+        ),
     )
     run_id = run.info.run_id
 
@@ -117,7 +193,9 @@ print(f"run_id: {run_id}")
 # ── register + deploy ──────────────────────────────────────────────────────────
 
 mv = edgeflow.register(run_id, "yolov8n", server=EDGEFLOW_SERVER)
-deployment = edgeflow.deploy(mv.name, mv.version, EDGEFLOW_TARGET, server=EDGEFLOW_SERVER, wait=False)
+deployment = edgeflow.deploy(
+    mv.name, mv.version, EDGEFLOW_TARGET, server=EDGEFLOW_SERVER, wait=False
+)
 
 print()
 print("done. to test inference:")

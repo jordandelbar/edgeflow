@@ -7,7 +7,6 @@ Usage:
 """
 
 import argparse
-import math
 import sys
 import time
 
@@ -36,6 +35,7 @@ def section(title: str) -> None:
 
 # ── Experiments ────────────────────────────────────────────────────────────────
 
+
 def test_experiments(client: MlflowClient) -> str:
     section("Experiments")
 
@@ -47,7 +47,10 @@ def test_experiments(client: MlflowClient) -> str:
     check("get_experiment by ID", exp.name == exp_name)
 
     exp_by_name = client.get_experiment_by_name(exp_name)
-    check("get_experiment_by_name", exp_by_name is not None and exp_by_name.experiment_id == exp_id)
+    check(
+        "get_experiment_by_name",
+        exp_by_name is not None and exp_by_name.experiment_id == exp_id,
+    )
 
     all_exps = client.search_experiments()
     ids = [e.experiment_id for e in all_exps]
@@ -66,6 +69,7 @@ def test_experiments(client: MlflowClient) -> str:
 
 
 # ── Runs ───────────────────────────────────────────────────────────────────────
+
 
 def test_runs(client: MlflowClient, exp_id: str) -> str:
     section("Runs")
@@ -90,6 +94,7 @@ def test_runs(client: MlflowClient, exp_id: str) -> str:
 
 # ── Params & Metrics ───────────────────────────────────────────────────────────
 
+
 def test_logging(client: MlflowClient, run_id: str) -> None:
     section("Params & Metrics")
 
@@ -105,7 +110,11 @@ def test_logging(client: MlflowClient, run_id: str) -> None:
     client.log_metric(run_id, "loss", 0.5, timestamp=now + 1000, step=1)
     client.log_metric(run_id, "loss", 0.25, timestamp=now + 2000, step=2)
     history = client.get_metric_history(run_id, "loss")
-    check("log_metric / get_metric_history length", len(history) == 3, f"got {len(history)}")
+    check(
+        "log_metric / get_metric_history length",
+        len(history) == 3,
+        f"got {len(history)}",
+    )
     check("metric values decrease", history[0].value > history[-1].value)
 
     client.log_batch(
@@ -127,11 +136,14 @@ def test_logging(client: MlflowClient, run_id: str) -> None:
 
 # ── Artifacts ─────────────────────────────────────────────────────────────────
 
+
 def test_artifacts(client: MlflowClient, run_id: str) -> None:
     section("Artifacts")
 
     # Upload a small file via the high-level mlflow API
-    import tempfile, os
+    import tempfile
+    import os
+
     with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
         f.write("edge model weights placeholder\n")
         tmp_path = f.name
@@ -139,7 +151,9 @@ def test_artifacts(client: MlflowClient, run_id: str) -> None:
     try:
         mlflow.log_artifact(tmp_path, run_id=run_id)
         artifacts = client.list_artifacts(run_id)
-        check("list_artifacts after upload", len(artifacts) >= 1, f"got {len(artifacts)}")
+        check(
+            "list_artifacts after upload", len(artifacts) >= 1, f"got {len(artifacts)}"
+        )
     except Exception as e:
         check("artifact upload", False, str(e))
     finally:
@@ -147,6 +161,7 @@ def test_artifacts(client: MlflowClient, run_id: str) -> None:
 
 
 # ── Run lifecycle ──────────────────────────────────────────────────────────────
+
 
 def test_lifecycle(client: MlflowClient, run_id: str, exp_id: str) -> None:
     section("Run lifecycle")
@@ -157,7 +172,9 @@ def test_lifecycle(client: MlflowClient, run_id: str, exp_id: str) -> None:
 
     client.delete_run(run_id)
     run = client.get_run(run_id)
-    check("delete_run sets lifecycle_stage=deleted", run.info.lifecycle_stage == "deleted")
+    check(
+        "delete_run sets lifecycle_stage=deleted", run.info.lifecycle_stage == "deleted"
+    )
 
     client.restore_run(run_id)
     run = client.get_run(run_id)
@@ -173,6 +190,7 @@ def test_lifecycle(client: MlflowClient, run_id: str, exp_id: str) -> None:
 
 
 # ── Fluent API smoke test ──────────────────────────────────────────────────────
+
 
 def test_fluent_api(tracking_uri: str) -> None:
     section("Fluent API (mlflow.start_run)")
@@ -191,14 +209,19 @@ def test_fluent_api(tracking_uri: str) -> None:
     client = MlflowClient(tracking_uri)
     finished = client.get_run(run.info.run_id)
     check("fluent run status is FINISHED", finished.info.status == "FINISHED")
-    check("fluent param logged", finished.data.params.get("alpha") == "0.5")  # data.params is a dict
+    check(
+        "fluent param logged", finished.data.params.get("alpha") == "0.5"
+    )  # data.params is a dict
 
 
 # ── Main ───────────────────────────────────────────────────────────────────────
 
+
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--uri", default="http://localhost:5000", help="edgeflow server URI")
+    parser.add_argument(
+        "--uri", default="http://localhost:5000", help="edgeflow server URI"
+    )
     args = parser.parse_args()
 
     print(f"Testing edgeflow at {args.uri}\n")
@@ -220,7 +243,7 @@ def main() -> None:
             print(f"  • {f}")
         sys.exit(1)
     else:
-        print(f"\033[32mAll tests passed.\033[0m")
+        print("\033[32mAll tests passed.\033[0m")
 
 
 if __name__ == "__main__":

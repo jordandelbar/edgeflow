@@ -32,7 +32,7 @@
   </div>
 
   <div class="space-y-3">
-    {#each sections as s}
+    {#each sections as s (s.href)}
       <a
         href={s.href}
         class="flex items-center gap-5 bg-white rounded-xl border border-gray-100 px-6 py-5 shadow-sm

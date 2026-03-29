@@ -84,7 +84,7 @@
     return targets;
   }
 
-  function onDeployed(e: CustomEvent<{ run_id: string; targets: string[] }>) {
+  function onDeployed(_e: CustomEvent<{ run_id: string; targets: string[] }>) {
     // Re-fetch to pick up new deployment state.
     deployments.list().then(res => {
       const latestByTarget: Record<string, Deployment> = {};
@@ -134,7 +134,7 @@
         </tr>
       </thead>
       <tbody>
-        {#each items as model}
+        {#each items as model (model.name)}
           {@const mv = latestVersion(model)}
           <tr class="border-b border-gray-50 last:border-0 hover:bg-gray-50/50 transition-colors">
 
@@ -164,7 +164,7 @@
             <!-- Deployed on (across all versions) -->
             <td class="px-5 py-3.5">
               <div class="flex flex-wrap gap-1">
-                {#each deployedTargets(model) as target}
+                {#each deployedTargets(model) as target (target)}
                   <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-sage-light/40 text-sage-dark">
                     <i class="fa-solid fa-circle text-xs"></i>{target}
                   </span>

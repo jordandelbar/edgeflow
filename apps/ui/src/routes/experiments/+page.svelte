@@ -38,7 +38,7 @@
         </tr>
       </thead>
       <tbody>
-        {#each items as exp}
+        {#each items as exp (exp.experiment_id)}
           <tr class="border-b border-gray-50 last:border-0 hover:bg-gray-50 transition-colors">
             <td class="px-5 py-3.5">
               <a

@@ -123,10 +123,14 @@ def compile_transforms(wit_dir: Path, output_dir: Path) -> dict[str, Path]:
             subprocess.run(
                 [
                     "componentize-py",
-                    "--wit-path", str(wit_dir),
-                    "--world", "transform",
-                    "componentize", tmp_py.stem,
-                    "--output", str(wasm_out),
+                    "--wit-path",
+                    str(wit_dir),
+                    "--world",
+                    "transform",
+                    "componentize",
+                    tmp_py.stem,
+                    "--output",
+                    str(wasm_out),
                 ],
                 cwd=output_dir,
                 check=True,

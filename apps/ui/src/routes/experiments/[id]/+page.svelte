@@ -67,13 +67,13 @@
             <th class="px-5 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide">Status</th>
             <th class="px-5 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide">Started</th>
             <th class="px-5 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide">Duration</th>
-            {#each metricKeys as key}
+            {#each metricKeys as key (key)}
               <th class="px-5 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide">{key}</th>
             {/each}
           </tr>
         </thead>
         <tbody>
-          {#each runList as run}
+          {#each runList as run (run.info.run_id)}
             <tr class="border-b border-gray-50 hover:bg-gray-50 transition-colors">
               <td class="px-5 py-3.5">
                 <a
@@ -91,7 +91,7 @@
                 {new Date(run.info.start_time).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
               </td>
               <td class="px-5 py-3.5 text-gray-500 font-mono text-xs">{duration(run)}</td>
-              {#each metricKeys as key}
+              {#each metricKeys as key (key)}
                 <td class="px-5 py-3.5 font-mono text-xs text-gray-700">{metricValue(run, key)}</td>
               {/each}
             </tr>

@@ -1,6 +1,7 @@
 """
 Helpers for logging edgeflow artifacts to an active mlflow run.
 """
+
 from __future__ import annotations
 
 import importlib.resources
@@ -61,11 +62,19 @@ def log_model(
         # models produce their own tensor inside the preprocess WASM.
         n = _read_onnx_n_features(model_bytes)
         if n is not None:
-            first = preprocess.steps[0] if (isinstance(preprocess, Pipeline) and preprocess.steps) else None
+            first = (
+                preprocess.steps[0]
+                if (isinstance(preprocess, Pipeline) and preprocess.steps)
+                else None
+            )
             if preprocess is None:
                 preprocess = Pipeline([FloatBytesToTensor(n_features=n)])
-            elif isinstance(preprocess, Pipeline) and not isinstance(first, (FloatBytesToTensor, ImageToTensor)):
-                preprocess = Pipeline([FloatBytesToTensor(n_features=n)] + preprocess.steps)
+            elif isinstance(preprocess, Pipeline) and not isinstance(
+                first, (FloatBytesToTensor, ImageToTensor)
+            ):
+                preprocess = Pipeline(
+                    [FloatBytesToTensor(n_features=n)] + preprocess.steps
+                )
 
     with tempfile.TemporaryDirectory() as tmp:
         tmpdir = Path(tmp)
@@ -105,13 +114,19 @@ def _read_onnx_n_features(model_bytes: bytes) -> int | None:
     """Return n_features from a float[batch, n_features] ONNX input, or None."""
     try:
         from edgeflow.models import read_onnx_input_shape
+
         return read_onnx_input_shape(model_bytes)
     except Exception:
         return None
 
 
 def _build_schema(preprocess, postprocess, column_transformer=None) -> dict:
-    from edgeflow.layers import FloatBytesToTensor, ClassifierOutput, ImageToTensor, DetectionOutput
+    from edgeflow.layers import (
+        FloatBytesToTensor,
+        ClassifierOutput,
+        ImageToTensor,
+        DetectionOutput,
+    )
 
     schema: dict = {}
 
@@ -124,7 +139,11 @@ def _build_schema(preprocess, postprocess, column_transformer=None) -> dict:
         if isinstance(first, FloatBytesToTensor):
             schema["input"] = {"format": "float_bytes", "n_features": first.n_features}
         elif isinstance(first, ImageToTensor):
-            schema["input"] = {"format": "image", "width": first.width, "height": first.height}
+            schema["input"] = {
+                "format": "image",
+                "width": first.width,
+                "height": first.height,
+            }
 
     if postprocess is not None and postprocess.steps:
         last = postprocess.steps[-1]
@@ -167,30 +186,38 @@ def _build_field_specs_from_transformer(column_transformer) -> list[dict]:
         cols = list(columns) if not isinstance(columns, list) else columns
 
         for col_idx, col in enumerate(cols):
-            if transformer == "passthrough" or isinstance(transformer, FunctionTransformer):
+            if transformer == "passthrough" or isinstance(
+                transformer, FunctionTransformer
+            ):
                 fields.append({"name": str(col), "type": "float"})
 
             elif isinstance(transformer, OrdinalEncoder):
                 categories = transformer.categories_[col_idx]
-                fields.append({
-                    "name": str(col),
-                    "type": "string",
-                    "encoding": {
-                        "type": "ordinal",
-                        "map": {str(cat): float(i) for i, cat in enumerate(categories)},
-                    },
-                })
+                fields.append(
+                    {
+                        "name": str(col),
+                        "type": "string",
+                        "encoding": {
+                            "type": "ordinal",
+                            "map": {
+                                str(cat): float(i) for i, cat in enumerate(categories)
+                            },
+                        },
+                    }
+                )
 
             elif isinstance(transformer, OneHotEncoder):
                 categories = transformer.categories_[col_idx]
-                fields.append({
-                    "name": str(col),
-                    "type": "string",
-                    "encoding": {
-                        "type": "one_hot",
-                        "categories": [str(c) for c in categories],
-                    },
-                })
+                fields.append(
+                    {
+                        "name": str(col),
+                        "type": "string",
+                        "encoding": {
+                            "type": "one_hot",
+                            "categories": [str(c) for c in categories],
+                        },
+                    }
+                )
 
     return fields
 
@@ -200,7 +227,9 @@ def _log_legacy(tmpdir: Path, wit_dir: Path | None) -> None:
     from edgeflow.transforms import compile_transforms
 
     if wit_dir is None:
-        raise ValueError("wit_dir is required when using @preprocess/@postprocess transforms")
+        raise ValueError(
+            "wit_dir is required when using @preprocess/@postprocess transforms"
+        )
 
     warnings.warn(
         "Using componentize-py transforms (~40 MB WASM, ~800 MB inference memory). "

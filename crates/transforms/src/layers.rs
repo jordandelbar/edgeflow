@@ -5,13 +5,23 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Layer {
-    FloatToTensor { n_features: usize },
-    Normalize { mean: Vec<f32>, std: Vec<f32> },
-    ClassifierOutput { labels: Vec<String> },
+    FloatToTensor {
+        n_features: usize,
+    },
+    Normalize {
+        mean: Vec<f32>,
+        std: Vec<f32>,
+    },
+    ClassifierOutput {
+        labels: Vec<String>,
+    },
     RawTensorOutput,
     /// Decode raw JPEG/PNG bytes, resize to (width × height), normalise to [0, 1],
     /// and reorder from HWC to CHW.  Output tensor shape: [1, 3, height, width].
-    ImageToTensor { width: usize, height: usize },
+    ImageToTensor {
+        width: usize,
+        height: usize,
+    },
     /// Decode a YOLO-style detection tensor ([1, 4+classes, num_boxes]), apply
     /// confidence thresholding and greedy IoU NMS, and serialise survivors to JSON.
     /// Bounding box coordinates are normalised to [0, 1] by dividing by model_size.
@@ -44,9 +54,12 @@ fn run_layer(layer: &Layer, input: Vec<u8>) -> Vec<u8> {
         Layer::ClassifierOutput { labels } => classifier_output(labels, &input),
         Layer::RawTensorOutput => input,
         Layer::ImageToTensor { width, height } => image_to_tensor(*width, *height, &input),
-        Layer::DetectionOutput { labels, conf_threshold, iou_threshold, model_size } => {
-            detection_output(labels, *conf_threshold, *iou_threshold, *model_size, &input)
-        }
+        Layer::DetectionOutput {
+            labels,
+            conf_threshold,
+            iou_threshold,
+            model_size,
+        } => detection_output(labels, *conf_threshold, *iou_threshold, *model_size, &input),
     }
 }
 
@@ -107,10 +120,12 @@ fn classifier_output(labels: &[String], input: &[u8]) -> Vec<u8> {
         .enumerate()
         .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
         .unwrap_or((0, &0.0));
-    let label = labels.get(class_id).map(|s| s.as_str()).unwrap_or("unknown");
+    let label = labels
+        .get(class_id)
+        .map(|s| s.as_str())
+        .unwrap_or("unknown");
     let confidence = (confidence * 10000.0).round() / 10000.0;
-    format!(r#"{{"class_id":{class_id},"label":"{label}","confidence":{confidence}}}"#)
-        .into_bytes()
+    format!(r#"{{"class_id":{class_id},"label":"{label}","confidence":{confidence}}}"#).into_bytes()
 }
 
 fn image_to_tensor(width: usize, height: usize, input: &[u8]) -> Vec<u8> {
@@ -128,9 +143,9 @@ fn image_to_tensor(width: usize, height: usize, input: &[u8]) -> Vec<u8> {
         for x in 0..width {
             let src = (y * width + x) * 3;
             let dst = y * width + x;
-            chw[dst]                 = pixels[src]     as f32 / 255.0; // R
-            chw[spatial + dst]       = pixels[src + 1] as f32 / 255.0; // G
-            chw[2 * spatial + dst]   = pixels[src + 2] as f32 / 255.0; // B
+            chw[dst] = pixels[src] as f32 / 255.0; // R
+            chw[spatial + dst] = pixels[src + 1] as f32 / 255.0; // G
+            chw[2 * spatial + dst] = pixels[src + 2] as f32 / 255.0; // B
         }
     }
 
@@ -160,15 +175,25 @@ fn detection_output(
     input: &[u8],
 ) -> Vec<u8> {
     let (shape, data) = decode_tensor(input);
-    assert_eq!(shape.len(), 3, "detection_output: expected 3-D tensor [batch, 4+classes, boxes]");
+    assert_eq!(
+        shape.len(),
+        3,
+        "detection_output: expected 3-D tensor [batch, 4+classes, boxes]"
+    );
     let num_preds = shape[1]; // 4 bbox coords + num_classes
     let num_boxes = shape[2];
-    assert!(num_preds > 4, "detection_output: tensor must have at least 5 prediction rows (4 bbox + 1 class)");
+    assert!(
+        num_preds > 4,
+        "detection_output: tensor must have at least 5 prediction rows (4 bbox + 1 class)"
+    );
     let num_classes = num_preds - 4;
     let scale = model_size as f32;
 
     struct Det {
-        x1: f32, y1: f32, x2: f32, y2: f32,
+        x1: f32,
+        y1: f32,
+        x2: f32,
+        y2: f32,
         confidence: f32,
         class_id: usize,
     }
@@ -179,8 +204,8 @@ fn detection_output(
     for i in 0..num_boxes {
         let xc = data[0 * num_boxes + i];
         let yc = data[1 * num_boxes + i];
-        let w  = data[2 * num_boxes + i];
-        let h  = data[3 * num_boxes + i];
+        let w = data[2 * num_boxes + i];
+        let h = data[3 * num_boxes + i];
 
         let (class_id, confidence) = (0..num_classes)
             .map(|j| (j, data[(4 + j) * num_boxes + i]))
@@ -202,7 +227,11 @@ fn detection_output(
     }
 
     // Greedy NMS: sort by confidence descending, suppress high-IoU duplicates.
-    dets.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
+    dets.sort_by(|a, b| {
+        b.confidence
+            .partial_cmp(&a.confidence)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     let n = dets.len();
     let mut suppressed = vec![false; n];
     let mut kept: Vec<usize> = Vec::new();
@@ -262,10 +291,7 @@ mod tests {
 
     /// Build a tensor in [1, 4+num_classes, num_boxes] layout from a list of
     /// (xc, yc, w, h, class_id, confidence) tuples (coords in model-pixel space).
-    fn detection_tensor(
-        boxes: &[(f32, f32, f32, f32, usize, f32)],
-        num_classes: usize,
-    ) -> Vec<u8> {
+    fn detection_tensor(boxes: &[(f32, f32, f32, f32, usize, f32)], num_classes: usize) -> Vec<u8> {
         let num_boxes = boxes.len();
         let num_preds = 4 + num_classes;
         let mut data = vec![0f32; num_preds * num_boxes];
@@ -377,9 +403,9 @@ mod tests {
         // Two near-identical boxes + one far box.
         let tensor = detection_tensor(
             &[
-                (320.0, 320.0, 200.0, 200.0, 0, 0.9),  // kept (highest conf)
-                (322.0, 322.0, 200.0, 200.0, 0, 0.8),  // suppressed (heavy overlap)
-                (550.0, 550.0,  50.0,  50.0, 0, 0.85), // kept (no overlap)
+                (320.0, 320.0, 200.0, 200.0, 0, 0.9), // kept (highest conf)
+                (322.0, 322.0, 200.0, 200.0, 0, 0.8), // suppressed (heavy overlap)
+                (550.0, 550.0, 50.0, 50.0, 0, 0.85),  // kept (no overlap)
             ],
             1,
         );
@@ -440,8 +466,14 @@ mod tests {
         let arr = dets.as_array().unwrap();
         assert_eq!(arr.len(), 3);
         // Must be in descending confidence order
-        let confs: Vec<f64> = arr.iter().map(|d| d["confidence"].as_f64().unwrap()).collect();
-        assert!(confs[0] >= confs[1] && confs[1] >= confs[2], "not sorted: {confs:?}");
+        let confs: Vec<f64> = arr
+            .iter()
+            .map(|d| d["confidence"].as_f64().unwrap())
+            .collect();
+        assert!(
+            confs[0] >= confs[1] && confs[1] >= confs[2],
+            "not sorted: {confs:?}"
+        );
     }
 
     // ── iou ────────────────────────────────────────────────────────────────────

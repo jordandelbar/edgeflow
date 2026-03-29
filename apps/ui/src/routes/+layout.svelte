@@ -19,7 +19,7 @@
     </a>
 
     <nav class="flex-1 px-2 space-y-0.5">
-      {#each nav as item}
+      {#each nav as item (item.href)}
         {@const isActive = data.pathname.startsWith(item.href)}
         <a
           href={item.href}

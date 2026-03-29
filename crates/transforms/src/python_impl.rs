@@ -1,6 +1,6 @@
 use pyo3::prelude::*;
 
-use crate::layers::{PipelineConfig, run_pipeline};
+use crate::layers::{run_pipeline, PipelineConfig};
 
 /// Native Rust pipeline executor, exposed to Python via PyO3.
 ///

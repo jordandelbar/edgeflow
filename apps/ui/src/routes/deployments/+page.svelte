@@ -211,7 +211,7 @@
   </div>
 {:else}
   <div class="space-y-6">
-    {#each nodeGroups as group}
+    {#each nodeGroups as group (group.node)}
       <div class="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
 
         <!-- Node group header -->
@@ -237,7 +237,7 @@
             </tr>
           </thead>
           <tbody>
-          {#each group.targets as t}
+          {#each group.targets as t (t)}
             {@const deps = byTarget[t]}
             {@const latest = deps[0]}
             {@const status = modelStatus[t]}
@@ -355,7 +355,7 @@
                     </div>
                   {:else}
                     <div class="flex items-end gap-2 flex-wrap">
-                      {#each pg.inputs as _, i}
+                      {#each pg.inputs as _input, i (i)}
                         {@const label = pg.featureNames[i] ?? `Input ${i + 1}`}
                         <div class="flex-1 min-w-20">
                           <label for="input-{t}-{i}" class="block text-xs text-gray-500 mb-1 truncate" title={label}>{label}</label>
@@ -411,7 +411,7 @@
                       </tr>
                     </thead>
                     <tbody>
-                      {#each deps as dep}
+                      {#each deps as dep (dep.deployment_id)}
                         <tr class="border-b border-gray-50 last:border-0">
                           <td class="px-8 py-2 font-mono text-xs">
                             {#if dep.model_name}

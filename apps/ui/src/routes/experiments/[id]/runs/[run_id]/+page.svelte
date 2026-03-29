@@ -93,7 +93,7 @@
 
     <div class="flex flex-col items-end gap-2">
       <!-- Existing model version badges -->
-      {#each registeredVersions as mv}
+      {#each registeredVersions as mv (mv.version)}
         <a
           href="/models"
           class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sage-light/30 text-sage-dark text-sm font-medium hover:bg-sage-light/50 transition-colors"
@@ -162,7 +162,7 @@
       {:else}
         <table class="w-full text-sm">
           <tbody>
-            {#each run.data.params as p}
+            {#each run.data.params as p (p.key)}
               <tr class="border-b border-gray-50 last:border-0">
                 <td class="px-5 py-2.5 font-medium text-gray-600 w-1/3 font-mono text-xs">{p.key}</td>
                 <td class="px-5 py-2.5 text-gray-800 font-mono text-xs">{p.value}</td>
@@ -186,7 +186,7 @@
             on:change={loadMetricHistory}
             class="text-xs border border-gray-200 rounded-md px-2 py-1 text-gray-600 bg-white"
           >
-            {#each metricKeys as key}<option value={key}>{key}</option>{/each}
+            {#each metricKeys as key (key)}<option value={key}>{key}</option>{/each}
           </select>
         {/if}
       </div>
@@ -202,7 +202,7 @@
             </tr>
           </thead>
           <tbody>
-            {#each metricHistory as m}
+            {#each metricHistory as m (m.step)}
               <tr class="border-b border-gray-50 last:border-0">
                 <td class="px-5 py-2.5 text-gray-500 font-mono text-xs">{m.step}</td>
                 <td class="px-5 py-2.5 text-gray-800 font-mono text-xs font-semibold">{m.value}</td>
@@ -224,7 +224,7 @@
         <p class="px-5 py-4 text-sm text-gray-400">None.</p>
       {:else}
         <ul class="divide-y divide-gray-50">
-          {#each fileList as f}
+          {#each fileList as f (f.path)}
             <li class="px-5 py-2.5 flex items-center gap-2.5 text-sm">
               {#if f.is_dir}
                 <i class="fa-solid fa-folder text-peach-light w-4 text-center"></i>
