@@ -271,3 +271,6 @@ __marimo__/
 # Models
 *.onnx
 *.pt
+
+# Binary files
+*.bin

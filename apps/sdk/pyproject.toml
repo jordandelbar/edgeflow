@@ -5,7 +5,7 @@ build-backend = "maturin"
 [project]
 name = "edgeflow"
 version = "0.0.1.dev0"
-requires-python = ">=3.13"
+requires-python = ">=3.12"
 dependencies = [
     "componentize-py>=0.13",
     "onnx>=1.16",

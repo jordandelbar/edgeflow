@@ -1,9 +1,10 @@
 [project]
 name = "edgeflow-scripts"
 version = "0.1.0"
-requires-python = ">=3.13"
+requires-python = ">=3.12"
 dependencies = [
     "edgeflow",
+    "locust>=2.29",
     "mlflow>=3.10.1",
     "numpy>=1.26",
     "requests>=2.31",

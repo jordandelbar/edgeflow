@@ -1,0 +1,135 @@
+"""
+Edgeflow inference load test.
+
+The script resolves the pod address from the edgeflow server at startup,
+then drives POST /infer directly — no server proxy overhead.
+
+Environment variables
+---------------------
+EDGEFLOW_SERVER   Base URL of the edgeflow server  (default: http://localhost:5000)
+EDGEFLOW_TARGET   Target name to benchmark          (required)
+PAYLOAD_FILE      Path to request body file         (required)
+CONTENT_TYPE      Content-type header               (default: application/octet-stream)
+
+Quick-start examples (after `make_payloads.py`)
+-----------------------------------------------
+# iris (raw floats)
+EDGEFLOW_TARGET=iris-inference \
+PAYLOAD_FILE=payloads/iris.bin \
+locust -f locustfile.py --host ignored --headless -u 10 -r 2 -t 60s
+
+# adult income (JSON)
+EDGEFLOW_TARGET=adult-inference \
+PAYLOAD_FILE=payloads/adult.json \
+CONTENT_TYPE=application/json \
+locust -f locustfile.py --host ignored --headless -u 10 -r 2 -t 60s
+
+# yolov8 (JPEG)
+EDGEFLOW_TARGET=yolo-inference \
+PAYLOAD_FILE=payloads/sample.jpg \
+CONTENT_TYPE=image/jpeg \
+locust -f locustfile.py --host ignored --headless -u 4 -r 1 -t 60s
+"""
+
+import os
+
+import requests
+from locust import HttpUser, between, events, task
+
+# ── configuration ────────────────────────────────────────────────────────────
+
+EDGEFLOW_SERVER = os.environ.get("EDGEFLOW_SERVER", "http://localhost:5000")
+TARGET = os.environ.get("EDGEFLOW_TARGET", "")
+PAYLOAD_FILE = os.environ.get("PAYLOAD_FILE", "")
+CONTENT_TYPE = os.environ.get("CONTENT_TYPE", "application/octet-stream")
+ENDPOINT = "http://localhost:8080/"
+
+
+def _resolve_pod_address(server: str, target: str) -> str:
+    resp = requests.get(f"{server}/api/v1/targets", timeout=5)
+    resp.raise_for_status()
+    for t in resp.json().get("targets", []):
+        if t["target"] == target:
+            addr = t["address"]
+            print(f"[locust] target '{target}' → {addr}")
+            return addr
+    raise SystemExit(
+        f"[locust] target '{target}' not registered on {server}.\n"
+        "  Available targets: "
+        + ", ".join(t["target"] for t in resp.json().get("targets", []))
+    )
+
+
+def _load_payload(path: str) -> bytes:
+    if not path:
+        raise SystemExit("[locust] PAYLOAD_FILE is required")
+    with open(path, "rb") as f:
+        data = f.read()
+    print(
+        f"[locust] payload: {path!r} ({len(data)} bytes, content-type: {CONTENT_TYPE})"
+    )
+    return data
+
+
+# Resolve once at import time so HttpUser.host can be set at class level.
+if not TARGET:
+    raise SystemExit("[locust] EDGEFLOW_TARGET is required")
+
+_pod_address = _resolve_pod_address(EDGEFLOW_SERVER, TARGET)
+_payload = _load_payload(PAYLOAD_FILE)
+
+# ── user ─────────────────────────────────────────────────────────────────────
+
+
+class InferenceUser(HttpUser):
+    # Locust's --host flag is ignored; we use the resolved pod address.
+    host = _pod_address
+
+    # No artificial wait — we want to measure raw throughput ceiling.
+    wait_time = between(0, 0)
+
+    @task
+    def infer(self):
+        with self.client.post(
+            f"{ENDPOINT}/infer",
+            data=_payload,
+            headers={"content-type": CONTENT_TYPE},
+            catch_response=True,
+        ) as resp:
+            if resp.status_code == 200:
+                resp.success()
+            elif resp.status_code == 429:
+                # Backpressure from the semaphore — expected under saturation.
+                # Mark success so it doesn't inflate the failure rate, but
+                # Locust still records it separately by status code in the CSV.
+                resp.success()
+                # Re-fire under a distinct name so the two stat lines are easy
+                # to compare side-by-side in the Locust UI / CSV report.
+                self.environment.events.request.fire(
+                    request_type="POST",
+                    name="/infer [429 backpressure]",
+                    response_time=resp.elapsed.total_seconds() * 1000,
+                    response_length=len(resp.content),
+                    context={},
+                    exception=None,
+                )
+            elif resp.status_code == 503:
+                # Model not loaded yet — fail visibly.
+                resp.failure("503 no model loaded")
+            else:
+                resp.failure(f"unexpected {resp.status_code}: {resp.text[:120]}")
+
+
+# ── startup banner ───────────────────────────────────────────────────────────
+
+
+@events.test_start.add_listener
+def on_test_start(environment, **_kwargs):
+    print(
+        f"\n{'─' * 60}\n"
+        f"  target      : {TARGET}\n"
+        f"  pod address : {_pod_address}\n"
+        f"  payload     : {PAYLOAD_FILE} ({len(_payload)} B)\n"
+        f"  content-type: {CONTENT_TYPE}\n"
+        f"{'─' * 60}\n"
+    )
