@@ -1,5 +1,6 @@
 mod backend;
 mod client;
+mod deployment;
 mod inputs;
 mod pipeline;
 mod server;
@@ -34,11 +35,8 @@ async fn main() -> Result<()> {
     let infer_addr =
         std::env::var("EDGEFLOW_INFER_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".into());
 
-    // Derive our reachable address for the server to call back on.
-    // k8s injects the node name via fieldRef: spec.nodeName as EDGEFLOW_NODE_NAME.
     let node_name = std::env::var("EDGEFLOW_NODE_NAME").ok();
 
-    // k8s injects the pod IP via fieldRef: status.podIP as EDGEFLOW_POD_IP.
     let pod_ip = std::env::var("EDGEFLOW_POD_IP").unwrap_or_else(|_| {
         infer_addr
             .split(':')
@@ -58,18 +56,16 @@ async fn main() -> Result<()> {
     let client = Arc::new(EdgeflowClient::new(&server_url));
 
     let state = ServerState {
-        pipeline:   Arc::new(RwLock::new(None)),
-        model_info: Arc::new(RwLock::new(None)),
-        schema:     Arc::new(RwLock::new(None)),
-        semaphore:  Arc::new(Semaphore::new(max_concurrent)),
-        metrics:    Arc::new(Metrics::default()),
-        client:     client.clone(),
-        target:     target.clone(),
+        active:    Arc::new(RwLock::new(None)),
+        semaphore: Arc::new(Semaphore::new(max_concurrent)),
+        metrics:   Arc::new(Metrics::default()),
+        client:    client.clone(),
+        target:    target.clone(),
     };
 
     // Start HTTP server in background so we're ready before registering.
-    let serve_state = state.clone();
-    let serve_addr = infer_addr.clone();
+    let serve_state  = state.clone();
+    let serve_addr   = infer_addr.clone();
     let serve_cancel = cancel.clone();
     tokio::spawn(async move {
         if let Err(e) = server::serve(serve_state, serve_addr, serve_cancel).await {
@@ -80,28 +76,25 @@ async fn main() -> Result<()> {
     // Small pause to let the listener bind before we register.
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
 
-    // Register with edgeflow-server (retry with exponential backoff until it's
-    // ready — it may still be starting when we come up).
     tracing::info!(target = %target, address = %self_address, node = ?node_name, "registering with edgeflow-server");
     retry_forever("register with edgeflow-server", || {
-        let client = client.clone();
-        let target = target.clone();
+        let client       = client.clone();
+        let target       = target.clone();
         let self_address = self_address.clone();
-        let node = node_name.clone();
+        let node         = node_name.clone();
         async move { client.register_target(&target, &self_address, node.as_deref()).await }
     })
     .await;
     tracing::info!("registered — polling for deployments");
 
     // Background task: heartbeat every 30 s, poll for pending deployments every 5 s.
-    let poll_state  = state.clone();
+    let poll_active = state.active.clone();
     let poll_client = client.clone();
     let poll_target = target.clone();
     let poll_cancel = cancel.clone();
     tokio::spawn(async move {
         let mut heartbeat = tokio::time::interval(Duration::from_secs(30));
-        let mut poll     = tokio::time::interval(Duration::from_secs(5));
-        // Don't fire both timers immediately on start — stagger them.
+        let mut poll      = tokio::time::interval(Duration::from_secs(5));
         heartbeat.tick().await;
 
         loop {
@@ -118,17 +111,15 @@ async fn main() -> Result<()> {
                     match poll_client.poll_pending(&poll_target).await {
                         Ok(Some(instr)) => {
                             tracing::info!(
-                                run_id = %instr.run_id,
+                                run_id        = %instr.run_id,
                                 deployment_id = %instr.deployment_id,
                                 "picked up pending deployment via poll"
                             );
-                            let pipeline   = poll_state.pipeline.clone();
-                            let model_info = poll_state.model_info.clone();
-                            let schema     = poll_state.schema.clone();
-                            let client     = poll_client.clone();
-                            let tgt        = poll_target.clone();
+                            let active = poll_active.clone();
+                            let client = poll_client.clone();
+                            let tgt    = poll_target.clone();
                             tokio::task::spawn_blocking(move || {
-                                server::load_and_swap(instr, pipeline, model_info, schema, client, tgt);
+                                deployment::load_and_swap(instr, active, client, tgt);
                             });
                         }
                         Ok(None) => {}

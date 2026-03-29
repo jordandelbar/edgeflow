@@ -69,9 +69,14 @@ impl EdgeflowClient {
 
     /// Poll for the oldest pending deployment for this target. Returns None if
     /// there is nothing to do.
-    pub async fn poll_pending(&self, target: &str) -> Result<Option<crate::server::DeployInstruction>> {
+    pub async fn poll_pending(&self, target: &str) -> Result<Option<crate::deployment::DeployInstruction>> {
+        #[derive(serde::Deserialize)]
+        struct PendingResponse { deployment: Option<PendingDeployment> }
+        #[derive(serde::Deserialize)]
+        struct PendingDeployment { run_id: String, deployment_id: String }
+
         let url = format!("{}/api/v1/targets/{}/pending", self.server, target);
-        let resp: serde_json::Value = self.client
+        let resp: PendingResponse = self.client
             .get(&url)
             .send()
             .await
@@ -81,13 +86,9 @@ impl EdgeflowClient {
             .json()
             .await?;
 
-        let dep = &resp["deployment"];
-        if dep.is_null() {
-            return Ok(None);
-        }
-        Ok(Some(crate::server::DeployInstruction {
-            run_id:        dep["run_id"].as_str().context("missing run_id")?.to_string(),
-            deployment_id: dep["deployment_id"].as_str().context("missing deployment_id")?.to_string(),
+        Ok(resp.deployment.map(|d| crate::deployment::DeployInstruction {
+            run_id:        d.run_id,
+            deployment_id: d.deployment_id,
         }))
     }
 

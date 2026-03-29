@@ -1,5 +1,5 @@
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 
 use anyhow::Result;
 use bytes::Bytes;
@@ -12,7 +12,7 @@ use tokio::net::TcpListener;
 use tokio::sync::Semaphore;
 
 use crate::client::EdgeflowClient;
-use crate::pipeline::Pipeline;
+use crate::deployment::{self, ActiveDeployment, DeployInstruction};
 
 fn json_error(status: StatusCode, msg: &str) -> Response<Full<Bytes>> {
     let body = format!("{{\"error\":{}}}", serde_json::to_string(msg).unwrap_or_default());
@@ -40,21 +40,21 @@ pub struct Metrics {
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ModelInfo {
-    pub run_id: String,
+    pub run_id:        String,
     pub deployment_id: String,
-    pub target: String,
-    pub loaded_at: String,
+    pub target:        String,
+    pub loaded_at:     String,
 }
 
 pub struct ServerState {
-    /// Outer RwLock: readers clone the inner Arc in microseconds, releasing
-    /// the read lock before inference starts.  Swap (write lock) only needs
-    /// to wait for readers to finish that cheap clone — not for in-flight
-    /// inference.  Inner Mutex serializes concurrent infer calls on the same
-    /// Pipeline instance (required because wasmtime Store needs &mut).
-    pub pipeline:  Arc<RwLock<Option<Arc<Mutex<Pipeline>>>>>,
-    pub model_info: Arc<RwLock<Option<ModelInfo>>>,
-    pub schema:    Arc<RwLock<Option<Vec<u8>>>>,
+    /// Single RwLock over the entire active deployment: pipeline, model info,
+    /// and schema are always updated together, so readers see a consistent
+    /// snapshot.  Readers clone the inner Arc in microseconds, releasing the
+    /// read lock before any heavy work begins, so a concurrent swap (write
+    /// lock) only waits for the cheap clone — not for in-flight inference.
+    /// The inner Mutex serialises concurrent infer calls on the same Pipeline
+    /// instance (required because wasmtime Store needs &mut).
+    pub active:    Arc<RwLock<Option<Arc<ActiveDeployment>>>>,
     pub semaphore: Arc<Semaphore>,
     pub metrics:   Arc<Metrics>,
     pub client:    Arc<EdgeflowClient>,
@@ -64,13 +64,11 @@ pub struct ServerState {
 impl Clone for ServerState {
     fn clone(&self) -> Self {
         Self {
-            pipeline:   self.pipeline.clone(),
-            model_info: self.model_info.clone(),
-            schema:     self.schema.clone(),
-            semaphore:  self.semaphore.clone(),
-            metrics:    self.metrics.clone(),
-            client:     self.client.clone(),
-            target:     self.target.clone(),
+            active:    self.active.clone(),
+            semaphore: self.semaphore.clone(),
+            metrics:   self.metrics.clone(),
+            client:    self.client.clone(),
+            target:    self.target.clone(),
         }
     }
 }
@@ -102,15 +100,9 @@ pub async fn serve(state: ServerState, addr: String, cancel: CancellationToken) 
     Ok(())
 }
 
-/// Shared by the HTTP `/upgrade` handler and the background polling loop.
-pub struct DeployInstruction {
-    pub run_id: String,
-    pub deployment_id: String,
-}
-
 #[derive(Deserialize)]
 struct UpgradeRequest {
-    run_id: String,
+    run_id:        String,
     deployment_id: String,
 }
 
@@ -133,13 +125,9 @@ async fn handle(
             state.metrics.requests_active.fetch_add(1, Ordering::Relaxed);
 
             // Acquire read lock only long enough to clone the inner Arc.
-            // The read lock is released before inference starts, so a
-            // concurrent swap (write lock) is not blocked by in-flight infer.
-            let pipeline_arc = state.pipeline.read().unwrap()
-                .as_ref()
-                .map(Arc::clone);
+            let active = state.active.read().unwrap().as_ref().map(Arc::clone);
 
-            let Some(pipeline_arc) = pipeline_arc else {
+            let Some(active) = active else {
                 state.metrics.requests_active.fetch_sub(1, Ordering::Relaxed);
                 drop(permit);
                 return Ok(json_error(StatusCode::SERVICE_UNAVAILABLE, "no model loaded yet"));
@@ -148,8 +136,8 @@ async fn handle(
             let body = req.collect().await?.to_bytes();
             let metrics = state.metrics.clone();
             let result = tokio::task::spawn_blocking(move || {
-                let out = pipeline_arc.lock().unwrap().infer(&body);
-                drop(permit);  // release as soon as inference completes
+                let out = active.pipeline.lock().unwrap().infer(&body);
+                drop(permit);
                 out
             })
             .await
@@ -177,30 +165,27 @@ async fn handle(
             };
 
             tracing::info!(
-                run_id = %upgrade_req.run_id,
+                run_id        = %upgrade_req.run_id,
                 deployment_id = %upgrade_req.deployment_id,
                 "upgrade requested"
             );
 
-            // Spawn background task — returns 202 immediately.
             let instr = DeployInstruction {
-                run_id: upgrade_req.run_id,
+                run_id:        upgrade_req.run_id,
                 deployment_id: upgrade_req.deployment_id,
             };
-            let pipeline = state.pipeline.clone();
-            let model_info = state.model_info.clone();
-            let schema = state.schema.clone();
+            let active = state.active.clone();
             let client = state.client.clone();
             let target = state.target.clone();
             tokio::task::spawn_blocking(move || {
-                load_and_swap(instr, pipeline, model_info, schema, client, target);
+                deployment::load_and_swap(instr, active, client, target);
             });
 
             Ok(json_ok(Bytes::from_static(b"{\"status\":\"loading\"}")))
         }
 
         (&Method::GET, "/model") => {
-            let info = state.model_info.read().unwrap().clone();
+            let info = state.active.read().unwrap().as_ref().map(|a| a.model_info.clone());
             match info {
                 Some(i) => Ok(json_ok(serde_json::to_vec(&i).unwrap_or_default())),
                 None => Ok(json_error(StatusCode::SERVICE_UNAVAILABLE, "no model loaded")),
@@ -220,7 +205,7 @@ async fn handle(
         }
 
         (&Method::GET, "/schema") => {
-            let schema = state.schema.read().unwrap().clone();
+            let schema = state.active.read().unwrap().as_ref().and_then(|a| a.schema.clone());
             match schema {
                 Some(bytes) => Ok(json_ok(bytes)),
                 None => Ok(json_error(StatusCode::NOT_FOUND, "no schema available")),
@@ -228,7 +213,7 @@ async fn handle(
         }
 
         (&Method::GET, "/health") => {
-            let loaded = state.pipeline.read().unwrap().is_some();
+            let loaded = state.active.read().unwrap().is_some();
             if loaded {
                 Ok(json_ok(Bytes::from_static(b"{\"status\":\"ok\"}")))
             } else {
@@ -244,68 +229,5 @@ async fn handle(
             .status(StatusCode::NOT_FOUND)
             .body(Full::new(Bytes::new()))
             .unwrap()),
-    }
-}
-
-/// Blocking function: download artifacts, build new Pipeline, swap atomically.
-/// Runs in a `spawn_blocking` thread so wasmtime and ORT are happy.
-pub fn load_and_swap(
-    req: DeployInstruction,
-    shared_pipeline: Arc<RwLock<Option<Arc<Mutex<Pipeline>>>>>,
-    shared_model_info: Arc<RwLock<Option<ModelInfo>>>,
-    shared_schema: Arc<RwLock<Option<Vec<u8>>>>,
-    client: Arc<EdgeflowClient>,
-    target: String,
-) {
-    let rt = tokio::runtime::Handle::current();
-
-    let result: anyhow::Result<(Pipeline, Option<Vec<u8>>)> = rt.block_on(async {
-        tracing::info!(run_id = %req.run_id, "downloading model.onnx");
-        let model = client.download_artifact(&req.run_id, "model.onnx").await?;
-
-        let pre_wasm = client.download_artifact(&req.run_id, "preprocess.wasm").await.ok();
-        let pre_cfg = client.download_artifact(&req.run_id, "preprocess.json").await.ok();
-
-        let post_wasm = client.download_artifact(&req.run_id, "postprocess.wasm").await.ok();
-        let post_cfg = client.download_artifact(&req.run_id, "postprocess.json").await.ok();
-
-        let schema = client.download_artifact(&req.run_id, "schema.json").await.ok();
-
-        Ok((model, pre_wasm, pre_cfg, post_wasm, post_cfg, schema))
-    }).and_then(|(model, pre_wasm, pre_cfg, post_wasm, post_cfg, schema)| {
-        let pre = pre_wasm.as_deref().map(|w| (w, pre_cfg.as_deref()));
-        let post = post_wasm.as_deref().map(|w| (w, post_cfg.as_deref()));
-        let backend = crate::backend::build_backend();
-        // Pass schema.json so Pipeline can determine input mode (Single vs Named).
-        let pipeline = Pipeline::new(backend, &model, pre, post, schema.as_deref())?;
-        Ok((pipeline, schema))
-    });
-
-    match result {
-        Ok((new_pipeline, schema)) => {
-            // Wrap in Arc<Mutex> then write-lock the outer RwLock to swap.
-            // Write lock only blocks for readers to finish cloning their Arc,
-            // not for in-flight inference calls.
-            *shared_pipeline.write().unwrap() = Some(Arc::new(Mutex::new(new_pipeline)));
-            *shared_schema.write().unwrap() = schema;
-            *shared_model_info.write().unwrap() = Some(ModelInfo {
-                run_id: req.run_id,
-                deployment_id: req.deployment_id.clone(),
-                target,
-                loaded_at: chrono::Utc::now().to_rfc3339(),
-            });
-
-            tracing::info!(deployment_id = %req.deployment_id, "pipeline swapped successfully");
-
-            let _ = rt.block_on(
-                client.confirm_deployment(&req.deployment_id, "deployed", None)
-            );
-        }
-        Err(e) => {
-            tracing::error!(deployment_id = %req.deployment_id, error = %e, "pipeline load failed");
-            let _ = rt.block_on(
-                client.confirm_deployment(&req.deployment_id, "failed", Some(&e.to_string()))
-            );
-        }
     }
 }

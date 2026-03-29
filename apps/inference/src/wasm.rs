@@ -55,18 +55,28 @@ pub struct WasmTransform {
 }
 
 impl WasmTransform {
-    pub fn new(wasm_bytes: &[u8], config: Option<&[u8]>) -> Result<Self> {
+    /// Create a wasmtime Engine configured for WASM component use.
+    ///
+    /// Cranelift optimisations are disabled: 41 MB componentize-py components
+    /// take several minutes to JIT at O2; None brings that down to seconds.
+    /// Callers building multiple transforms should call this once and pass the
+    /// result to each `WasmTransform::new` call, sharing the JIT resources.
+    pub fn build_engine() -> Result<Engine> {
         let mut cfg = Config::new();
         cfg.wasm_component_model(true);
-        // Disable Cranelift optimizations: 41 MB componentize-py components take
-        // several minutes to JIT at O2; None brings that down to seconds.
         cfg.cranelift_opt_level(wasmtime::OptLevel::None);
-        let engine = Engine::new(&cfg).context("failed to create wasmtime engine")?;
+        Engine::new(&cfg).context("failed to create wasmtime engine")
+    }
 
+    /// Build a transform from raw WASM bytes using an already-created Engine.
+    ///
+    /// `config` is `Some` for standard Rust pipelines (triggers `init`) and
+    /// `None` for legacy componentize-py components.
+    pub fn new(engine: &Engine, wasm_bytes: &[u8], config: Option<&[u8]>) -> Result<Self> {
         let component =
-            Component::new(&engine, wasm_bytes).context("failed to compile WASM component")?;
+            Component::new(engine, wasm_bytes).context("failed to compile WASM component")?;
 
-        let mut linker: Linker<State> = Linker::new(&engine);
+        let mut linker: Linker<State> = Linker::new(engine);
         wasmtime_wasi::add_to_linker_sync(&mut linker)
             .context("failed to add WASI to component linker")?;
 
@@ -74,7 +84,7 @@ impl WasmTransform {
             ctx: WasiCtxBuilder::new().inherit_stdout().inherit_stderr().build(),
             table: ResourceTable::new(),
         };
-        let mut store = Store::new(&engine, state);
+        let mut store = Store::new(engine, state);
 
         let inner = if let Some(cfg_bytes) = config {
             // Standard Rust pipeline: static bindings give us a memcpy boundary.
