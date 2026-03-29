@@ -73,6 +73,7 @@ with mlflow.start_run(experiment_id=exp.experiment_id, run_name="iris-normalized
 
 print(f"run_id: {run_id}")
 
-# ── deploy ─────────────────────────────────────────────────────────────────────
+# ── register + deploy ──────────────────────────────────────────────────────────
 
-deployment = edgeflow.deploy(run_id, EDGEFLOW_TARGET, wait=True)
+mv = edgeflow.register(run_id, "iris-classifier", server=EDGEFLOW_SERVER)
+deployment = edgeflow.deploy(mv.name, mv.version, EDGEFLOW_TARGET, server=EDGEFLOW_SERVER, wait=True)

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { runs, experiments, metrics, artifacts, models, runTag, type Run, type Metric, type FileInfo } from '$lib/api';
+  import { runs, experiments, metrics, artifacts, registeredModels, type Run, type Metric, type FileInfo, type ModelVersion } from '$lib/api';
   import ErrorCard from '$lib/components/ErrorCard.svelte';
   import BreadcrumbNav from '$lib/components/BreadcrumbNav.svelte';
   import StatusBadge from '$lib/components/StatusBadge.svelte';
@@ -14,17 +14,26 @@
   let metricHistory: Metric[] = [];
   let fileList: FileInfo[] = [];
   let error = '';
-  let promoting = false;
-  let promoted = false;
+
+  // Model registration state
+  let registeredVersions: ModelVersion[] = [];
+  let registering = false;
+  let registerForm = false;
+  let registerName = '';
+  let registerError = '';
 
   onMount(async () => {
     const run_id = data.run_id;
     try {
       const res = await runs.get(run_id);
       run = res.run;
-      const expRes = await experiments.get(run.info.experiment_id);
+      const [expRes, mvRes] = await Promise.all([
+        experiments.get(run.info.experiment_id),
+        registeredModels.getVersionsByRunId(run_id),
+      ]);
       experimentName = expRes.experiment?.name ?? run.info.experiment_id;
-      promoted = runTag(run, 'edgeflow.promoted') === 'true';
+      registeredVersions = mvRes.model_versions ?? [];
+      registerName = run.info.run_name ?? '';
       metricKeys = [...new Set(run.data.metrics.map(m => m.key))];
       if (metricKeys.length > 0) {
         selectedMetric = metricKeys[0];
@@ -43,25 +52,20 @@
     metricHistory = res.metrics ?? [];
   }
 
-  async function promote() {
-    if (!run) return;
-    promoting = true;
+  async function registerAsModel() {
+    if (!run || !registerName.trim()) { registerError = 'Model name is required.'; return; }
+    registering = true;
+    registerError = '';
     try {
-      await models.promote(run.info.run_id);
-      promoted = true;
+      // Create registered model (idempotent — ignore already-exists error)
+      try { await registeredModels.create(registerName.trim()); } catch { /* exists */ }
+      const res = await registeredModels.createVersion(registerName.trim(), run.info.run_id);
+      registeredVersions = [...registeredVersions, res.model_version];
+      registerForm = false;
+    } catch (e) {
+      registerError = String(e);
     } finally {
-      promoting = false;
-    }
-  }
-
-  async function demote() {
-    if (!run) return;
-    promoting = true;
-    try {
-      await models.demote(run.info.run_id);
-      promoted = false;
-    } finally {
-      promoting = false;
+      registering = false;
     }
   }
 </script>
@@ -87,40 +91,62 @@
       </div>
     </div>
 
-    {#if promoted}
-      <div class="flex items-center gap-2">
-        <div class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sage-light/30 text-sage-dark text-sm font-medium">
-          <i class="fa-solid fa-check-circle text-xs"></i>
-          Promoted to model
-        </div>
-        <button
-          on:click={demote}
-          disabled={promoting}
-          title="Demote — remove from Models"
-          class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-50"
+    <div class="flex flex-col items-end gap-2">
+      <!-- Existing model version badges -->
+      {#each registeredVersions as mv}
+        <a
+          href="/models"
+          class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sage-light/30 text-sage-dark text-sm font-medium hover:bg-sage-light/50 transition-colors"
+          title="View in Models page"
         >
-          {#if promoting}
-            <i class="fa-solid fa-spinner fa-spin text-xs"></i>
-          {:else}
-            <i class="fa-solid fa-circle-minus text-xs"></i>
+          <i class="fa-solid fa-check-circle text-xs"></i>
+          {mv.name} v{mv.version}
+        </a>
+      {/each}
+
+      <!-- Register as model -->
+      {#if run.info.status === 'FINISHED'}
+        {#if registerForm}
+          <div class="flex items-center gap-2">
+            <input
+              type="text"
+              bind:value={registerName}
+              placeholder="Model name"
+              class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-peach/50 focus:border-peach w-48"
+            />
+            <button
+              on:click={registerAsModel}
+              disabled={registering}
+              class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold bg-peach text-white hover:bg-peach-dark transition-colors disabled:opacity-50"
+            >
+              {#if registering}
+                <i class="fa-solid fa-spinner fa-spin text-xs"></i>
+              {:else}
+                <i class="fa-solid fa-check text-xs"></i>
+              {/if}
+              Register
+            </button>
+            <button
+              on:click={() => { registerForm = false; registerError = ''; }}
+              class="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 transition-colors"
+            >
+              <i class="fa-solid fa-xmark text-sm"></i>
+            </button>
+          </div>
+          {#if registerError}
+            <p class="text-xs text-red-500"><i class="fa-solid fa-circle-xmark mr-1"></i>{registerError}</p>
           {/if}
-          Demote
-        </button>
-      </div>
-    {:else if run.info.status === 'FINISHED'}
-      <button
-        on:click={promote}
-        disabled={promoting}
-        class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold bg-peach text-white hover:bg-peach-dark transition-colors disabled:opacity-50"
-      >
-        {#if promoting}
-          <i class="fa-solid fa-spinner fa-spin text-xs"></i>
         {:else}
-          <i class="fa-solid fa-arrow-up-right-dots text-xs"></i>
+          <button
+            on:click={() => { registerForm = true; }}
+            class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold bg-peach text-white hover:bg-peach-dark transition-colors"
+          >
+            <i class="fa-solid fa-tag text-xs"></i>
+            Register as Model
+          </button>
         {/if}
-        Promote to Model
-      </button>
-    {/if}
+      {/if}
+    </div>
   </div>
 
   <div class="space-y-5">

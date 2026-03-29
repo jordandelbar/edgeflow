@@ -1,11 +1,13 @@
 from edgeflow.artifacts import log_model
-from edgeflow.deploy import deploy
+from edgeflow.deploy import deploy, register, ModelVersion
 from edgeflow.layers import ClassifierOutput, DetectionOutput, FloatBytesToTensor, ImageToTensor, Normalize, RawTensorOutput
 from edgeflow.pipeline import Pipeline
 
 __all__ = [
     "log_model",
+    "register",
     "deploy",
+    "ModelVersion",
     "Pipeline",
     "FloatBytesToTensor",
     "Normalize",

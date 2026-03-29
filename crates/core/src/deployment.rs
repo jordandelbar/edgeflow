@@ -40,6 +40,8 @@ pub struct Deployment {
     pub deployment_id: String,
     pub target: String,
     pub run_id: String,
+    pub model_name: Option<String>,
+    pub model_version: Option<String>,
     pub created_at: i64,
     pub state: DeploymentState,
 }

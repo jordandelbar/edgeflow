@@ -36,7 +36,7 @@ pub trait Store: Send + Sync {
     async fn artifact_root(&self, run_id: &str) -> Result<std::path::PathBuf>;
 
     // Deployments
-    async fn create_deployment(&self, run_id: &str, target: &str) -> Result<Deployment>;
+    async fn create_deployment(&self, run_id: &str, target: &str, model_name: Option<&str>, model_version: Option<&str>) -> Result<Deployment>;
     async fn get_deployment(&self, deployment_id: &str) -> Result<Deployment>;
     async fn get_latest_deployment(&self, target: &str) -> Result<Deployment>;
     async fn list_deployments(&self, target: Option<&str>) -> Result<Vec<Deployment>>;
@@ -44,6 +44,21 @@ pub trait Store: Send + Sync {
     async fn get_pending_deployment_for_target(&self, target: &str) -> Result<Option<Deployment>>;
     async fn supersede_previous_deployments(&self, target: &str, except_id: &str) -> Result<()>;
     async fn get_stale_deployments(&self, states: &[&str], older_than_ms: i64) -> Result<Vec<Deployment>>;
+
+    // Model Registry
+    async fn create_registered_model(&self, name: &str, description: Option<&str>) -> Result<RegisteredModel>;
+    async fn get_registered_model(&self, name: &str) -> Result<RegisteredModel>;
+    async fn list_registered_models(&self) -> Result<Vec<RegisteredModel>>;
+    async fn update_registered_model(&self, name: &str, description: Option<&str>) -> Result<RegisteredModel>;
+    async fn delete_registered_model(&self, name: &str) -> Result<()>;
+    async fn create_model_version(&self, name: &str, run_id: Option<&str>, source: Option<&str>, description: Option<&str>) -> Result<ModelVersion>;
+    async fn get_model_version(&self, name: &str, version: i64) -> Result<ModelVersion>;
+    async fn list_model_versions(&self, name: &str) -> Result<Vec<ModelVersion>>;
+    async fn get_latest_model_versions(&self, name: &str, stages: &[&str]) -> Result<Vec<ModelVersion>>;
+    async fn transition_model_version_stage(&self, name: &str, version: i64, stage: &str) -> Result<ModelVersion>;
+    async fn update_model_version(&self, name: &str, version: i64, description: Option<&str>) -> Result<ModelVersion>;
+    async fn delete_model_version(&self, name: &str, version: i64) -> Result<()>;
+    async fn search_model_versions(&self, filter: Option<&str>) -> Result<Vec<ModelVersion>>;
 
     // Targets
     async fn register_target(&self, target: &str, address: &str, pod_name: Option<&str>, node: Option<&str>) -> Result<Target>;

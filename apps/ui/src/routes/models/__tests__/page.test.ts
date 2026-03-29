@@ -2,9 +2,6 @@ import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/sv
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import Page from '../+page.svelte';
 
-// models.list() calls experiments.list() first (mget → /experiments/list),
-// then /runs/search with a promoted-tag filter.  Both must return data or
-// models.list() short-circuits with { runs: [] }.
 const originalFetch = globalThis.fetch;
 
 function stubFetch() {
@@ -13,17 +10,26 @@ function stubFetch() {
     const json = (body: unknown) =>
       new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
 
-    if (url.includes('/experiments/list')) {
-      return json({ experiments: [{ experiment_id: '1', name: 'test', artifact_location: '', lifecycle_stage: 'active', creation_time: 0, last_update_time: 0, tags: [] }] });
-    }
-    if (url.includes('/runs/search')) {
-      return json({ runs: [{ info: { run_id: 'run-abc', experiment_id: '1', run_name: 'My Model', status: 'FINISHED', start_time: 0, end_time: null, artifact_uri: '', lifecycle_stage: 'active' }, data: { metrics: [], params: [], tags: [] } }] });
+    if (url.includes('/registered-models/list')) {
+      return json({
+        registered_models: [{
+          name: 'My Model',
+          creation_time: 0,
+          last_updated_time: 0,
+          description: null,
+          latest_versions: [{
+            name: 'My Model', version: '1', creation_time: 0, last_updated_time: 0,
+            current_stage: 'None', description: null, source: null,
+            run_id: 'run-abc', status: 'READY',
+          }],
+        }],
+      });
     }
     if (url.includes('/deployments')) {
-      return json({ deployments: [{ deployment_id: 'dep-1', run_id: 'run-abc', target: 'prod', state: 'deployed', created_at: 0 }] });
+      return json({ deployments: [{ deployment_id: 'dep-1', run_id: 'run-abc', model_name: 'My Model', model_version: '1', target: 'prod', state: 'deployed', created_at: 0 }] });
     }
     if (url.includes('/targets')) {
-      return json({ targets: [{ target: 'prod', address: 'http://pod', pod_name: null, node: null, registered_at: 0 }] });
+      return json({ targets: [{ target: 'prod', address: 'http://pod', pod_name: null, node: null, registered_at: 0, last_seen: null, health: 'unknown' }] });
     }
     return json({});
   }) as typeof fetch;
@@ -56,10 +62,14 @@ describe('models page — interval cleanup', () => {
     });
     const clearSpy = vi.spyOn(globalThis, 'clearInterval');
 
-    // Open the deploy panel on the model card.
+    // Open the deploy modal.
     fireEvent.click(screen.getByText('Deploy'));
 
-    // Click the existing 'prod' target — triggers deployToExisting → pollOne → setInterval.
+    // The modal now shows a version picker first — select v1.
+    await waitFor(() => screen.getByRole('button', { name: /v1/ }));
+    fireEvent.click(screen.getByRole('button', { name: /v1/ }));
+
+    // Now the target picker is shown — click the existing 'prod' target.
     await waitFor(() => screen.getByRole('button', { name: /prod/ }));
     fireEvent.click(screen.getByRole('button', { name: /prod/ }));
 

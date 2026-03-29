@@ -1,10 +1,25 @@
 <script lang="ts">
   import { createEventDispatcher, onDestroy } from 'svelte';
-  import { deployments, nodes, type Run, type Deployment, type ResourceSettings } from '$lib/api';
+  import { deployments, nodes, type RegisteredModel, type ModelVersion, type Deployment, type ResourceSettings } from '$lib/api';
   import DeployStateBadge from './DeployStateBadge.svelte';
 
-  export let run: Run;
-  export let knownTargets: { name: string; state: string; run_id: string; node: string | null }[];
+  // Provide either a specific version (skips version picker) or a whole model.
+  export let modelVersion: ModelVersion | null = null;
+  export let registeredModel: RegisteredModel | null = null;
+  export let knownTargets: { name: string; state: string; model_name: string | null; model_version: string | null; node: string | null }[];
+
+  // Resolved once the user picks (or was given) a version.
+  let resolvedVersion: ModelVersion | null = modelVersion;
+
+  function stageBadge(stage: string) {
+    return ({
+      Production: { colour: 'bg-sage-light/40 text-sage-dark',  label: 'Production' },
+      Staging:    { colour: 'bg-blue-50 text-blue-600',          label: 'Staging'    },
+      Archived:   { colour: 'bg-gray-100 text-gray-400',         label: 'Archived'   },
+      None:       { colour: 'bg-gray-50 text-gray-400',          label: 'None'       },
+    } as Record<string, { colour: string; label: string }>)[stage]
+      ?? { colour: 'bg-gray-50 text-gray-500', label: stage };
+  }
 
   const dispatch = createEventDispatcher<{
     close: void;
@@ -77,7 +92,7 @@
           if (allSettled) {
             polling = false;
             dispatch('deployed', {
-              run_id: run.info.run_id,
+              run_id: resolvedVersion?.run_id ?? '',
               targets: activeDeps.filter(d => d.dep.state === 'deployed').map(d => d.target),
             });
           }
@@ -91,11 +106,12 @@
   }
 
   async function deployToExisting(target: string) {
+    if (!resolvedVersion) return;
     err = '';
     polling = true;
     activeDeps = [];
     try {
-      const res = await deployments.create(run.info.run_id, target, null);
+      const res = await deployments.create(resolvedVersion.name, resolvedVersion.version, target, null);
       activeDeps = [{ target, dep: res.deployment }];
       pollOne(res.deployment.deployment_id, target);
     } catch (e) {
@@ -105,6 +121,7 @@
   }
 
   async function deployNew() {
+    if (!resolvedVersion) return;
     if (!newTarget.trim()) { err = 'Target name is required.'; return; }
     if (selectedNodes.length === 0) { err = 'Select at least one node.'; return; }
 
@@ -120,7 +137,7 @@
 
     const results = await Promise.allSettled(
       pairs.map(({ node, target }) =>
-        deployments.create(run.info.run_id, target, node, resources)
+        deployments.create(resolvedVersion!.name, resolvedVersion!.version, target, node, resources)
           .then(res => ({ target, dep: res.deployment }))
       )
     );
@@ -165,8 +182,15 @@
   <!-- Header -->
   <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between gap-3">
     <div>
-      <p class="font-semibold text-gray-800 text-sm">{run.info.run_name ?? run.info.run_id.slice(0, 8)}</p>
-      <p class="text-xs text-gray-400 font-mono mt-0.5">{run.info.run_id.slice(0, 12)}</p>
+      {#if resolvedVersion}
+        <p class="font-semibold text-gray-800 text-sm">{resolvedVersion.name} <span class="text-gray-400 font-normal">v{resolvedVersion.version}</span></p>
+        {#if resolvedVersion.run_id}
+          <p class="text-xs text-gray-400 font-mono mt-0.5">{resolvedVersion.run_id.slice(0, 12)}</p>
+        {/if}
+      {:else}
+        <p class="font-semibold text-gray-800 text-sm">{registeredModel?.name}</p>
+        <p class="text-xs text-gray-400 mt-0.5">Select a version to deploy</p>
+      {/if}
     </div>
     <button on:click={close} class="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
       <i class="fa-solid fa-xmark"></i>
@@ -176,8 +200,31 @@
   <!-- Body -->
   <div class="px-5 py-4 space-y-3">
 
-    {#if activeDeps.length > 0}
-      <!-- Deployment results -->
+    {#if !resolvedVersion}
+      <!-- ── Step 1: version picker ─────────────────────────────────── -->
+      <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Choose version</p>
+      <div class="space-y-1.5">
+        {#each (registeredModel?.latest_versions ?? []) as mv}
+          {@const badge = stageBadge(mv.current_stage)}
+          <button
+            on:click={() => { resolvedVersion = mv; }}
+            class="w-full flex items-center justify-between px-3 py-2.5 rounded-lg border border-gray-200 hover:border-peach hover:bg-peach-light/5 transition-colors text-left"
+          >
+            <div class="flex items-center gap-2.5">
+              <span class="font-mono text-sm font-semibold text-gray-800">v{mv.version}</span>
+              {#if mv.run_id}
+                <span class="text-xs text-gray-400 font-mono">{mv.run_id.slice(0, 8)}</span>
+              {/if}
+            </div>
+            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium {badge.colour}">
+              {badge.label}
+            </span>
+          </button>
+        {/each}
+      </div>
+
+    {:else if activeDeps.length > 0}
+      <!-- ── Deployment results ──────────────────────────────────────── -->
       <div class="space-y-2">
         {#each activeDeps as { target, dep }}
           <div class="flex items-center gap-2 text-sm">
@@ -198,7 +245,7 @@
       </div>
 
     {:else}
-      <!-- Target picker -->
+      <!-- ── Step 2: target picker ───────────────────────────────────── -->
       <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Deploy to target</p>
 
       <div class="flex flex-wrap gap-2">
@@ -210,7 +257,7 @@
           >
             <i class="fa-solid fa-server text-xs text-gray-400"></i>
             {t.name}
-            {#if t.run_id === run.info.run_id}
+            {#if t.model_name === resolvedVersion.name && t.model_version === resolvedVersion.version}
               <DeployStateBadge state={t.state} />
             {/if}
           </button>

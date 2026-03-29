@@ -2,6 +2,7 @@ mod artifacts;
 mod deployments;
 mod experiments;
 mod metrics;
+mod model_registry;
 mod runs;
 
 use axum::{http::StatusCode, response::{IntoResponse, Response}, Json};
@@ -15,6 +16,7 @@ pub fn mlflow_router() -> Router<AppState> {
         .merge(runs::router())
         .merge(metrics::router())
         .merge(artifacts::router())
+        .merge(model_registry::router())
 }
 
 /// Artifact proxy upload API (/api/2.0/mlflow-artifacts/*)

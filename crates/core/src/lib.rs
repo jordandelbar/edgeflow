@@ -2,12 +2,14 @@ pub mod artifact;
 pub mod deployment;
 pub mod experiment;
 pub mod metric;
+pub mod model_registry;
 pub mod run;
 
 pub use artifact::*;
 pub use deployment::*;
 pub use experiment::*;
 pub use metric::*;
+pub use model_registry::*;
 pub use run::*;
 
 use thiserror::Error;

@@ -83,6 +83,8 @@ export type FileInfo = {
 export type Deployment = {
   deployment_id: string;
   run_id: string;
+  model_name: string | null;
+  model_version: string | null;
   target: string;
   state: string;
   created_at: number;
@@ -149,24 +151,47 @@ export const artifacts = {
     ),
 };
 
-// ── Models (promoted runs) ─────────────────────────────────────────────────
+// ── Model Registry ─────────────────────────────────────────────────────────────
 
-export const models = {
-  /** List all runs tagged edgeflow.promoted = true, across all experiments. */
-  list: async (): Promise<{ runs: Run[] }> => {
-    const { experiments: exps } = await experiments.list();
-    const ids = (exps ?? []).map(e => e.experiment_id);
-    if (ids.length === 0) return { runs: [] };
-    return mpost<{ runs: Run[] }>('/runs/search', {
-      experiment_ids: ids,
-      filter: "tag.`edgeflow.promoted` = 'true'",
-      max_results: 200,
-    });
-  },
-  promote: (run_id: string) =>
-    mpost('/runs/set-tag', { run_id, key: 'edgeflow.promoted', value: 'true' }),
-  demote: (run_id: string) =>
-    mpost('/runs/set-tag', { run_id, key: 'edgeflow.promoted', value: 'false' }),
+export type ModelVersion = {
+  name: string;
+  version: string;
+  creation_time: number;
+  last_updated_time: number;
+  current_stage: string;
+  description: string | null;
+  source: string | null;
+  run_id: string | null;
+  status: string;
+};
+
+export type RegisteredModel = {
+  name: string;
+  creation_time: number;
+  last_updated_time: number;
+  description: string | null;
+  latest_versions: ModelVersion[];
+};
+
+export const registeredModels = {
+  list: () =>
+    mget<{ registered_models: RegisteredModel[] }>('/registered-models/list'),
+  get: (name: string) =>
+    mget<{ registered_model: RegisteredModel }>('/registered-models/get', { name }),
+  create: (name: string, description?: string) =>
+    mpost<{ registered_model: RegisteredModel }>('/registered-models/create', { name, description }),
+  delete: (name: string) =>
+    mpost('/registered-models/delete', { name }),
+  createVersion: (name: string, run_id: string, source?: string) =>
+    mpost<{ model_version: ModelVersion }>('/model-versions/create', { name, run_id, source }),
+  listVersions: (name: string) =>
+    mpost<{ model_versions: ModelVersion[] }>('/model-versions/search', { filter: `name = '${name}'` }),
+  getVersionsByRunId: (run_id: string) =>
+    mpost<{ model_versions: ModelVersion[] }>('/model-versions/search', { filter: `run_id = '${run_id}'` }),
+  transitionStage: (name: string, version: string, stage: string) =>
+    mpost<{ model_version: ModelVersion }>('/model-versions/transition-stage', { name, version, stage }),
+  deleteVersion: (name: string, version: string) =>
+    mpost('/model-versions/delete', { name, version }),
 };
 
 // ── Deployments ────────────────────────────────────────────────────────────
@@ -197,8 +222,8 @@ export const nodes = {
 };
 
 export const deployments = {
-  create:  (run_id: string, target: string, node?: string | null, resources?: Partial<ResourceSettings>) =>
-    v1post<{ deployment: Deployment }>('/deployments', { run_id, target, node, resources }),
+  create:  (model_name: string, model_version: string, target: string, node?: string | null, resources?: Partial<ResourceSettings>) =>
+    v1post<{ deployment: Deployment }>('/deployments', { model_name, model_version, target, node, resources }),
   list:    () =>
     v1get<{ deployments: Deployment[] }>('/deployments'),
   listForTarget: (target: string) =>

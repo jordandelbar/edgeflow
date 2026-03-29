@@ -194,7 +194,8 @@ async fn infer_playground(
 
 #[derive(Deserialize)]
 struct CreateDeploymentRequest {
-    run_id: String,
+    model_name: String,
+    model_version: String,
     target: String,
     node: Option<String>,
     #[serde(default)]
@@ -205,7 +206,14 @@ async fn create_deployment(
     State(state): State<AppState>,
     Json(req): Json<CreateDeploymentRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let deployment = state.store.create_deployment(&req.run_id, &req.target).await?;
+    let version_int: i64 = req.model_version.parse()
+        .map_err(|_| anyhow::anyhow!("model_version must be an integer, got '{}'", req.model_version))?;
+    let mv = state.store.get_model_version(&req.model_name, version_int).await
+        .map_err(|_| anyhow::anyhow!("model version {} v{} not found", req.model_name, req.model_version))?;
+    let run_id = mv.run_id
+        .ok_or_else(|| anyhow::anyhow!("model version {} v{} has no associated run", req.model_name, req.model_version))?;
+
+    let deployment = state.store.create_deployment(&run_id, &req.target, Some(&req.model_name), Some(&req.model_version)).await?;
 
     // Check if we already have a registered address for this target.
     if let Some(target_rec) = state.store.get_target(&req.target).await? {

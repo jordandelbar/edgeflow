@@ -414,7 +414,11 @@
                       {#each deps as dep}
                         <tr class="border-b border-gray-50 last:border-0">
                           <td class="px-8 py-2 font-mono text-xs">
-                            {#if runExpId[dep.run_id]}
+                            {#if dep.model_name}
+                              <a href="/models" class="text-sage-dark hover:underline">
+                                <i class="fa-solid fa-brain mr-1 text-sage opacity-60"></i>{dep.model_name} v{dep.model_version}
+                              </a>
+                            {:else if runExpId[dep.run_id]}
                               <a href="/experiments/{runExpId[dep.run_id]}/runs/{dep.run_id}" class="text-sage-dark hover:underline">{dep.run_id.slice(0, 12)}</a>
                             {:else}
                               <span class="text-gray-600">{dep.run_id.slice(0, 12)}</span>
