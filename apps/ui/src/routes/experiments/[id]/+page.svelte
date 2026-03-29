@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { experiments, runs, type Experiment, type Run } from '$lib/api';
+  import { fmtDateTime } from '$lib/utils';
   import ErrorCard from '$lib/components/ErrorCard.svelte';
   import BreadcrumbNav from '$lib/components/BreadcrumbNav.svelte';
   import StatusBadge from '$lib/components/StatusBadge.svelte';
@@ -88,7 +89,7 @@
                 <StatusBadge status={run.info.status} />
               </td>
               <td class="px-5 py-3.5 text-gray-500">
-                {new Date(run.info.start_time).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                {fmtDateTime(run.info.start_time)}
               </td>
               <td class="px-5 py-3.5 text-gray-500 font-mono text-xs">{duration(run)}</td>
               {#each metricKeys as key (key)}

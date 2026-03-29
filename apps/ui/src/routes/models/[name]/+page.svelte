@@ -1,17 +1,15 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { registeredModels, deployments, targets, runs, type ModelVersion, type Deployment, type Run } from '$lib/api';
+  import { registeredModels, runs, type ModelVersion, type Run } from '$lib/api';
+  import { liveData, refreshLiveData } from '$lib/stores';
+  import { fmtDate } from '$lib/utils';
   import ErrorCard from '$lib/components/ErrorCard.svelte';
   import BreadcrumbNav from '$lib/components/BreadcrumbNav.svelte';
   import DeployModal from '$lib/components/DeployModal.svelte';
 
   export let data: { name: string };
 
-  type KnownTarget = { name: string; state: string; model_name: string | null; model_version: string | null; node: string | null };
-
   let versions: ModelVersion[] = [];
-  let knownTargets: KnownTarget[] = [];
-  let deployedOn: Record<string, string[]> = {};  // "name:version" → target names
   let runCache: Record<string, Run> = {};
   let deployModalVersion: ModelVersion | null = null;
   let editingStage: Record<string, boolean> = {};
@@ -23,44 +21,47 @@
 
   function mvKey(mv: ModelVersion) { return `${mv.name}:${mv.version}`; }
 
-  async function load() {
+  $: knownTargets = (() => {
+    const targetNodeMap: Record<string, string | null> = {};
+    for (const t of $liveData.targets) targetNodeMap[t.target] = t.node;
+    const latestByTarget: Record<string, typeof $liveData.deployments[0]> = {};
+    for (const d of $liveData.deployments) {
+      if (!latestByTarget[d.target]) latestByTarget[d.target] = d;
+    }
+    return Object.entries(latestByTarget).map(([name, d]) => ({
+      name, state: d.state,
+      model_name: d.model_name ?? null,
+      model_version: d.model_version ?? null,
+      node: targetNodeMap[name] ?? null,
+    }));
+  })();
+
+  $: deployedOn = (() => {
+    const result: Record<string, string[]> = {};
+    const latestByTarget: Record<string, typeof $liveData.deployments[0]> = {};
+    for (const d of $liveData.deployments) {
+      if (!latestByTarget[d.target]) latestByTarget[d.target] = d;
+    }
+    for (const [tgt, d] of Object.entries(latestByTarget)) {
+      if (d.state === 'deployed' && d.model_name && d.model_version) {
+        const key = `${d.model_name}:${d.model_version}`;
+        if (!result[key]) result[key] = [];
+        result[key].push(tgt);
+      }
+    }
+    return result;
+  })();
+
+  async function loadVersions() {
     try {
-      const [mvRes, depsRes, tgRes] = await Promise.all([
-        registeredModels.listVersions(data.name),
-        deployments.list(),
-        targets.list(),
-      ]);
-      versions = mvRes.model_versions ?? [];
-
-      const targetNodeMap: Record<string, string | null> = {};
-      for (const t of (tgRes.targets ?? [])) targetNodeMap[t.target] = t.node;
-
-      const latestByTarget: Record<string, Deployment> = {};
-      for (const d of (depsRes.deployments ?? [])) {
-        if (!latestByTarget[d.target]) latestByTarget[d.target] = d;
-      }
-      knownTargets = Object.entries(latestByTarget).map(([name, d]) => ({
-        name, state: d.state,
-        model_name: d.model_name ?? null,
-        model_version: d.model_version ?? null,
-        node: targetNodeMap[name] ?? null,
-      }));
-
-      const newDeployedOn: Record<string, string[]> = {};
-      for (const [tgt, d] of Object.entries(latestByTarget)) {
-        if (d.state === 'deployed' && d.model_name && d.model_version) {
-          const key = `${d.model_name}:${d.model_version}`;
-          if (!newDeployedOn[key]) newDeployedOn[key] = [];
-          newDeployedOn[key].push(tgt);
-        }
-      }
-      deployedOn = newDeployedOn;
+      const res = await registeredModels.listVersions(data.name);
+      versions = res.model_versions ?? [];
     } catch (e) {
       error = String(e);
     }
   }
 
-  onMount(() => { load(); interval = setInterval(load, 10000); });
+  onMount(() => { loadVersions(); interval = setInterval(loadVersions, 10000); });
   onDestroy(() => clearInterval(interval));
 
   async function getRun(run_id: string): Promise<Run | null> {
@@ -123,14 +124,8 @@
       ?? { colour: 'bg-gray-50 text-gray-500', label: stage };
   }
 
-  function onDeployed(e: CustomEvent<{ run_id: string; targets: string[] }>) {
-    if (!deployModalVersion) return;
-    const key = mvKey(deployModalVersion);
-    if (!deployedOn[key]) deployedOn[key] = [];
-    for (const t of e.detail.targets) {
-      if (!deployedOn[key].includes(t)) deployedOn[key].push(t);
-    }
-    deployedOn = deployedOn;
+  function onDeployed(_e: CustomEvent<{ run_id: string; targets: string[] }>) {
+    refreshLiveData();
   }
 </script>
 
@@ -176,7 +171,7 @@
             <td class="px-5 py-3.5">
               <span class="font-mono text-sm font-semibold text-gray-800">v{mv.version}</span>
               <div class="text-xs text-gray-400 mt-0.5">
-                {new Date(mv.creation_time).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                {fmtDate(mv.creation_time)}
               </div>
             </td>
 

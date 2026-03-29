@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { experiments, type Experiment } from '$lib/api';
+  import { fmtDate } from '$lib/utils';
   import ErrorCard from '$lib/components/ErrorCard.svelte';
 
   let items: Experiment[] = [];
@@ -14,10 +15,6 @@
       error = String(e);
     }
   });
-
-  function fmt(ms: number) {
-    return new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-  }
 </script>
 
 {#if error}
@@ -52,7 +49,7 @@
               <span class="font-mono text-xs text-gray-400">{exp.experiment_id}</span>
             </td>
             <td class="px-5 py-3.5 hidden md:table-cell text-gray-500 text-xs">
-              {fmt(exp.creation_time)}
+              {fmtDate(exp.creation_time)}
             </td>
           </tr>
         {/each}

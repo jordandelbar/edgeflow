@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
-  import { deployments, targets, runs, type Deployment, type ModelStatus, type TargetHealth } from '$lib/api';
+  import { runs, targets, type Deployment, type ModelStatus, type TargetHealth } from '$lib/api';
+  import { liveData } from '$lib/stores';
+  import { fmtDateTime, fmtAgo } from '$lib/utils';
   import ErrorCard from '$lib/components/ErrorCard.svelte';
   import DeployStateBadge from '$lib/components/DeployStateBadge.svelte';
 
@@ -14,9 +15,70 @@
   let expanded: Record<string, 'history' | 'test' | null> = {};
   let confirming: Record<string, boolean> = {};
   let tearing: Record<string, boolean> = {};
-  let error = '';
+
+  let error   = '';
   let loading = true;
-  let interval: ReturnType<typeof setInterval>;
+
+  $: processLiveData($liveData);
+
+  function processLiveData(data: typeof $liveData) {
+    error   = data.error;
+    loading = !data.loaded;
+    if (!data.loaded) return;
+
+    const newByTarget: Record<string, Deployment[]> = {};
+    for (const d of data.deployments) {
+      if (!newByTarget[d.target]) newByTarget[d.target] = [];
+      newByTarget[d.target].push(d);
+    }
+    const newTargetList = Object.keys(newByTarget);
+
+    // Build fresh objects so mutations don't trigger reactive loops
+    const newNodeForTarget: Record<string, string | null> = { ...nodeForTarget };
+    const newTargetHealth: Record<string, TargetHealth>   = { ...targetHealth };
+    const newLastSeenAt:   Record<string, number | null>  = { ...lastSeenAt };
+    for (const tg of data.targets) {
+      newNodeForTarget[tg.target] = tg.node;
+      newTargetHealth[tg.target]  = tg.health;
+      newLastSeenAt[tg.target]    = tg.last_seen;
+    }
+    nodeForTarget = newNodeForTarget;
+    targetHealth  = newTargetHealth;
+    lastSeenAt    = newLastSeenAt;
+
+    // Init state only for targets we haven't seen before — preserves
+    // expanded panels and playground inputs across refreshes.
+    for (const t of newTargetList) {
+      if (!(t in expanded))    expanded[t]    = null;
+      if (!(t in modelStatus)) modelStatus[t] = null;
+      if (!(t in confirming))  confirming[t]  = false;
+      if (!(t in tearing))     tearing[t]     = false;
+      if (!(t in playground))  playground[t]  = { inputs: [], nFeatures: null, featureNames: [], result: null, err: '', running: false };
+    }
+    expanded    = expanded;
+    modelStatus = modelStatus;
+    confirming  = confirming;
+    tearing     = tearing;
+    playground  = playground;
+
+    byTarget   = newByTarget;
+    targetList = newTargetList;
+
+    // Re-probe all targets without resetting to 'checking' — avoids flicker.
+    newTargetList.forEach(t => {
+      targets.model(t)
+        .then(s => {
+          modelStatus[t] = s;
+          modelStatus = modelStatus;
+          if (s?.run_id && !(s.run_id in runExpId)) {
+            runs.get(s.run_id)
+              .then(r => { runExpId[s.run_id] = r.run.info.experiment_id; runExpId = runExpId; })
+              .catch(() => {});
+          }
+        })
+        .catch(() => { modelStatus[t] = null; modelStatus = modelStatus; });
+    });
+  }
 
   type NodeGroup = { node: string | null; targets: string[] };
   $: nodeGroups = (() => {
@@ -45,72 +107,6 @@
     running: boolean;
   };
   let playground: Record<string, Playground> = {};
-
-  async function load() {
-    try {
-      const [depRes, tgRes] = await Promise.all([
-        deployments.list(),
-        targets.list(),
-      ]);
-      const all = depRes.deployments ?? [];
-
-      const newByTarget: Record<string, Deployment[]> = {};
-      for (const d of all) {
-        if (!newByTarget[d.target]) newByTarget[d.target] = [];
-        newByTarget[d.target].push(d);
-      }
-      const newTargetList = Object.keys(newByTarget);
-
-      // Update node info from target records (preserved across refreshes)
-      for (const tg of (tgRes.targets ?? [])) {
-        nodeForTarget[tg.target] = tg.node;
-        targetHealth[tg.target]  = tg.health;
-        lastSeenAt[tg.target]    = tg.last_seen;
-      }
-      nodeForTarget = nodeForTarget;
-      targetHealth  = targetHealth;
-      lastSeenAt    = lastSeenAt;
-
-      // Init state only for targets we haven't seen before — preserves
-      // expanded panels and playground inputs across refreshes.
-      for (const t of newTargetList) {
-        if (!(t in expanded))    expanded[t]    = null;
-        if (!(t in modelStatus)) modelStatus[t] = null;
-        if (!(t in confirming))  confirming[t]  = false;
-        if (!(t in tearing))     tearing[t]     = false;
-        if (!(t in playground))  playground[t]  = { inputs: [], nFeatures: null, featureNames: [], result: null, err: '', running: false };
-      }
-
-      byTarget   = newByTarget;
-      targetList = newTargetList;
-
-      // Re-probe all targets without resetting to 'checking' — avoids flicker.
-      newTargetList.forEach(t => {
-        targets.model(t)
-          .then(s => {
-            modelStatus[t] = s;
-            modelStatus = modelStatus;
-            if (s?.run_id && !(s.run_id in runExpId)) {
-              runs.get(s.run_id)
-                .then(r => { runExpId[s.run_id] = r.run.info.experiment_id; runExpId = runExpId; })
-                .catch(() => {});
-            }
-          })
-          .catch(() => { modelStatus[t] = null; modelStatus = modelStatus; });
-      });
-    } catch (e) {
-      error = String(e);
-    } finally {
-      loading = false;
-    }
-  }
-
-  onMount(() => {
-    load();
-    interval = setInterval(load, 5000);
-  });
-
-  onDestroy(() => clearInterval(interval));
 
   async function toggle(t: string, panel: 'history' | 'test') {
     expanded[t] = expanded[t] === panel ? null : panel;
@@ -178,17 +174,6 @@
     }
   }
 
-  function fmt(value: number | string) {
-    return new Date(value).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-  }
-
-  function fmtAgo(ms: number): string {
-    const secs = Math.floor((Date.now() - ms) / 1000);
-    if (secs < 60)   return `${secs}s ago`;
-    if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
-    return `${Math.floor(secs / 3600)}h ago`;
-  }
-
   const healthDot: Record<TargetHealth, { colour: string; label: string }> = {
     healthy:   { colour: 'text-sage',     label: 'healthy'   },
     stale:     { colour: 'text-amber-400', label: 'stale'    },
@@ -210,37 +195,39 @@
     <p class="text-xs mt-1">Deploy a model from the Models section.</p>
   </div>
 {:else}
-  <div class="space-y-6">
+  <div class="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+    <table class="w-full table-fixed">
+      <thead>
+        <tr class="border-b border-gray-50">
+          <th class="px-4 py-2 text-left text-xs font-medium text-gray-400 w-8"></th>
+          <th class="px-4 py-2 text-left text-xs font-medium text-gray-400"></th>
+          <th class="px-4 py-2 text-left text-xs font-medium text-gray-400 hidden sm:table-cell w-56">Model</th>
+          <th class="px-4 py-2 text-left text-xs font-medium text-gray-400 hidden md:table-cell w-36">Since</th>
+          <th class="px-4 py-2 text-right text-xs font-medium text-gray-400 w-36">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
     {#each nodeGroups as group (group.node)}
-      <div class="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+        <!-- Node group header row -->
+        <tr class="border-t border-gray-100 first:border-t-0">
+          <td colspan="5" class="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
+            <div class="flex items-center gap-2">
+              <i class="fa-solid fa-server text-xs text-sage"></i>
+              <span class="text-xs font-semibold text-gray-600 uppercase tracking-wide">
+                {group.node ?? 'No node assigned'}
+              </span>
+              <span class="ml-auto text-xs text-gray-400">
+                {group.targets.length} {group.targets.length === 1 ? 'target' : 'targets'}
+              </span>
+            </div>
+          </td>
+        </tr>
 
-        <!-- Node group header -->
-        <div class="px-4 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
-          <i class="fa-solid fa-server text-xs text-sage"></i>
-          <span class="text-xs font-semibold text-gray-600 uppercase tracking-wide">
-            {group.node ?? 'No node assigned'}
-          </span>
-          <span class="ml-auto text-xs text-gray-400">
-            {group.targets.length} {group.targets.length === 1 ? 'target' : 'targets'}
-          </span>
-        </div>
-
-        <!-- Target rows -->
-        <table class="w-full">
-          <thead>
-            <tr class="border-b border-gray-50">
-              <th class="px-4 py-2 text-left text-xs font-medium text-gray-400 w-6"></th>
-              <th class="px-4 py-2 text-left text-xs font-medium text-gray-400">Target</th>
-              <th class="px-4 py-2 text-left text-xs font-medium text-gray-400 hidden sm:table-cell">Model</th>
-              <th class="px-4 py-2 text-left text-xs font-medium text-gray-400 hidden md:table-cell">Since</th>
-              <th class="px-4 py-2 text-right text-xs font-medium text-gray-400">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
           {#each group.targets as t (t)}
             {@const deps = byTarget[t]}
             {@const latest = deps[0]}
             {@const status = modelStatus[t]}
+            {@const currentDep = status ? deps.find(d => d.deployment_id === status.deployment_id) : null}
             {@const pg = playground[t]}
             {@const ls = lastSeenAt[t]}
             {@const hs = targetHealth[t] ?? 'unknown'}
@@ -249,21 +236,22 @@
             <tr class="border-b border-gray-50 last:border-0 hover:bg-gray-50/50 transition-colors">
               <!-- Health dot — server-computed from heartbeat timestamps -->
               <td class="pl-4 pr-2 py-3">
-                {#if true}
-                  {@const dot = healthDot[hs]}
-                  <i class="fa-solid fa-circle text-xs {dot.colour}"
-                     title="{dot.label}{ls ? ` — heartbeat ${fmtAgo(ls)}` : ''}"></i>
-                {/if}
+                <i class="fa-solid fa-circle text-xs {healthDot[hs].colour}"
+                   title="{healthDot[hs].label}{ls ? ` — heartbeat ${fmtAgo(ls)}` : ''}"></i>
               </td>
 
               <!-- Target name -->
-              <td class="px-4 py-3">
+              <td class="px-4 py-3 truncate">
                 <span class="font-medium text-sm text-gray-800">{t}</span>
               </td>
 
               <!-- Loaded model -->
-              <td class="px-4 py-3 hidden sm:table-cell">
-                {#if status?.run_id}
+              <td class="px-4 py-3 hidden sm:table-cell truncate">
+                {#if currentDep?.model_name}
+                  <a href="/models/{encodeURIComponent(currentDep.model_name)}" class="text-xs text-sage-dark hover:underline">
+                    <i class="fa-solid fa-brain text-sage mr-1"></i>{currentDep.model_name} <span class="font-mono">v{currentDep.model_version}</span>
+                  </a>
+                {:else if status?.run_id}
                   {#if runExpId[status.run_id]}
                     <a href="/experiments/{runExpId[status.run_id]}/runs/{status.run_id}" class="font-mono text-xs text-sage-dark hover:underline">
                       <i class="fa-solid fa-brain text-sage mr-1"></i>{status.run_id.slice(0, 12)}
@@ -281,9 +269,9 @@
               <!-- Since -->
               <td class="px-4 py-3 hidden md:table-cell text-xs text-gray-400">
                 {#if status?.loaded_at}
-                  {fmt(status.loaded_at)}
+                  {fmtDateTime(status.loaded_at)}
                 {:else}
-                  {fmt(latest.created_at)}
+                  {fmtDateTime(latest.created_at)}
                 {/if}
               </td>
 
@@ -425,7 +413,7 @@
                             {/if}
                           </td>
                           <td class="px-4 py-2"><DeployStateBadge state={dep.state} /></td>
-                          <td class="px-4 py-2 text-xs text-gray-400">{fmt(dep.created_at)}</td>
+                          <td class="px-4 py-2 text-xs text-gray-400">{fmtDateTime(dep.created_at)}</td>
                         </tr>
                       {/each}
                     </tbody>
@@ -435,10 +423,8 @@
             {/if}
 
           {/each}
-          </tbody>
-        </table>
-
-      </div>
     {/each}
+      </tbody>
+    </table>
   </div>
 {/if}

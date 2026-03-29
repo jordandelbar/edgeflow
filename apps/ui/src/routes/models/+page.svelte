@@ -1,57 +1,56 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { registeredModels, deployments, targets, type RegisteredModel, type Deployment } from '$lib/api';
+  import { registeredModels, type RegisteredModel, type Deployment } from '$lib/api';
+  import { liveData, refreshLiveData } from '$lib/stores';
   import ErrorCard from '$lib/components/ErrorCard.svelte';
   import DeployModal from '$lib/components/DeployModal.svelte';
 
-  type KnownTarget = { name: string; state: string; model_name: string | null; model_version: string | null; node: string | null };
-
   let items: RegisteredModel[] = [];
-  let knownTargets: KnownTarget[] = [];
-  let deployedOn: Record<string, string[]> = {};   // "model_name:model_version" → target names
   let deployModalModel: RegisteredModel | null = null;
   let deletingModel: Record<string, boolean> = {};
   let error = '';
   let interval: ReturnType<typeof setInterval>;
 
-  async function load() {
+  $: knownTargets = (() => {
+    const targetNodeMap: Record<string, string | null> = {};
+    for (const t of $liveData.targets) targetNodeMap[t.target] = t.node;
+    const latestByTarget: Record<string, Deployment> = {};
+    for (const d of $liveData.deployments) {
+      if (!latestByTarget[d.target]) latestByTarget[d.target] = d;
+    }
+    return Object.entries(latestByTarget).map(([name, d]) => ({
+      name, state: d.state,
+      model_name: d.model_name ?? null,
+      model_version: d.model_version ?? null,
+      node: targetNodeMap[name] ?? null,
+    }));
+  })();
+
+  $: deployedOn = (() => {
+    const result: Record<string, string[]> = {};
+    const latestByTarget: Record<string, Deployment> = {};
+    for (const d of $liveData.deployments) {
+      if (!latestByTarget[d.target]) latestByTarget[d.target] = d;
+    }
+    for (const [tgt, d] of Object.entries(latestByTarget)) {
+      if (d.state === 'deployed' && d.model_name && d.model_version) {
+        const key = `${d.model_name}:${d.model_version}`;
+        if (!result[key]) result[key] = [];
+        result[key].push(tgt);
+      }
+    }
+    return result;
+  })();
+
+  async function loadModels() {
     try {
-      const [modelsRes, depsRes, tgRes] = await Promise.all([
-        registeredModels.list(),
-        deployments.list(),
-        targets.list(),
-      ]);
-      items = modelsRes.registered_models ?? [];
-
-      const targetNodeMap: Record<string, string | null> = {};
-      for (const t of (tgRes.targets ?? [])) targetNodeMap[t.target] = t.node;
-
-      const latestByTarget: Record<string, Deployment> = {};
-      for (const d of (depsRes.deployments ?? [])) {
-        if (!latestByTarget[d.target]) latestByTarget[d.target] = d;
-      }
-      knownTargets = Object.entries(latestByTarget).map(([name, d]) => ({
-        name, state: d.state,
-        model_name: d.model_name ?? null,
-        model_version: d.model_version ?? null,
-        node: targetNodeMap[name] ?? null,
-      }));
-
-      const newDeployedOn: Record<string, string[]> = {};
-      for (const [tgt, d] of Object.entries(latestByTarget)) {
-        if (d.state === 'deployed' && d.model_name && d.model_version) {
-          const key = `${d.model_name}:${d.model_version}`;
-          if (!newDeployedOn[key]) newDeployedOn[key] = [];
-          newDeployedOn[key].push(tgt);
-        }
-      }
-      deployedOn = newDeployedOn;
+      items = (await registeredModels.list()).registered_models ?? [];
     } catch (e) {
       error = String(e);
     }
   }
 
-  onMount(() => { load(); interval = setInterval(load, 10000); });
+  onMount(() => { loadModels(); interval = setInterval(loadModels, 10000); });
   onDestroy(() => clearInterval(interval));
 
   async function deleteModel(name: string) {
@@ -85,22 +84,7 @@
   }
 
   function onDeployed(_e: CustomEvent<{ run_id: string; targets: string[] }>) {
-    // Re-fetch to pick up new deployment state.
-    deployments.list().then(res => {
-      const latestByTarget: Record<string, Deployment> = {};
-      for (const d of (res.deployments ?? [])) {
-        if (!latestByTarget[d.target]) latestByTarget[d.target] = d;
-      }
-      const newDeployedOn: Record<string, string[]> = {};
-      for (const [tgt, d] of Object.entries(latestByTarget)) {
-        if (d.state === 'deployed' && d.model_name && d.model_version) {
-          const key = `${d.model_name}:${d.model_version}`;
-          if (!newDeployedOn[key]) newDeployedOn[key] = [];
-          newDeployedOn[key].push(tgt);
-        }
-      }
-      deployedOn = newDeployedOn;
-    }).catch(() => {});
+    refreshLiveData();
   }
 </script>
 

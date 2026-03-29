@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { runs, experiments, metrics, artifacts, registeredModels, type Run, type Metric, type FileInfo, type ModelVersion } from '$lib/api';
+  import { fmtFull } from '$lib/utils';
   import ErrorCard from '$lib/components/ErrorCard.svelte';
   import BreadcrumbNav from '$lib/components/BreadcrumbNav.svelte';
   import StatusBadge from '$lib/components/StatusBadge.svelte';
@@ -86,7 +87,7 @@
       <div class="flex items-center gap-3 mt-1.5">
         <StatusBadge status={run.info.status} />
         <span class="text-xs text-gray-400">
-          {new Date(run.info.start_time).toLocaleString('en-GB')}
+          {fmtFull(run.info.start_time)}
         </span>
       </div>
     </div>
@@ -206,7 +207,7 @@
               <tr class="border-b border-gray-50 last:border-0">
                 <td class="px-5 py-2.5 text-gray-500 font-mono text-xs">{m.step}</td>
                 <td class="px-5 py-2.5 text-gray-800 font-mono text-xs font-semibold">{m.value}</td>
-                <td class="px-5 py-2.5 text-gray-400 text-xs">{new Date(m.timestamp).toLocaleString('en-GB')}</td>
+                <td class="px-5 py-2.5 text-gray-400 text-xs">{fmtFull(m.timestamp)}</td>
               </tr>
             {/each}
           </tbody>
