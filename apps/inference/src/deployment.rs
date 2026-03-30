@@ -2,8 +2,9 @@ use std::sync::{Arc, Mutex, RwLock};
 
 use anyhow::Result;
 
+use edgeflow_inference::pipeline::Pipeline;
+
 use crate::client::EdgeflowClient;
-use crate::pipeline::Pipeline;
 use crate::server::ModelInfo;
 
 /// Instruction to load and activate a specific run.
@@ -64,7 +65,7 @@ pub fn load_and_swap(
         .and_then(|(model, pre_wasm, pre_cfg, post_wasm, post_cfg, schema)| {
             let pre = pre_wasm.as_deref().map(|w| (w, pre_cfg.as_deref()));
             let post = post_wasm.as_deref().map(|w| (w, post_cfg.as_deref()));
-            let backend = crate::backend::build_backend();
+            let backend = edgeflow_inference::backend::build_backend();
             let pipeline = Pipeline::new(backend, &model, pre, post, schema.as_deref())?;
             Ok((pipeline, schema))
         });

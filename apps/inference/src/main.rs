@@ -1,11 +1,7 @@
-mod backend;
+// Core inference modules live in lib.rs so tests and benches can import them.
 mod client;
 mod deployment;
-mod inputs;
-mod pipeline;
 mod server;
-mod tensor;
-mod wasm;
 
 use anyhow::{Context, Result};
 use client::EdgeflowClient;

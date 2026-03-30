@@ -3,9 +3,17 @@ name = "edgeflow-inference"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "edgeflow_inference"
+path = "src/lib.rs"
+
 [[bin]]
 name = "edgeflow-inference"
 path = "src/main.rs"
+
+[[bench]]
+name = "pipeline"
+harness = false
 
 [features]
 default = ["ort-backend"]
@@ -30,3 +38,6 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 wasmtime = { version = "29", features = ["component-model"] }
 wasmtime-wasi = "29"
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
