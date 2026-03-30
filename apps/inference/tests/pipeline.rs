@@ -41,13 +41,16 @@ fn tensor_decode_rejects_unknown_dtype() {
 
 #[test]
 fn tensor_encode_header_layout() {
-    // Verify the exact wire layout: ndim(1) | shape dims(4 each) | dtype(1) | data
+    // Verify the exact wire layout: ndim(1) | dtype(1) | pad(2) | shape dims(4 each) | data
     let encoded = tensor::encode(&[2usize, 3], &[0f32; 6]);
     assert_eq!(encoded[0], 2); // ndim
-    assert_eq!(u32::from_le_bytes(encoded[1..5].try_into().unwrap()), 2); // dim 0
-    assert_eq!(u32::from_le_bytes(encoded[5..9].try_into().unwrap()), 3); // dim 1
-    assert_eq!(encoded[9], 1); // dtype = f32
-    assert_eq!(encoded.len(), 1 + 2 * 4 + 1 + 6 * 4); // total size
+    assert_eq!(encoded[1], 1); // dtype = f32
+    assert_eq!(encoded[2], 0); // padding
+    assert_eq!(encoded[3], 0); // padding
+    assert_eq!(u32::from_le_bytes(encoded[4..8].try_into().unwrap()), 2); // dim 0
+    assert_eq!(u32::from_le_bytes(encoded[8..12].try_into().unwrap()), 3); // dim 1
+                                                                           // data starts at byte 12 (= 4 + 2*4), always 4-byte aligned
+    assert_eq!(encoded.len(), 4 + 2 * 4 + 6 * 4); // total size
 }
 
 // ── input parsing (Named mode, no model needed) ──────────────────────────────

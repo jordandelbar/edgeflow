@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use ort::session::Session;
-use ort::value::Tensor;
+use ort::value::TensorRef;
 
 use super::InferenceBackend;
 
@@ -28,11 +28,12 @@ impl InferenceBackend for OrtBackend {
         let session = self.session.as_mut().context("model not loaded")?;
 
         let ort_shape: Vec<i64> = shape.iter().map(|&d| d as i64).collect();
-        let tensor = Tensor::<f32>::from_array((ort_shape, data.to_vec()))
+        // TensorRef borrows `data` directly — no copy of the input floats.
+        let tensor = TensorRef::<f32>::from_array_view((ort_shape.as_slice(), data))
             .context("failed to build ORT input tensor")?;
 
         let outputs = session
-            .run(ort::inputs![&tensor])
+            .run(ort::inputs![tensor])
             .context("ORT inference failed")?;
 
         let (out_shape, out_data) = outputs[0]

@@ -3,8 +3,11 @@ Pure-Python tensor wire format codec.
 
 Works inside componentize-py WASM sandboxes (no C extensions needed).
 
-Wire format: [ ndim: u8 | shape: [u32-LE; ndim] | dtype: u8 | data: bytes ]
+Wire format: [ ndim: u8 | dtype: u8 | _pad: u16 | shape: [u32-LE; ndim] | data: bytes ]
 dtype codes: 1 = f32
+
+The fixed 4-byte header guarantees data starts at offset 4 + ndim*4,
+which is always 4-byte aligned (enabling zero-copy cast in the Rust host).
 """
 
 
@@ -17,10 +20,11 @@ def encode_tensor(shape: list, data: bytes) -> bytes:
 
     The data bytes are passed through unchanged — no re-encoding of floats.
     """
-    buf = len(shape).to_bytes(1, "little")
+    buf = len(shape).to_bytes(1, "little")  # ndim
+    buf += (1).to_bytes(1, "little")  # dtype = f32
+    buf += b"\x00\x00"  # padding
     for dim in shape:
         buf += dim.to_bytes(4, "little")
-    buf += (1).to_bytes(1, "little")  # dtype = f32
     return buf + data
 
 
@@ -31,16 +35,14 @@ def decode_tensor(buf: bytes) -> tuple:
     Precision is double (Python float), which is sufficient for inference
     outputs (confidence scores, argmax, etc.).
     """
-    pos = 0
-    ndim = buf[pos]
-    pos += 1
+    ndim = buf[0]
+    # buf[1] = dtype, buf[2:4] = padding
+    pos = 4  # fixed header is always 4 bytes
     shape = []
     for _ in range(ndim):
         dim = int.from_bytes(buf[pos : pos + 4], "little")
         pos += 4
         shape.append(dim)
-    _dtype = buf[pos]
-    pos += 1  # must be 1 (f32); skip validation for speed
     values = []
     while pos + 4 <= len(buf):
         values.append(_f32_from_le(buf[pos : pos + 4]))

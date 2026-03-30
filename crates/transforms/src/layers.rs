@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-// Wire format: [ ndim: u8 | shape: [u32-LE; ndim] | dtype: u8 (1=f32) | data: bytes ]
+// Wire format: [ ndim: u8 | dtype: u8 | _pad: u16 | shape: [u32-LE; ndim] | data: bytes ]
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -64,12 +64,14 @@ fn run_layer(layer: &Layer, input: Vec<u8>) -> Vec<u8> {
 }
 
 fn encode_tensor(shape: &[usize], data: &[f32]) -> Vec<u8> {
-    let mut buf = Vec::with_capacity(1 + shape.len() * 4 + 1 + data.len() * 4);
+    let mut buf = Vec::with_capacity(4 + shape.len() * 4 + data.len() * 4);
     buf.push(shape.len() as u8);
+    buf.push(1u8); // dtype = f32
+    buf.push(0u8); // padding
+    buf.push(0u8); // padding
     for &dim in shape {
         buf.extend_from_slice(&(dim as u32).to_le_bytes());
     }
-    buf.push(1u8); // dtype = f32
     for &v in data {
         buf.extend_from_slice(&v.to_le_bytes());
     }
@@ -77,16 +79,15 @@ fn encode_tensor(shape: &[usize], data: &[f32]) -> Vec<u8> {
 }
 
 fn decode_tensor(buf: &[u8]) -> (Vec<usize>, Vec<f32>) {
-    let mut pos = 0;
-    let ndim = buf[pos] as usize;
-    pos += 1;
+    let ndim = buf[0] as usize;
+    // buf[1] = dtype, buf[2..4] = padding
+    let mut pos = 4; // fixed header is always 4 bytes
     let mut shape = Vec::with_capacity(ndim);
     for _ in 0..ndim {
         let dim = u32::from_le_bytes(buf[pos..pos + 4].try_into().unwrap()) as usize;
         shape.push(dim);
         pos += 4;
     }
-    pos += 1; // skip dtype
     let values = buf[pos..]
         .chunks_exact(4)
         .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
