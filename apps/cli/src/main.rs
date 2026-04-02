@@ -44,6 +44,12 @@ enum Command {
         model_version: String,
         /// Inference target name
         target: String,
+        /// Number of ORT sessions (parallel inference workers)
+        #[arg(long)]
+        sessions: Option<i64>,
+        /// Max in-flight requests before 429 (defaults to --sessions)
+        #[arg(long)]
+        max_concurrent: Option<i64>,
         /// Poll until the deployment reaches a terminal state
         #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
         wait: bool,
@@ -80,9 +86,20 @@ fn main() -> Result<()> {
             model_name,
             model_version,
             target,
+            sessions,
+            max_concurrent,
             wait,
             timeout,
-        } => deploy(&api, &model_name, &model_version, &target, wait, timeout),
+        } => deploy(
+            &api,
+            &model_name,
+            &model_version,
+            &target,
+            sessions,
+            max_concurrent,
+            wait,
+            timeout,
+        ),
     }
 }
 
@@ -91,12 +108,14 @@ fn deploy(
     model_name: &str,
     model_version: &str,
     target: &str,
+    sessions: Option<i64>,
+    max_concurrent: Option<i64>,
     wait: bool,
     timeout: u64,
 ) -> Result<()> {
     println!("Deploying {model_name} v{model_version} → '{target}'");
 
-    let res = api.create_deployment(model_name, model_version, target)?;
+    let res = api.create_deployment(model_name, model_version, target, sessions, max_concurrent)?;
     let dep = &res["deployment"];
     let dep_id = dep["deployment_id"].as_str().unwrap_or("?");
     println!("deployment_id: {dep_id}");

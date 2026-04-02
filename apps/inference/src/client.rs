@@ -80,10 +80,12 @@ impl EdgeflowClient {
     pub async fn poll_pending(
         &self,
         target: &str,
+        default_sessions: usize,
     ) -> Result<Option<crate::deployment::DeployInstruction>> {
         #[derive(serde::Deserialize)]
         struct PendingResponse {
             deployment: Option<PendingDeployment>,
+            sessions: Option<usize>,
         }
         #[derive(serde::Deserialize)]
         struct PendingDeployment {
@@ -103,11 +105,13 @@ impl EdgeflowClient {
             .json()
             .await?;
 
+        let sessions = resp.sessions.unwrap_or(default_sessions);
         Ok(resp
             .deployment
             .map(|d| crate::deployment::DeployInstruction {
                 run_id: d.run_id,
                 deployment_id: d.deployment_id,
+                sessions,
             }))
     }
 

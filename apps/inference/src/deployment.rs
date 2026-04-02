@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Condvar, Mutex, RwLock};
 
 use anyhow::Result;
 
@@ -11,18 +11,53 @@ use crate::server::ModelInfo;
 pub struct DeployInstruction {
     pub run_id: String,
     pub deployment_id: String,
+    /// Number of ORT sessions to create — provided by the server so sessions
+    /// can change on each hot-swap without requiring a pod restart.
+    pub sessions: usize,
+}
+
+/// Pool of Pipeline instances.  Checkout blocks (in a spawn_blocking thread)
+/// until a pipeline is free; checkin wakes one waiter.  Pool size equals the
+/// number of ORT sessions created at load time.
+pub struct PipelinePool {
+    inner: Mutex<Vec<Pipeline>>,
+    cvar: Condvar,
+}
+
+impl PipelinePool {
+    fn new(pipelines: Vec<Pipeline>) -> Self {
+        Self {
+            inner: Mutex::new(pipelines),
+            cvar: Condvar::new(),
+        }
+    }
+
+    pub fn checkout(&self) -> Pipeline {
+        let mut guard = self.inner.lock().unwrap();
+        loop {
+            if let Some(p) = guard.pop() {
+                return p;
+            }
+            guard = self.cvar.wait(guard).unwrap();
+        }
+    }
+
+    pub fn checkin(&self, pipeline: Pipeline) {
+        self.inner.lock().unwrap().push(pipeline);
+        self.cvar.notify_one();
+    }
 }
 
 /// The live state of a loaded model. All three fields are updated atomically
 /// by writing a new `Arc<ActiveDeployment>` under a single write lock, so
 /// readers always see a consistent snapshot.
 pub struct ActiveDeployment {
-    pub pipeline: Arc<Mutex<Pipeline>>,
+    pub pool: Arc<PipelinePool>,
     pub model_info: ModelInfo,
     pub schema: Option<Vec<u8>>,
 }
 
-/// Blocking function: download artifacts, build a new Pipeline, swap atomically.
+/// Blocking function: download artifacts, build `req.sessions` Pipelines, swap atomically.
 /// Runs in a `spawn_blocking` thread so wasmtime and ORT are happy.
 pub fn load_and_swap(
     req: DeployInstruction,
@@ -30,9 +65,10 @@ pub fn load_and_swap(
     client: Arc<EdgeflowClient>,
     target: String,
 ) {
+    let sessions = req.sessions;
     let rt = tokio::runtime::Handle::current();
 
-    let result: Result<(Pipeline, Option<Vec<u8>>)> = rt
+    let result: Result<(Vec<Pipeline>, Option<Vec<u8>>)> = rt
         .block_on(async {
             tracing::info!(run_id = %req.run_id, "downloading model.onnx");
             let model = client.download_artifact(&req.run_id, "model.onnx").await?;
@@ -65,15 +101,22 @@ pub fn load_and_swap(
         .and_then(|(model, pre_wasm, pre_cfg, post_wasm, post_cfg, schema)| {
             let pre = pre_wasm.as_deref().map(|w| (w, pre_cfg.as_deref()));
             let post = post_wasm.as_deref().map(|w| (w, post_cfg.as_deref()));
-            let backend = edgeflow_inference::backend::build_backend();
-            let pipeline = Pipeline::new(backend, &model, pre, post, schema.as_deref())?;
-            Ok((pipeline, schema))
+
+            tracing::info!(sessions, "building session pool");
+            let mut pipelines = Vec::with_capacity(sessions);
+            for i in 0..sessions {
+                tracing::info!(session = i + 1, sessions, "loading session");
+                let backend = edgeflow_inference::backend::build_backend();
+                let pipeline = Pipeline::new(backend, &model, pre, post, schema.as_deref())?;
+                pipelines.push(pipeline);
+            }
+            Ok((pipelines, schema))
         });
 
     match result {
-        Ok((new_pipeline, schema)) => {
+        Ok((pipelines, schema)) => {
             *shared_active.write().unwrap() = Some(Arc::new(ActiveDeployment {
-                pipeline: Arc::new(Mutex::new(new_pipeline)),
+                pool: Arc::new(PipelinePool::new(pipelines)),
                 model_info: ModelInfo {
                     run_id: req.run_id,
                     deployment_id: req.deployment_id.clone(),

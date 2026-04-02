@@ -25,6 +25,50 @@ fn k8s_name(target: &str) -> String {
     )
 }
 
+/// Resolve effective resource settings by applying env-var overrides and
+/// hardcoded defaults. The result has all fields set — callers should persist
+/// this so the DB reflects what was actually deployed.
+pub fn resolve_resources(resources: &ResourceSettings) -> ResourceSettings {
+    let cpu_request = resources
+        .cpu_request
+        .clone()
+        .or_else(|| std::env::var("EDGEFLOW_INFERENCE_CPU_REQUEST").ok())
+        .unwrap_or_else(|| "100m".into());
+    let memory_request = resources
+        .memory_request
+        .clone()
+        .or_else(|| std::env::var("EDGEFLOW_INFERENCE_MEMORY_REQUEST").ok())
+        .unwrap_or_else(|| "256Mi".into());
+    let memory_limit = resources
+        .memory_limit
+        .clone()
+        .or_else(|| std::env::var("EDGEFLOW_INFERENCE_MEMORY_LIMIT").ok())
+        .unwrap_or_else(|| "512Mi".into());
+    let sessions = resources
+        .sessions
+        .or_else(|| {
+            std::env::var("EDGEFLOW_SESSIONS")
+                .ok()
+                .and_then(|s| s.parse().ok())
+        })
+        .unwrap_or(1);
+    let max_concurrent = resources
+        .max_concurrent
+        .or_else(|| {
+            std::env::var("EDGEFLOW_MAX_CONCURRENT_INFER")
+                .ok()
+                .and_then(|s| s.parse().ok())
+        })
+        .unwrap_or(sessions);
+    ResourceSettings {
+        cpu_request: Some(cpu_request),
+        memory_request: Some(memory_request),
+        memory_limit: Some(memory_limit),
+        sessions: Some(sessions),
+        max_concurrent: Some(max_concurrent),
+    }
+}
+
 /// Create a k8s Deployment for an inference pod serving `target`.
 ///
 /// `node` pins the pod to a specific node by name (k3s/k3d node names
@@ -42,30 +86,12 @@ pub async fn create_inference_pod(target: &str, node: Option<&str>, resources: &
     let pull_policy =
         std::env::var("EDGEFLOW_IMAGE_PULL_POLICY").unwrap_or_else(|_| "IfNotPresent".into());
 
-    // Per-target resource settings, falling back to env var defaults.
-    let cpu_request = resources
-        .cpu_request
-        .clone()
-        .or_else(|| std::env::var("EDGEFLOW_INFERENCE_CPU_REQUEST").ok())
-        .unwrap_or_else(|| "100m".into());
-    let memory_request = resources
-        .memory_request
-        .clone()
-        .or_else(|| std::env::var("EDGEFLOW_INFERENCE_MEMORY_REQUEST").ok())
-        .unwrap_or_else(|| "256Mi".into());
-    let memory_limit = resources
-        .memory_limit
-        .clone()
-        .or_else(|| std::env::var("EDGEFLOW_INFERENCE_MEMORY_LIMIT").ok())
-        .unwrap_or_else(|| "512Mi".into());
-    let max_concurrent = resources
-        .max_concurrent
-        .or_else(|| {
-            std::env::var("EDGEFLOW_MAX_CONCURRENT_INFER")
-                .ok()
-                .and_then(|s| s.parse().ok())
-        })
-        .unwrap_or(8);
+    let resolved = resolve_resources(resources);
+    let cpu_request = resolved.cpu_request.unwrap();
+    let memory_request = resolved.memory_request.unwrap();
+    let memory_limit = resolved.memory_limit.unwrap();
+    let sessions = resolved.sessions.unwrap();
+    let max_concurrent = resolved.max_concurrent.unwrap();
     // No CPU limit — throttling degrades inference latency more than an OOM would.
 
     let client = match kube::Client::try_default().await {
@@ -128,6 +154,11 @@ pub async fn create_inference_pod(target: &str, node: Option<&str>, resources: &
                             EnvVar {
                                 name: "EDGEFLOW_INFER_ADDR".to_string(),
                                 value: Some("0.0.0.0:8080".to_string()),
+                                ..Default::default()
+                            },
+                            EnvVar {
+                                name: "EDGEFLOW_SESSIONS".to_string(),
+                                value: Some(sessions.to_string()),
                                 ..Default::default()
                             },
                             EnvVar {

@@ -43,10 +43,14 @@ async fn main() -> Result<()> {
     let port = infer_addr.split(':').last().unwrap_or("8080");
     let self_address = format!("http://{}:{}", pod_ip, port);
 
+    let sessions = std::env::var("EDGEFLOW_SESSIONS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(1usize);
     let max_concurrent = std::env::var("EDGEFLOW_MAX_CONCURRENT_INFER")
         .ok()
         .and_then(|s| s.parse().ok())
-        .unwrap_or(8usize);
+        .unwrap_or(sessions);
 
     let client = Arc::new(EdgeflowClient::new(&server_url));
 
@@ -56,6 +60,7 @@ async fn main() -> Result<()> {
         metrics: Arc::new(Metrics::default()),
         client: client.clone(),
         target: target.clone(),
+        sessions,
     };
 
     // Start the HTTP server in the background so we're ready before registering.
@@ -91,6 +96,7 @@ async fn main() -> Result<()> {
     let poll_client = client.clone();
     let poll_target = target.clone();
     let poll_cancel = cancel.clone();
+    let poll_sessions = state.sessions;
     tokio::spawn(async move {
         let mut heartbeat = tokio::time::interval(Duration::from_secs(30));
         let mut poll = tokio::time::interval(Duration::from_secs(5));
@@ -107,11 +113,12 @@ async fn main() -> Result<()> {
                 }
 
                 _ = poll.tick() => {
-                    match poll_client.poll_pending(&poll_target).await {
+                    match poll_client.poll_pending(&poll_target, poll_sessions).await {
                         Ok(Some(instr)) => {
                             tracing::info!(
                                 run_id        = %instr.run_id,
                                 deployment_id = %instr.deployment_id,
+                                sessions      = instr.sessions,
                                 "picked up pending deployment via poll"
                             );
                             let active = poll_active.clone();

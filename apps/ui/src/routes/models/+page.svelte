@@ -12,8 +12,8 @@
   let interval: ReturnType<typeof setInterval>;
 
   $: knownTargets = (() => {
-    const targetNodeMap: Record<string, string | null> = {};
-    for (const t of $liveData.targets) targetNodeMap[t.target] = t.node;
+    const targetMap: Record<string, typeof $liveData.targets[0]> = {};
+    for (const t of $liveData.targets) targetMap[t.target] = t;
     const latestByTarget: Record<string, Deployment> = {};
     for (const d of $liveData.deployments) {
       if (!latestByTarget[d.target]) latestByTarget[d.target] = d;
@@ -22,7 +22,8 @@
       name, state: d.state,
       model_name: d.model_name ?? null,
       model_version: d.model_version ?? null,
-      node: targetNodeMap[name] ?? null,
+      node: targetMap[name]?.node ?? null,
+      sessions: targetMap[name]?.resources?.sessions ?? null,
     }));
   })();
 

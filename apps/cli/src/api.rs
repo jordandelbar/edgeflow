@@ -195,6 +195,8 @@ impl Api {
         model_name: &str,
         model_version: &str,
         target: &str,
+        sessions: Option<i64>,
+        max_concurrent: Option<i64>,
     ) -> Result<Value> {
         self.post(
             &self.v1("/deployments"),
@@ -202,6 +204,10 @@ impl Api {
                 "model_name": model_name,
                 "model_version": model_version,
                 "target": target,
+                "resources": {
+                    "sessions": sessions,
+                    "max_concurrent": max_concurrent,
+                },
             }),
         )
     }
@@ -226,6 +232,10 @@ impl Api {
 
     pub fn list_targets(&self) -> Result<Value> {
         self.get(&self.v1("/targets"))
+    }
+
+    pub fn get_target(&self, target: &str) -> Result<Value> {
+        self.get(&self.v1(&format!("/targets/{target}")))
     }
 
     pub fn teardown_target(&self, target: &str) -> Result<()> {

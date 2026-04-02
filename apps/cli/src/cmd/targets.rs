@@ -12,6 +12,11 @@ pub enum Cmd {
         #[arg(long)]
         health: Option<String>,
     },
+    /// Show full details for a target (specs, resources, loaded model)
+    Inspect {
+        /// Target name
+        target: String,
+    },
     /// Tear down an inference target (removes pod and deployment record)
     Teardown {
         /// Target name
@@ -25,6 +30,7 @@ pub enum Cmd {
 pub fn run(cmd: Cmd, api: &Api) -> Result<()> {
     match cmd {
         Cmd::List { health } => list(api, health.as_deref()),
+        Cmd::Inspect { target } => inspect(api, &target),
         Cmd::Teardown { target, yes } => teardown(api, &target, yes),
     }
 }
@@ -66,6 +72,59 @@ fn list(api: &Api, health_filter: Option<&str>) -> Result<()> {
     }
 
     println!("{table}");
+    Ok(())
+}
+
+fn inspect(api: &Api, target: &str) -> Result<()> {
+    let res = api.get_target(target)?;
+    let t = &res["target"];
+
+    println!("Target:       {}", t["target"].as_str().unwrap_or("—"));
+    println!(
+        "Health:       {}",
+        t["health"].as_str().unwrap_or("unknown")
+    );
+    println!("Node:         {}", t["node"].as_str().unwrap_or("—"));
+    println!("Pod:          {}", t["pod_name"].as_str().unwrap_or("—"));
+    println!("Address:      {}", t["address"].as_str().unwrap_or("—"));
+
+    if let Some(run_id) = t["current_run_id"].as_str() {
+        println!("Loaded run:   {run_id}");
+    }
+    if let Some(loaded_at) = t["model_loaded_at"].as_str() {
+        println!("Loaded at:    {loaded_at}");
+    }
+
+    let r = &t["resources"];
+    println!();
+    println!("Resources:");
+    println!(
+        "  CPU request:    {}",
+        r["cpu_request"].as_str().unwrap_or("—")
+    );
+    println!(
+        "  Memory request: {}",
+        r["memory_request"].as_str().unwrap_or("—")
+    );
+    println!(
+        "  Memory limit:   {}",
+        r["memory_limit"].as_str().unwrap_or("—")
+    );
+    println!(
+        "  Sessions:       {}",
+        r["sessions"]
+            .as_i64()
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "—".into())
+    );
+    println!(
+        "  Max concurrent: {}",
+        r["max_concurrent"]
+            .as_i64()
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "—".into())
+    );
+
     Ok(())
 }
 

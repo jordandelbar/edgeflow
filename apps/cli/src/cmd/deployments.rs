@@ -74,12 +74,46 @@ fn status(api: &Api, target: &str) -> Result<()> {
             .unwrap_or_else(|| "—".into()),
     };
 
-    let state = d["state"].as_str().unwrap_or("—");
-
     println!("Target:  {target}");
     println!("Model:   {model}");
-    println!("State:   {state}");
+    println!("State:   {}", d["state"].as_str().unwrap_or("—"));
+    println!("ID:      {}", d["deployment_id"].as_str().unwrap_or("—"));
     println!("Created: {}", fmt_ts(d["created_at"].as_i64().unwrap_or(0)));
+
+    // Show resource specs from the target record.
+    if let Ok(tgt_res) = api.get_target(target) {
+        let r = &tgt_res["target"]["resources"];
+        if !r.is_null() {
+            println!();
+            println!("Resources:");
+            println!(
+                "  CPU request:    {}",
+                r["cpu_request"].as_str().unwrap_or("—")
+            );
+            println!(
+                "  Memory request: {}",
+                r["memory_request"].as_str().unwrap_or("—")
+            );
+            println!(
+                "  Memory limit:   {}",
+                r["memory_limit"].as_str().unwrap_or("—")
+            );
+            println!(
+                "  Sessions:       {}",
+                r["sessions"]
+                    .as_i64()
+                    .map(|v| v.to_string())
+                    .unwrap_or_else(|| "—".into())
+            );
+            println!(
+                "  Max concurrent: {}",
+                r["max_concurrent"]
+                    .as_i64()
+                    .map(|v| v.to_string())
+                    .unwrap_or_else(|| "—".into())
+            );
+        }
+    }
 
     Ok(())
 }

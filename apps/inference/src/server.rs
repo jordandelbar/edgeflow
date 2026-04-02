@@ -57,6 +57,7 @@ pub struct ServerState {
     pub metrics: Arc<Metrics>,
     pub client: Arc<EdgeflowClient>,
     pub target: String,
+    pub sessions: usize,
 }
 
 impl Clone for ServerState {
@@ -67,6 +68,7 @@ impl Clone for ServerState {
             metrics: self.metrics.clone(),
             client: self.client.clone(),
             target: self.target.clone(),
+            sessions: self.sessions,
         }
     }
 }
@@ -102,6 +104,8 @@ pub async fn serve(state: ServerState, addr: String, cancel: CancellationToken) 
 struct UpgradeRequest {
     run_id: String,
     deployment_id: String,
+    /// Sessions count sent by the server; falls back to the pod's startup default.
+    sessions: Option<usize>,
 }
 
 async fn handle(
@@ -149,7 +153,9 @@ async fn handle(
             let body = req.collect().await?.to_bytes();
             let metrics = state.metrics.clone();
             let result = tokio::task::spawn_blocking(move || {
-                let out = active.pipeline.lock().unwrap().infer(&body);
+                let mut pipeline = active.pool.checkout();
+                let out = pipeline.infer(&body);
+                active.pool.checkin(pipeline);
                 drop(permit);
                 out
             })
@@ -186,12 +192,15 @@ async fn handle(
             tracing::info!(
                 run_id        = %upgrade_req.run_id,
                 deployment_id = %upgrade_req.deployment_id,
+                sessions      = ?upgrade_req.sessions,
+                fallback      = state.sessions,
                 "upgrade requested"
             );
 
             let instr = DeployInstruction {
                 run_id: upgrade_req.run_id,
                 deployment_id: upgrade_req.deployment_id,
+                sessions: upgrade_req.sessions.unwrap_or(state.sessions),
             };
             let active = state.active.clone();
             let client = state.client.clone();

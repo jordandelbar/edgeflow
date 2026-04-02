@@ -63,10 +63,16 @@ impl<'a> TargetClient<'a> {
     /// Returns `true` if the pod accepted the request (2xx / 202), `false` if
     /// it responded with a non-success status.  Returns `Err` only if the pod
     /// was unreachable.
-    pub async fn upgrade(&self, run_id: &str, deployment_id: &str) -> Result<bool> {
+    pub async fn upgrade(
+        &self,
+        run_id: &str,
+        deployment_id: &str,
+        sessions: usize,
+    ) -> Result<bool> {
         let body = serde_json::json!({
             "run_id":        run_id,
             "deployment_id": deployment_id,
+            "sessions":      sessions,
         });
         let resp = self
             .http

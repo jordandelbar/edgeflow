@@ -4,7 +4,7 @@ use crate::target_client::TargetClient;
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
-    routing::{delete, get, post},
+    routing::{get, post},
     Json, Router,
 };
 use edgeflow_core::{DeploymentState, ResourceSettings};
@@ -20,13 +20,13 @@ pub fn router() -> Router<AppState> {
         .route("/deployments/:id/confirm", post(confirm_deployment))
         .route("/targets", get(list_targets))
         .route("/targets/register", post(register_target))
+        .route("/targets/:target", get(get_target).delete(teardown_target))
         .route("/targets/:target/model", get(target_model_status))
         .route("/targets/:target/schema", get(target_schema))
         .route("/targets/:target/health", get(target_health))
         .route("/targets/:target/heartbeat", post(target_heartbeat))
         .route("/targets/:target/pending", get(target_pending))
         .route("/targets/:target/infer/playground", post(infer_playground))
-        .route("/targets/:target", delete(teardown_target))
         .route("/nodes", get(list_nodes))
 }
 
@@ -95,7 +95,15 @@ async fn target_pending(
         .store
         .get_pending_deployment_for_target(&target)
         .await?;
-    Ok(Json(serde_json::json!({ "deployment": dep })))
+    let sessions = state
+        .store
+        .get_target(&target)
+        .await?
+        .and_then(|t| t.resources.sessions)
+        .unwrap_or(1);
+    Ok(Json(
+        serde_json::json!({ "deployment": dep, "sessions": sessions }),
+    ))
 }
 
 // ── GET /targets/:target/schema ───────────────────────────────────────────────
@@ -200,8 +208,30 @@ async fn create_deployment(
     // Check if we already have a registered address for this target.
     if let Some(target_rec) = state.store.get_target(&req.target).await? {
         // Upgrade path: pod is alive, tell it to load the new run.
+        // If resource settings were provided, persist them so the new sessions
+        // value is used for this and future upgrades.
+        let resources_provided = req.resources.sessions.is_some()
+            || req.resources.max_concurrent.is_some()
+            || req.resources.cpu_request.is_some()
+            || req.resources.memory_request.is_some()
+            || req.resources.memory_limit.is_some();
+        if resources_provided {
+            state
+                .store
+                .store_target_resources(&req.target, req.node.as_deref(), &req.resources)
+                .await?;
+        }
+
+        // Re-fetch to get the latest (possibly just-updated) resource settings.
+        let sessions = state
+            .store
+            .get_target(&req.target)
+            .await?
+            .and_then(|t| t.resources.sessions)
+            .unwrap_or(1) as usize;
+
         match TargetClient::new(&state.http_client, &target_rec.address)
-            .upgrade(&deployment.run_id, &deployment.deployment_id)
+            .upgrade(&deployment.run_id, &deployment.deployment_id, sessions)
             .await
         {
             Ok(true) => {
@@ -225,12 +255,14 @@ async fn create_deployment(
             }
         }
     } else {
-        // First deploy: pod doesn't exist yet — store node + resources then create it via k8s.
+        // First deploy: pod doesn't exist yet — resolve defaults so the DB reflects
+        // exactly what the pod will be configured with, then create it via k8s.
+        let resolved = crate::k8s::resolve_resources(&req.resources);
         state
             .store
-            .store_target_resources(&req.target, req.node.as_deref(), &req.resources)
+            .store_target_resources(&req.target, req.node.as_deref(), &resolved)
             .await?;
-        crate::k8s::create_inference_pod(&req.target, req.node.as_deref(), &req.resources).await;
+        crate::k8s::create_inference_pod(&req.target, req.node.as_deref(), &resolved).await;
     }
 
     let deployment = state
@@ -373,8 +405,9 @@ async fn register_target(
         .get_pending_deployment_for_target(&req.target)
         .await?
     {
+        let sessions = target.resources.sessions.unwrap_or(1) as usize;
         match TargetClient::new(&state.http_client, &req.address)
-            .upgrade(&deployment.run_id, &deployment.deployment_id)
+            .upgrade(&deployment.run_id, &deployment.deployment_id, sessions)
             .await
         {
             Ok(true) => {
@@ -397,6 +430,16 @@ async fn register_target(
         }
     }
 
+    Ok(Json(serde_json::json!({ "target": target })))
+}
+
+// ── GET /targets/:target ─────────────────────────────────────────────────────
+
+async fn get_target(
+    State(state): State<AppState>,
+    Path(target): Path<String>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let target = require_target(&state, &target).await?;
     Ok(Json(serde_json::json!({ "target": target })))
 }
 

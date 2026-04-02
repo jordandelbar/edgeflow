@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { runs, targets, type Deployment, type ModelStatus, type TargetHealth } from '$lib/api';
+  import { runs, targets, type Deployment, type ModelStatus, type TargetHealth, type Target } from '$lib/api';
   import { liveData } from '$lib/stores';
   import { fmtDateTime, fmtAgo } from '$lib/utils';
   import ErrorCard from '$lib/components/ErrorCard.svelte';
@@ -12,7 +12,8 @@
   let lastSeenAt: Record<string, number | null> = {};
   let modelStatus: Record<string, ModelStatus | null> = {};
   let runExpId: Record<string, string> = {};  // run_id → experiment_id for linking
-  let expanded: Record<string, 'history' | 'test' | null> = {};
+  let expanded: Record<string, 'history' | 'test' | 'inspect' | null> = {};
+  let targetMap: Record<string, Target> = {};
   let confirming: Record<string, boolean> = {};
   let tearing: Record<string, boolean> = {};
   let collapsedNodes: Record<string, boolean> = {};
@@ -45,14 +46,17 @@
     const newNodeForTarget: Record<string, string | null> = { ...nodeForTarget };
     const newTargetHealth: Record<string, TargetHealth>   = { ...targetHealth };
     const newLastSeenAt:   Record<string, number | null>  = { ...lastSeenAt };
+    const newTargetMap:    Record<string, Target>         = { ...targetMap };
     for (const tg of data.targets) {
       newNodeForTarget[tg.target] = tg.node;
       newTargetHealth[tg.target]  = tg.health;
       newLastSeenAt[tg.target]    = tg.last_seen;
+      newTargetMap[tg.target]     = tg;
     }
     nodeForTarget = newNodeForTarget;
     targetHealth  = newTargetHealth;
     lastSeenAt    = newLastSeenAt;
+    targetMap     = newTargetMap;
 
     // Init state only for targets we haven't seen before — preserves
     // expanded panels and playground inputs across refreshes.
@@ -116,7 +120,7 @@
   };
   let playground: Record<string, Playground> = {};
 
-  async function toggle(t: string, panel: 'history' | 'test') {
+  async function toggle(t: string, panel: 'history' | 'test' | 'inspect') {
     expanded[t] = expanded[t] === panel ? null : panel;
     expanded = expanded;
 
@@ -293,6 +297,16 @@
               <td class="px-4 py-3">
                 <div class="flex items-center justify-end gap-1">
 
+                  <!-- Inspect -->
+                  <button
+                    on:click={() => toggle(t, 'inspect')}
+                    title="Inspect deployment"
+                    class="p-1.5 rounded-lg text-xs transition-colors
+                      {expanded[t] === 'inspect' ? 'bg-gray-200 text-gray-700' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'}"
+                  >
+                    <i class="fa-solid fa-circle-info"></i>
+                  </button>
+
                   <!-- Test — show for any state except unhealthy (pod is likely gone) -->
                   {#if hs !== 'unhealthy' && status?.run_id}
                     <button
@@ -396,6 +410,107 @@
                       <pre class="text-gray-800 whitespace-pre-wrap">{JSON.stringify(pg.result, null, 2)}</pre>
                     </div>
                   {/if}
+                </td>
+              </tr>
+            {/if}
+
+            <!-- Inspect panel (spans full row) -->
+            {#if expanded[t] === 'inspect'}
+              {@const tgt = targetMap[t]}
+              {@const res = tgt?.resources}
+              {@const currentDep2 = status ? deps.find(d => d.deployment_id === status.deployment_id) : deps[0]}
+              <tr class="border-b border-gray-50">
+                <td colspan="5" class="px-4 py-4 bg-gray-50/50">
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+                    <!-- Deployment -->
+                    <div>
+                      <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Deployment</p>
+                      <dl class="space-y-1">
+                        <div class="flex gap-2 text-xs">
+                          <dt class="text-gray-400 w-28 shrink-0">ID</dt>
+                          <dd class="font-mono text-gray-700 truncate">{currentDep2?.deployment_id ?? '—'}</dd>
+                        </div>
+                        <div class="flex gap-2 text-xs">
+                          <dt class="text-gray-400 w-28 shrink-0">State</dt>
+                          <dd class="text-gray-700">{currentDep2?.state ?? '—'}</dd>
+                        </div>
+                        {#if tgt?.pod_name}
+                          <div class="flex gap-2 text-xs">
+                            <dt class="text-gray-400 w-28 shrink-0">Pod</dt>
+                            <dd class="font-mono text-gray-700 truncate">{tgt.pod_name}</dd>
+                          </div>
+                        {/if}
+                        {#if tgt?.node}
+                          <div class="flex gap-2 text-xs">
+                            <dt class="text-gray-400 w-28 shrink-0">Node</dt>
+                            <dd class="font-mono text-gray-700 truncate">{tgt.node}</dd>
+                          </div>
+                        {/if}
+                        {#if status?.run_id}
+                          <div class="flex gap-2 text-xs">
+                            <dt class="text-gray-400 w-28 shrink-0">Run</dt>
+                            <dd class="font-mono text-gray-700 truncate">
+                              {#if runExpId[status.run_id]}
+                                <a href="/experiments/{runExpId[status.run_id]}/runs/{status.run_id}"
+                                   class="text-sage-dark hover:underline">{status.run_id.slice(0, 16)}</a>
+                              {:else}
+                                {status.run_id.slice(0, 16)}
+                              {/if}
+                            </dd>
+                          </div>
+                        {/if}
+                        {#if status?.loaded_at}
+                          <div class="flex gap-2 text-xs">
+                            <dt class="text-gray-400 w-28 shrink-0">Loaded at</dt>
+                            <dd class="text-gray-700">{fmtDateTime(status.loaded_at)}</dd>
+                          </div>
+                        {/if}
+                      </dl>
+                    </div>
+
+                    <!-- Resources -->
+                    <div>
+                      <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Resources</p>
+                      {#if res}
+                        <dl class="space-y-1">
+                          {#if res.cpu_request}
+                            <div class="flex gap-2 text-xs">
+                              <dt class="text-gray-400 w-28 shrink-0">CPU request</dt>
+                              <dd class="font-mono text-gray-700">{res.cpu_request}</dd>
+                            </div>
+                          {/if}
+                          {#if res.memory_request}
+                            <div class="flex gap-2 text-xs">
+                              <dt class="text-gray-400 w-28 shrink-0">Memory request</dt>
+                              <dd class="font-mono text-gray-700">{res.memory_request}</dd>
+                            </div>
+                          {/if}
+                          {#if res.memory_limit}
+                            <div class="flex gap-2 text-xs">
+                              <dt class="text-gray-400 w-28 shrink-0">Memory limit</dt>
+                              <dd class="font-mono text-gray-700">{res.memory_limit}</dd>
+                            </div>
+                          {/if}
+                          {#if res.sessions != null}
+                            <div class="flex gap-2 text-xs">
+                              <dt class="text-gray-400 w-28 shrink-0">Sessions</dt>
+                              <dd class="font-mono text-gray-700">{res.sessions}</dd>
+                            </div>
+                          {/if}
+                          {#if res.max_concurrent != null}
+                            <div class="flex gap-2 text-xs">
+                              <dt class="text-gray-400 w-28 shrink-0">Max concurrent</dt>
+                              <dd class="font-mono text-gray-700">{res.max_concurrent}</dd>
+                            </div>
+                          {/if}
+                        </dl>
+                      {:else}
+                        <p class="text-xs text-gray-400 italic">No resource specs recorded.</p>
+                      {/if}
+                    </div>
+
+                  </div>
                 </td>
               </tr>
             {/if}

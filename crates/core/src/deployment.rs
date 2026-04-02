@@ -51,6 +51,11 @@ pub struct ResourceSettings {
     pub cpu_request: Option<String>,
     pub memory_request: Option<String>,
     pub memory_limit: Option<String>,
+    /// Number of ORT sessions to keep in the pool (true parallelism).
+    /// Defaults to 1 on the inference pod if not set.
+    pub sessions: Option<i64>,
+    /// Maximum in-flight requests before returning 429.
+    /// Defaults to `sessions` on the inference pod if not set.
     pub max_concurrent: Option<i64>,
 }
 

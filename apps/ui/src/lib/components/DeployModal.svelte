@@ -6,7 +6,7 @@
   // Provide either a specific version (skips version picker) or a whole model.
   export let modelVersion: ModelVersion | null = null;
   export let registeredModel: RegisteredModel | null = null;
-  export let knownTargets: { name: string; state: string; model_name: string | null; model_version: string | null; node: string | null }[];
+  export let knownTargets: { name: string; state: string; model_name: string | null; model_version: string | null; node: string | null; sessions: number | null }[];
 
   // Resolved once the user picks (or was given) a version.
   let resolvedVersion: ModelVersion | null = modelVersion;
@@ -30,7 +30,8 @@
     cpu_request:    '100m',
     memory_request: '256Mi',
     memory_limit:   '512Mi',
-    max_concurrent: 8,
+    sessions:       1,
+    max_concurrent: null,
   };
 
   type ActiveDep = { target: string; dep: Deployment };
@@ -105,13 +106,27 @@
     activeIntervals.push(iv);
   }
 
-  async function deployToExisting(target: string) {
-    if (!resolvedVersion) return;
+  let existingTarget: string | null = null;
+  let existingResources: Pick<ResourceSettings, 'sessions' | 'max_concurrent'> = { sessions: 1, max_concurrent: null };
+  let showExistingAdvanced = false;
+
+  function openExistingDeploy(target: string) {
+    const t = knownTargets.find(x => x.name === target);
+    existingTarget = target;
+    existingResources = { sessions: t?.sessions ?? 1, max_concurrent: null };
+    showExistingAdvanced = false;
+    err = '';
+  }
+
+  async function confirmDeployToExisting() {
+    if (!resolvedVersion || !existingTarget) return;
     err = '';
     polling = true;
     activeDeps = [];
+    const target = existingTarget;
+    existingTarget = null;
     try {
-      const res = await deployments.create(resolvedVersion.name, resolvedVersion.version, target, null);
+      const res = await deployments.create(resolvedVersion.name, resolvedVersion.version, target, null, existingResources);
       activeDeps = [{ target, dep: res.deployment }];
       pollOne(res.deployment.deployment_id, target);
     } catch (e) {
@@ -251,9 +266,9 @@
       <div class="flex flex-wrap gap-2">
         {#each knownTargets as t (t.name)}
           <button
-            on:click={() => deployToExisting(t.name)}
+            on:click={() => openExistingDeploy(t.name)}
             class="flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors
-              hover:border-peach hover:text-peach-dark border-gray-200 text-gray-700"
+              {existingTarget === t.name ? 'border-peach text-peach-dark bg-peach-light/10' : 'hover:border-peach hover:text-peach-dark border-gray-200 text-gray-700'}"
           >
             <i class="fa-solid fa-server text-xs text-gray-400"></i>
             {t.name}
@@ -272,6 +287,51 @@
           </button>
         {/if}
       </div>
+
+      {#if existingTarget}
+        <div class="bg-gray-50 rounded-lg p-3 space-y-2">
+          <div class="flex items-center justify-between">
+            <p class="text-xs font-semibold text-gray-600">
+              <i class="fa-solid fa-server mr-1 text-gray-400"></i>{existingTarget}
+            </p>
+            <button
+              on:click={() => { showExistingAdvanced = !showExistingAdvanced; }}
+              class="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              <i class="fa-solid fa-chevron-{showExistingAdvanced ? 'up' : 'down'} text-xs"></i>
+              Sessions
+            </button>
+          </div>
+
+          {#if showExistingAdvanced}
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="block text-xs text-gray-500 mb-1">Sessions</label>
+                <input type="number" min="1" bind:value={existingResources.sessions} placeholder="1"
+                  class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-peach/50 bg-white" />
+              </div>
+              <div>
+                <label class="block text-xs text-gray-500 mb-1">Max concurrent <span class="text-gray-400">(default: sessions)</span></label>
+                <input type="number" min="1" bind:value={existingResources.max_concurrent} placeholder="= sessions"
+                  class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-peach/50 bg-white" />
+              </div>
+            </div>
+          {/if}
+
+          <div class="flex justify-end gap-2 pt-1">
+            <button
+              on:click={() => { existingTarget = null; }}
+              class="px-3 py-1.5 rounded-lg text-xs text-gray-400 hover:bg-gray-100 transition-colors"
+            >Cancel</button>
+            <button
+              on:click={confirmDeployToExisting}
+              class="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold bg-peach text-white hover:bg-peach-dark transition-colors"
+            >
+              <i class="fa-solid fa-rocket text-xs"></i>Deploy
+            </button>
+          </div>
+        </div>
+      {/if}
 
       {#if addingNew}
         <div class="space-y-3 pt-1">
@@ -348,8 +408,13 @@
                   class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-peach/50 bg-white" />
               </div>
               <div>
-                <label class="block text-xs text-gray-500 mb-1">Max concurrent</label>
-                <input type="number" min="1" bind:value={resources.max_concurrent} placeholder="8"
+                <label class="block text-xs text-gray-500 mb-1">Sessions</label>
+                <input type="number" min="1" bind:value={resources.sessions} placeholder="1"
+                  class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-peach/50 bg-white" />
+              </div>
+              <div>
+                <label class="block text-xs text-gray-500 mb-1">Max concurrent <span class="text-gray-400">(default: sessions)</span></label>
+                <input type="number" min="1" bind:value={resources.max_concurrent} placeholder="= sessions"
                   class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-peach/50 bg-white" />
               </div>
             </div>

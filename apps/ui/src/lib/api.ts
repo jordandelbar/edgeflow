@@ -110,12 +110,14 @@ export type Target = {
   registered_at: number;
   last_seen: number | null;
   health: TargetHealth;
+  resources: ResourceSettings | null;
 };
 
 export type ResourceSettings = {
   cpu_request:    string | null;
   memory_request: string | null;
   memory_limit:   string | null;
+  sessions:       number | null;
   max_concurrent: number | null;
 };
 
