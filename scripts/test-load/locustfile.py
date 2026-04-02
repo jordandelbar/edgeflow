@@ -11,6 +11,10 @@ EDGEFLOW_TARGET   Target name to benchmark          (required)
 PAYLOAD_FILE      Path to request body file         (required)
 CONTENT_TYPE      Content-type header               (default: application/octet-stream)
 
+If locust is CPU-bound (server answers faster than locust can generate load),
+add --processes to spread across cores:
+    locust -f locustfile.py ... --processes 4
+
 Quick-start examples (after `make_payloads.py`)
 -----------------------------------------------
 # iris (raw floats)
@@ -34,7 +38,8 @@ locust -f locustfile.py --host ignored --headless -u 4 -r 1 -t 60s
 import os
 
 import requests
-from locust import HttpUser, between, events, task
+from locust import between, events, task
+from locust.contrib.fasthttp import FastHttpUser
 
 # ── configuration ────────────────────────────────────────────────────────────
 
@@ -42,7 +47,9 @@ EDGEFLOW_SERVER = os.environ.get("EDGEFLOW_SERVER", "http://localhost:5000")
 TARGET = os.environ.get("EDGEFLOW_TARGET", "")
 PAYLOAD_FILE = os.environ.get("PAYLOAD_FILE", "")
 CONTENT_TYPE = os.environ.get("CONTENT_TYPE", "application/octet-stream")
-ENDPOINT = "http://localhost:8080/"
+# Override the resolved pod address (e.g. when port-forwarding from outside the cluster).
+INFER_HOST = os.environ.get("INFER_HOST", "")
+ENDPOINT = "/infer"
 
 
 def _resolve_pod_address(server: str, target: str) -> str:
@@ -71,17 +78,19 @@ def _load_payload(path: str) -> bytes:
     return data
 
 
-# Resolve once at import time so HttpUser.host can be set at class level.
+# Resolve once at import time so FastHttpUser.host can be set at class level.
 if not TARGET:
     raise SystemExit("[locust] EDGEFLOW_TARGET is required")
 
-_pod_address = _resolve_pod_address(EDGEFLOW_SERVER, TARGET)
+_pod_address = (
+    INFER_HOST if INFER_HOST else _resolve_pod_address(EDGEFLOW_SERVER, TARGET)
+)
 _payload = _load_payload(PAYLOAD_FILE)
 
 # ── user ─────────────────────────────────────────────────────────────────────
 
 
-class InferenceUser(HttpUser):
+class InferenceUser(FastHttpUser):
     # Locust's --host flag is ignored; we use the resolved pod address.
     host = _pod_address
 
@@ -117,7 +126,9 @@ class InferenceUser(HttpUser):
                 # Model not loaded yet — fail visibly.
                 resp.failure("503 no model loaded")
             else:
-                resp.failure(f"unexpected {resp.status_code}: {resp.text[:120]}")
+                resp.failure(
+                    f"unexpected {resp.status_code}: {(resp.text or '')[:120]}"
+                )
 
 
 # ── startup banner ───────────────────────────────────────────────────────────
