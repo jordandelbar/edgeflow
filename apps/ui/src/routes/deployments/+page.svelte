@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { runs, targets, type Deployment, type ModelStatus, type TargetHealth, type Target } from '$lib/api';
+  import { runs, targets, type Deployment, type ModelStatus, type TargetHealth, type Target, type ResourceSettings } from '$lib/api';
   import { liveData } from '$lib/stores';
   import { fmtDateTime, fmtAgo } from '$lib/utils';
   import ErrorCard from '$lib/components/ErrorCard.svelte';
@@ -183,6 +183,58 @@
     } finally {
       tearing[t] = false; confirming[t] = false;
       tearing = tearing; confirming = confirming;
+    }
+  }
+
+  // Per-target resource edit state
+  let editingResources: Record<string, boolean> = {};
+  let resourceDraft: Record<string, ResourceSettings> = {};
+  let resourceSaving: Record<string, boolean> = {};
+  let resourceError: Record<string, string> = {};
+  let resourceNotice: Record<string, string> = {};
+
+  function startEditResources(t: string) {
+    const res = targetMap[t]?.resources;
+    resourceDraft[t] = {
+      cpu_request:    res?.cpu_request    ?? null,
+      memory_request: res?.memory_request ?? null,
+      memory_limit:   res?.memory_limit   ?? null,
+      sessions:       res?.sessions       ?? null,
+      max_concurrent: res?.max_concurrent ?? null,
+    };
+    resourceError[t] = '';
+    editingResources[t] = true;
+    editingResources = editingResources;
+    resourceDraft = resourceDraft;
+  }
+
+  async function saveResources(t: string) {
+    resourceSaving[t] = true; resourceSaving = resourceSaving;
+    resourceError[t] = ''; resourceNotice[t] = '';
+    try {
+      const res = await targets.updateResources(t, resourceDraft[t]);
+      targetMap[t] = res.target;
+      targetMap = targetMap;
+      editingResources[t] = false;
+      editingResources = editingResources;
+      if (!res.pod_restarted) {
+        // Check whether CPU/memory/max_concurrent changed — if so, warn that
+        // k8s was not reachable and the pod needs a manual restart.
+        const draft = resourceDraft[t];
+        const prev  = res.target.resources;
+        const needsRestart = draft.cpu_request    !== prev?.cpu_request
+                          || draft.memory_request !== prev?.memory_request
+                          || draft.memory_limit   !== prev?.memory_limit
+                          || draft.max_concurrent !== prev?.max_concurrent;
+        if (needsRestart) {
+          resourceNotice[t] = 'Saved. CPU / memory / max_concurrent changes require a pod restart to take effect — k8s was not reachable.';
+          resourceNotice = resourceNotice;
+        }
+      }
+    } catch (e) {
+      resourceError[t] = String(e);
+    } finally {
+      resourceSaving[t] = false; resourceSaving = resourceSaving;
     }
   }
 
@@ -471,46 +523,110 @@
 
                     <!-- Resources -->
                     <div>
-                      <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Resources</p>
-                      {#if res}
-                        <dl class="space-y-1">
-                          {#if res.cpu_request}
-                            <div class="flex gap-2 text-xs">
-                              <dt class="text-gray-400 w-28 shrink-0">CPU request</dt>
-                              <dd class="font-mono text-gray-700">{res.cpu_request}</dd>
+                      <div class="flex items-center justify-between mb-2">
+                        <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Resources</p>
+                        {#if !editingResources[t]}
+                          <button
+                            on:click={() => startEditResources(t)}
+                            class="text-xs text-gray-400 hover:text-sage-dark transition-colors"
+                            title="Edit resources"
+                          >
+                            <i class="fa-solid fa-pen text-xs"></i>
+                          </button>
+                        {/if}
+                      </div>
+
+                      {#if editingResources[t]}
+                        <div class="space-y-2">
+                          <div class="grid grid-cols-2 gap-2">
+                            <div>
+                              <label class="block text-xs text-gray-500 mb-1">CPU request</label>
+                              <input type="text" bind:value={resourceDraft[t].cpu_request} placeholder="100m"
+                                class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-sage/50 bg-white" />
                             </div>
-                          {/if}
-                          {#if res.memory_request}
-                            <div class="flex gap-2 text-xs">
-                              <dt class="text-gray-400 w-28 shrink-0">Memory request</dt>
-                              <dd class="font-mono text-gray-700">{res.memory_request}</dd>
+                            <div>
+                              <label class="block text-xs text-gray-500 mb-1">Memory request</label>
+                              <input type="text" bind:value={resourceDraft[t].memory_request} placeholder="256Mi"
+                                class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-sage/50 bg-white" />
                             </div>
-                          {/if}
-                          {#if res.memory_limit}
-                            <div class="flex gap-2 text-xs">
-                              <dt class="text-gray-400 w-28 shrink-0">Memory limit</dt>
-                              <dd class="font-mono text-gray-700">{res.memory_limit}</dd>
+                            <div>
+                              <label class="block text-xs text-gray-500 mb-1">Memory limit</label>
+                              <input type="text" bind:value={resourceDraft[t].memory_limit} placeholder="512Mi"
+                                class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-sage/50 bg-white" />
                             </div>
-                          {/if}
-                          {#if res.sessions != null}
-                            <div class="flex gap-2 text-xs">
-                              <dt class="text-gray-400 w-28 shrink-0">Sessions</dt>
-                              <dd class="font-mono text-gray-700">{res.sessions}</dd>
+                            <div>
+                              <label class="block text-xs text-gray-500 mb-1">Sessions</label>
+                              <input type="number" min="1" bind:value={resourceDraft[t].sessions} placeholder="1"
+                                class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-sage/50 bg-white" />
                             </div>
-                          {/if}
-                          {#if res.max_concurrent != null}
-                            <div class="flex gap-2 text-xs">
-                              <dt class="text-gray-400 w-28 shrink-0">Max concurrent</dt>
-                              <dd class="font-mono text-gray-700">{res.max_concurrent}</dd>
+                            <div>
+                              <label class="block text-xs text-gray-500 mb-1">Max concurrent</label>
+                              <input type="number" min="1" bind:value={resourceDraft[t].max_concurrent} placeholder="= sessions"
+                                class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-sage/50 bg-white" />
                             </div>
+                          </div>
+
+                          {#if resourceError[t]}
+                            <p class="text-xs text-red-500"><i class="fa-solid fa-circle-xmark mr-1"></i>{resourceError[t]}</p>
                           {/if}
-                        </dl>
+
+                          <div class="flex items-center gap-2 pt-1">
+                            <button
+                              on:click={() => saveResources(t)}
+                              disabled={resourceSaving[t]}
+                              class="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold bg-sage text-white hover:bg-sage-dark transition-colors disabled:opacity-50"
+                            >
+                              {#if resourceSaving[t]}
+                                <i class="fa-solid fa-spinner fa-spin text-xs"></i>
+                              {:else}
+                                <i class="fa-solid fa-check text-xs"></i>
+                              {/if}
+                              Save
+                            </button>
+                            <button
+                              on:click={() => { editingResources[t] = false; editingResources = editingResources; }}
+                              class="text-xs text-gray-400 hover:text-gray-600 transition-colors"
+                            >
+                              Cancel
+                            </button>
+                            <span class="text-xs text-gray-400 ml-auto italic">
+                              <i class="fa-solid fa-triangle-exclamation mr-1 text-amber-400"></i>CPU/memory changes restart the pod
+                            </span>
+                          </div>
+                        </div>
                       {:else}
-                        <p class="text-xs text-gray-400 italic">No resource specs recorded.</p>
+                        <dl class="space-y-1">
+                          <div class="flex gap-2 text-xs">
+                            <dt class="text-gray-400 w-28 shrink-0">CPU request</dt>
+                            <dd class="font-mono text-gray-700">{res?.cpu_request ?? '—'}</dd>
+                          </div>
+                          <div class="flex gap-2 text-xs">
+                            <dt class="text-gray-400 w-28 shrink-0">Memory request</dt>
+                            <dd class="font-mono text-gray-700">{res?.memory_request ?? '—'}</dd>
+                          </div>
+                          <div class="flex gap-2 text-xs">
+                            <dt class="text-gray-400 w-28 shrink-0">Memory limit</dt>
+                            <dd class="font-mono text-gray-700">{res?.memory_limit ?? '—'}</dd>
+                          </div>
+                          <div class="flex gap-2 text-xs">
+                            <dt class="text-gray-400 w-28 shrink-0">Sessions</dt>
+                            <dd class="font-mono text-gray-700">{res?.sessions ?? '—'}</dd>
+                          </div>
+                          <div class="flex gap-2 text-xs">
+                            <dt class="text-gray-400 w-28 shrink-0">Max concurrent</dt>
+                            <dd class="font-mono text-gray-700">{res?.max_concurrent ?? '—'}</dd>
+                          </div>
+                        </dl>
                       {/if}
                     </div>
 
                   </div>
+
+                  {#if resourceNotice[t]}
+                    <p class="text-xs text-amber-600 mt-3">
+                      <i class="fa-solid fa-triangle-exclamation mr-1"></i>{resourceNotice[t]}
+                    </p>
+                  {/if}
                 </td>
               </tr>
             {/if}

@@ -249,6 +249,116 @@ pub async fn create_inference_pod(target: &str, node: Option<&str>, resources: &
     }
 }
 
+/// Update the resource requests/limits on the k8s Deployment for `target`
+/// using a read-modify-write cycle, then trigger a rolling restart.
+///
+/// Returns `true` if the update was accepted, `false` if the cluster is
+/// unreachable, the Deployment doesn't exist, or the update failed.
+pub async fn patch_inference_pod_resources(target: &str, resources: &ResourceSettings) -> bool {
+    let namespace = std::env::var("EDGEFLOW_NAMESPACE").unwrap_or_else(|_| "default".into());
+
+    let client = match kube::Client::try_default().await {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!(target = %target, error = %e, "k8s client unavailable — cannot update resources");
+            return false;
+        }
+    };
+
+    let cpu_request = resources
+        .cpu_request
+        .clone()
+        .unwrap_or_else(|| "100m".into());
+    let memory_request = resources
+        .memory_request
+        .clone()
+        .unwrap_or_else(|| "256Mi".into());
+    let memory_limit = resources
+        .memory_limit
+        .clone()
+        .unwrap_or_else(|| "512Mi".into());
+    let sessions = resources.sessions.unwrap_or(1);
+    let max_concurrent = resources.max_concurrent.unwrap_or(sessions);
+
+    let name = k8s_name(target);
+    let api: Api<Deployment> = Api::namespaced(client, &namespace);
+
+    // GET the current Deployment so we preserve all existing fields and have
+    // the correct resourceVersion for optimistic concurrency.
+    let mut deployment = match api.get(&name).await {
+        Ok(d) => d,
+        Err(kube::Error::Api(e)) if e.code == 404 => {
+            tracing::warn!(
+                target = %target,
+                name = %name,
+                "inference deployment not found — cannot update resources (was it created via k8s?)"
+            );
+            return false;
+        }
+        Err(e) => {
+            tracing::error!(target = %target, error = %e, "failed to get inference deployment");
+            return false;
+        }
+    };
+
+    // Find the edgeflow-inference container and update its resources + env vars.
+    let updated = (|| {
+        let containers = deployment
+            .spec
+            .as_mut()?
+            .template
+            .spec
+            .as_mut()?
+            .containers
+            .iter_mut()
+            .find(|c| c.name == "edgeflow-inference")?;
+
+        containers.resources = Some(ResourceRequirements {
+            requests: Some(
+                [
+                    ("cpu".into(), Quantity(cpu_request)),
+                    ("memory".into(), Quantity(memory_request)),
+                ]
+                .into(),
+            ),
+            limits: Some([("memory".into(), Quantity(memory_limit))].into()),
+            ..Default::default()
+        });
+
+        // Update the two env vars we control; leave all others intact.
+        if let Some(env) = containers.env.as_mut() {
+            for var in env.iter_mut() {
+                match var.name.as_str() {
+                    "EDGEFLOW_SESSIONS" => var.value = Some(sessions.to_string()),
+                    "EDGEFLOW_MAX_CONCURRENT_INFER" => var.value = Some(max_concurrent.to_string()),
+                    _ => {}
+                }
+            }
+        }
+
+        Some(())
+    })();
+
+    if updated.is_none() {
+        tracing::warn!(target = %target, name = %name, "edgeflow-inference container not found in deployment spec");
+        return false;
+    }
+
+    match api
+        .replace(&name, &kube::api::PostParams::default(), &deployment)
+        .await
+    {
+        Ok(_) => {
+            tracing::info!(target = %target, name = %name, "updated inference deployment resources");
+            true
+        }
+        Err(e) => {
+            tracing::error!(target = %target, error = %e, "failed to update inference deployment resources");
+            false
+        }
+    }
+}
+
 /// Delete the k8s Deployment for `target`.
 /// No-ops gracefully if the cluster is unreachable or the Deployment doesn't exist.
 pub async fn delete_inference_pod(target: &str) {

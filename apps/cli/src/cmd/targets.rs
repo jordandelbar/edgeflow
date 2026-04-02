@@ -17,6 +17,23 @@ pub enum Cmd {
         /// Target name
         target: String,
     },
+    /// Update resource settings for a target (merges with existing values)
+    SetResources {
+        /// Target name
+        target: String,
+        #[arg(long)]
+        cpu_request: Option<String>,
+        #[arg(long)]
+        memory_request: Option<String>,
+        #[arg(long)]
+        memory_limit: Option<String>,
+        /// Number of ORT sessions (parallel inference workers)
+        #[arg(long)]
+        sessions: Option<i64>,
+        /// Max in-flight requests before 429 (defaults to --sessions)
+        #[arg(long)]
+        max_concurrent: Option<i64>,
+    },
     /// Tear down an inference target (removes pod and deployment record)
     Teardown {
         /// Target name
@@ -31,6 +48,22 @@ pub fn run(cmd: Cmd, api: &Api) -> Result<()> {
     match cmd {
         Cmd::List { health } => list(api, health.as_deref()),
         Cmd::Inspect { target } => inspect(api, &target),
+        Cmd::SetResources {
+            target,
+            cpu_request,
+            memory_request,
+            memory_limit,
+            sessions,
+            max_concurrent,
+        } => set_resources(
+            api,
+            &target,
+            cpu_request.as_deref(),
+            memory_request.as_deref(),
+            memory_limit.as_deref(),
+            sessions,
+            max_concurrent,
+        ),
         Cmd::Teardown { target, yes } => teardown(api, &target, yes),
     }
 }
@@ -98,6 +131,57 @@ fn inspect(api: &Api, target: &str) -> Result<()> {
     let r = &t["resources"];
     println!();
     println!("Resources:");
+    println!(
+        "  CPU request:    {}",
+        r["cpu_request"].as_str().unwrap_or("—")
+    );
+    println!(
+        "  Memory request: {}",
+        r["memory_request"].as_str().unwrap_or("—")
+    );
+    println!(
+        "  Memory limit:   {}",
+        r["memory_limit"].as_str().unwrap_or("—")
+    );
+    println!(
+        "  Sessions:       {}",
+        r["sessions"]
+            .as_i64()
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "—".into())
+    );
+    println!(
+        "  Max concurrent: {}",
+        r["max_concurrent"]
+            .as_i64()
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "—".into())
+    );
+
+    Ok(())
+}
+
+fn set_resources(
+    api: &Api,
+    target: &str,
+    cpu_request: Option<&str>,
+    memory_request: Option<&str>,
+    memory_limit: Option<&str>,
+    sessions: Option<i64>,
+    max_concurrent: Option<i64>,
+) -> Result<()> {
+    let res = api.update_target_resources(
+        target,
+        cpu_request,
+        memory_request,
+        memory_limit,
+        sessions,
+        max_concurrent,
+    )?;
+    let t = &res["target"];
+    let r = &t["resources"];
+
+    println!("Updated resources for '{target}':");
     println!(
         "  CPU request:    {}",
         r["cpu_request"].as_str().unwrap_or("—")

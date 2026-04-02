@@ -56,6 +56,17 @@ impl Api {
             .context("failed to parse response")
     }
 
+    fn patch<T: DeserializeOwned>(&self, url: &str, body: &Value) -> Result<T> {
+        self.client
+            .patch(url)
+            .json(body)
+            .send()?
+            .error_for_status()
+            .context("request failed")?
+            .json::<T>()
+            .context("failed to parse response")
+    }
+
     fn delete(&self, url: &str) -> Result<()> {
         self.client
             .delete(url)
@@ -236,6 +247,27 @@ impl Api {
 
     pub fn get_target(&self, target: &str) -> Result<Value> {
         self.get(&self.v1(&format!("/targets/{target}")))
+    }
+
+    pub fn update_target_resources(
+        &self,
+        target: &str,
+        cpu_request: Option<&str>,
+        memory_request: Option<&str>,
+        memory_limit: Option<&str>,
+        sessions: Option<i64>,
+        max_concurrent: Option<i64>,
+    ) -> Result<Value> {
+        self.patch(
+            &self.v1(&format!("/targets/{target}/resources")),
+            &serde_json::json!({
+                "cpu_request":    cpu_request,
+                "memory_request": memory_request,
+                "memory_limit":   memory_limit,
+                "sessions":       sessions,
+                "max_concurrent": max_concurrent,
+            }),
+        )
     }
 
     pub fn teardown_target(&self, target: &str) -> Result<()> {

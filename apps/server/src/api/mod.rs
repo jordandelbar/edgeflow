@@ -48,11 +48,15 @@ impl IntoResponse for ApiError {
         // Map common error messages to MLflow error codes + HTTP status.
         // The MLflow client stops retrying on 404 RESOURCE_DOES_NOT_EXIST
         // and treats 500 INTERNAL_ERROR as a transient failure worth retrying.
-        let (status, error_code) = if msg.contains("not found") || msg.contains("no rows") {
+        let (status, error_code) = if msg.contains("not found")
+            || msg.contains("no rows")
+            || msg.contains("not registered")
+        {
             (StatusCode::NOT_FOUND, "RESOURCE_DOES_NOT_EXIST")
         } else if msg.contains("already exists") || msg.contains("UNIQUE constraint") {
             (StatusCode::BAD_REQUEST, "RESOURCE_ALREADY_EXISTS")
         } else {
+            tracing::error!(error = %self.0, "internal API error");
             (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR")
         };
         let body = serde_json::json!({ "error_code": error_code, "message": msg });

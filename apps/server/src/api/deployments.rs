@@ -21,6 +21,10 @@ pub fn router() -> Router<AppState> {
         .route("/targets", get(list_targets))
         .route("/targets/register", post(register_target))
         .route("/targets/:target", get(get_target).delete(teardown_target))
+        .route(
+            "/targets/:target/resources",
+            axum::routing::patch(update_target_resources),
+        )
         .route("/targets/:target/model", get(target_model_status))
         .route("/targets/:target/schema", get(target_schema))
         .route("/targets/:target/health", get(target_health))
@@ -400,25 +404,48 @@ async fn register_target(
         .await?;
 
     // Check for a pending deployment for this target — trigger the load.
-    if let Some(deployment) = state
+    // Also handle the re-registration case (e.g. after a rolling restart
+    // triggered by a resource update): if there is no pending deployment but
+    // there IS a currently-deployed one, reload it on the new pod so it can
+    // pass its readiness probe and let the old pod terminate.
+    let pending = state
         .store
         .get_pending_deployment_for_target(&req.target)
-        .await?
-    {
+        .await?;
+    let deployment_to_load = if pending.is_some() {
+        pending
+    } else {
+        // Look for the latest deployed deployment to reload after a restart.
+        state
+            .store
+            .get_latest_deployment(&req.target)
+            .await
+            .ok()
+            .filter(|d| d.state == DeploymentState::Deployed)
+    };
+
+    if let Some(deployment) = deployment_to_load {
+        let is_reload = deployment.state == DeploymentState::Deployed;
         let sessions = target.resources.sessions.unwrap_or(1) as usize;
         match TargetClient::new(&state.http_client, &req.address)
             .upgrade(&deployment.run_id, &deployment.deployment_id, sessions)
             .await
         {
             Ok(true) => {
-                state
-                    .store
-                    .update_deployment_state(&deployment.deployment_id, DeploymentState::Deploying)
-                    .await?;
+                if !is_reload {
+                    state
+                        .store
+                        .update_deployment_state(
+                            &deployment.deployment_id,
+                            DeploymentState::Deploying,
+                        )
+                        .await?;
+                }
                 tracing::info!(
                     deployment_id = %deployment.deployment_id,
                     target = %req.target,
-                    "triggered first deploy on newly registered pod"
+                    is_reload,
+                    "triggered model load on newly registered pod"
                 );
             }
             Ok(false) => {
@@ -431,6 +458,72 @@ async fn register_target(
     }
 
     Ok(Json(serde_json::json!({ "target": target })))
+}
+
+// ── PATCH /targets/:target/resources ─────────────────────────────────────────
+
+async fn update_target_resources(
+    State(state): State<AppState>,
+    Path(target): Path<String>,
+    Json(req): Json<ResourceSettings>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let existing = require_target(&state, &target).await?;
+
+    // Classify what changes before consuming existing.resources in the merge.
+    let prev = &existing.resources;
+    let sessions_changed = req.sessions.is_some() && req.sessions != prev.sessions;
+    let max_conc_changed =
+        req.max_concurrent.is_some() && req.max_concurrent != prev.max_concurrent;
+    let resources_changed = (req.cpu_request.is_some() && req.cpu_request != prev.cpu_request)
+        || (req.memory_request.is_some() && req.memory_request != prev.memory_request)
+        || (req.memory_limit.is_some() && req.memory_limit != prev.memory_limit);
+
+    // Merge: only overwrite fields the caller explicitly provided (Some).
+    let merged = ResourceSettings {
+        cpu_request: req.cpu_request.or(existing.resources.cpu_request),
+        memory_request: req.memory_request.or(existing.resources.memory_request),
+        memory_limit: req.memory_limit.or(existing.resources.memory_limit),
+        sessions: req.sessions.or(existing.resources.sessions),
+        max_concurrent: req.max_concurrent.or(existing.resources.max_concurrent),
+    };
+    let resolved = crate::k8s::resolve_resources(&merged);
+
+    state
+        .store
+        .store_target_resources(&target, existing.node.as_deref(), &resolved)
+        .await?;
+
+    // Whether the k8s Deployment was actually patched (and thus a rolling
+    // restart triggered). False when k8s is unreachable or nothing required it.
+    let mut pod_restarted = false;
+
+    if !existing.address.is_empty() {
+        // Sessions: live-reload via upgrade — rebuilds the ORT pool without a
+        // pod restart. max_concurrent cannot be changed live (semaphore is
+        // fixed at startup), so it falls through to the k8s patch below.
+        if sessions_changed {
+            if let Some(run_id) = &existing.current_run_id {
+                if let Ok(dep) = state.store.get_latest_deployment(&target).await {
+                    let sessions = resolved.sessions.unwrap_or(1) as usize;
+                    let _ = TargetClient::new(&state.http_client, &existing.address)
+                        .upgrade(run_id, &dep.deployment_id, sessions)
+                        .await;
+                }
+            }
+        }
+
+        // CPU / memory / max_concurrent require a pod restart via k8s patch.
+        // When sessions also changed, include the updated env var in the same
+        // patch so the restarted pod comes up with the correct count.
+        if resources_changed || max_conc_changed {
+            pod_restarted = crate::k8s::patch_inference_pod_resources(&target, &resolved).await;
+        }
+    }
+
+    let updated = require_target(&state, &target).await?;
+    Ok(Json(
+        serde_json::json!({ "target": updated, "pod_restarted": pod_restarted }),
+    ))
 }
 
 // ── GET /targets/:target ─────────────────────────────────────────────────────

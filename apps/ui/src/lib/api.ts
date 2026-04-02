@@ -39,6 +39,16 @@ async function v1post<T>(path: string, body: unknown): Promise<T> {
   return res.json();
 }
 
+async function v1patch<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${V1}${path}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
 async function v1get<T>(path: string, params?: Record<string, string>): Promise<T> {
   const url = new URL(`${V1}${path}`, window.location.origin);
   if (params) Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
@@ -217,6 +227,9 @@ export type ModelStatus = {
 
 export const targets = {
   list:    () => v1get<{ targets: Target[] }>('/targets'),
+  get:     (target: string) => v1get<{ target: Target }>(`/targets/${target}`),
+  updateResources: (target: string, resources: Partial<ResourceSettings>) =>
+    v1patch<{ target: Target; pod_restarted: boolean }>(`/targets/${target}/resources`, resources),
   model:   (target: string) =>
     v1get<ModelStatus>(`/targets/${target}/model`),
   health:  (target: string) =>
