@@ -7,7 +7,8 @@ tables are written to schema.json.  The inference server accepts a JSON body,
 applies the encodings, and feeds the resulting float tensor to the ONNX model.
 
 Dataset: UCI Adult Income (fetch_openml, no Kaggle account required)
-Model:   HistGradientBoostingClassifier (sklearn, no extra deps)
+Model:   XGBClassifier (default) | LGBMClassifier | CatBoostClassifier
+         Set EDGEFLOW_MODEL_TYPE=xgboost|lightgbm|catboost (default: xgboost)
 Target:  binary — '>50K' income or not
 
 Input protocol (Named mode): JSON body, e.g.
@@ -38,7 +39,6 @@ import mlflow
 import numpy as np
 from sklearn.compose import ColumnTransformer
 from sklearn.datasets import fetch_openml
-from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.metrics import f1_score, roc_auc_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import OrdinalEncoder
@@ -49,13 +49,57 @@ from edgeflow.models import clf_to_onnx
 
 EDGEFLOW_SERVER = os.environ.get("EDGEFLOW_SERVER", "http://localhost:5000")
 EDGEFLOW_TARGET = os.environ.get("EDGEFLOW_TARGET", "adult-inference")
+MODEL_TYPE = os.environ.get("EDGEFLOW_MODEL_TYPE", "xgboost")
 
 N_ESTIMATORS = 200
 MAX_DEPTH = 4
 LEARNING_RATE = 0.1
 
+# ── model factory ───────────────────────────────────────────────────────────────
+
+
+def make_clf(model_type: str):
+    """Return a fitted-ready classifier based on MODEL_TYPE."""
+    if model_type == "xgboost":
+        from xgboost import XGBClassifier
+
+        return XGBClassifier(
+            n_estimators=N_ESTIMATORS,
+            max_depth=MAX_DEPTH,
+            learning_rate=LEARNING_RATE,
+            objective="binary:logistic",
+            eval_metric="logloss",
+            random_state=42,
+        )
+    if model_type == "lightgbm":
+        from lightgbm import LGBMClassifier
+
+        return LGBMClassifier(
+            n_estimators=N_ESTIMATORS,
+            max_depth=MAX_DEPTH,
+            learning_rate=LEARNING_RATE,
+            random_state=42,
+            verbose=-1,
+        )
+    if model_type == "catboost":
+        from catboost import CatBoostClassifier
+
+        return CatBoostClassifier(
+            iterations=N_ESTIMATORS,
+            depth=MAX_DEPTH,
+            learning_rate=LEARNING_RATE,
+            random_seed=42,
+            verbose=0,
+        )
+    raise ValueError(
+        f"unknown EDGEFLOW_MODEL_TYPE: {model_type!r}. "
+        "Use xgboost, lightgbm, or catboost."
+    )
+
+
 # ── dataset ────────────────────────────────────────────────────────────────────
 
+print(f"model type: {MODEL_TYPE}")
 print("fetching adult income dataset from OpenML...")
 data = fetch_openml("adult", version=2, as_frame=True, parser="auto")
 X = data.data
@@ -95,14 +139,9 @@ X_train_enc = preprocessor.fit_transform(X_train).astype(np.float32)
 X_test_enc = preprocessor.transform(X_test).astype(np.float32)
 
 print(f"\nencoded feature count: {X_train_enc.shape[1]}")
-print("training HistGradientBoostingClassifier...")
+print(f"training {MODEL_TYPE}...")
 
-clf = HistGradientBoostingClassifier(
-    max_iter=N_ESTIMATORS,
-    max_depth=MAX_DEPTH,
-    learning_rate=LEARNING_RATE,
-    random_state=42,
-)
+clf = make_clf(MODEL_TYPE)
 clf.fit(X_train_enc, y_train)
 
 y_pred = clf.predict(X_test_enc)
@@ -118,12 +157,12 @@ mlflow.set_tracking_uri(EDGEFLOW_SERVER)
 exp = mlflow.set_experiment("adult-income-poc")
 
 with mlflow.start_run(
-    experiment_id=exp.experiment_id, run_name="adult-income-gbm"
+    experiment_id=exp.experiment_id, run_name=f"adult-income-{MODEL_TYPE}"
 ) as run:
     mlflow.log_params(
         {
-            "model": "HistGradientBoostingClassifier",
-            "max_iter": N_ESTIMATORS,
+            "model": MODEL_TYPE,
+            "n_estimators": N_ESTIMATORS,
             "max_depth": MAX_DEPTH,
             "learning_rate": LEARNING_RATE,
             "n_features_raw": X.shape[1],
@@ -136,6 +175,7 @@ with mlflow.start_run(
     mlflow.log_metric("roc_auc", auc)
 
     # Export the classifier only (post-encoding, single float tensor input).
+    # clf_to_onnx detects the framework and uses the appropriate export path.
     # The column_transformer is passed separately so edgeflow can write the
     # encoding tables to schema.json — the server applies them at request time.
     edgeflow.log_model(

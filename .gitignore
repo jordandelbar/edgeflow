@@ -274,3 +274,5 @@ __marimo__/
 
 # Binary files
 *.bin
+
+catboost_info/

@@ -3,13 +3,17 @@ name = "edgeflow-scripts"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
+    "catboost>=1.2.10",
     "edgeflow",
+    "lightgbm>=4.6.0",
     "locust>=2.29",
     "mlflow>=3.10.1",
     "numpy>=1.26",
+    "onnxmltools>=1.16.0",
     "requests>=2.31",
     "scikit-learn>=1.4",
     "ultralytics>=8.2",
+    "xgboost>=3.2.0",
 ]
 
 [tool.uv.sources]

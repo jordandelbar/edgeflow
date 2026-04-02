@@ -18,3 +18,8 @@ python-source = "."
 module-name = "edgeflow._lib"
 manifest-path = "../../crates/transforms/Cargo.toml"
 features = ["python"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]
