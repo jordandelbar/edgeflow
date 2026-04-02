@@ -14,12 +14,12 @@ EDGEFLOW_TARGET   Target name to benchmark          (default: adult-inference)
 Quick-start
 -----------
 EDGEFLOW_TARGET=adult-inference \
-locust -f locustfile_adult.py --host ignored --headless -u 10 -r 2 -t 60s
+locust -f locustfile_adult.py --headless -u 10 -r 2 -t 60s
 
 If locust is CPU-bound (server answers faster than locust can generate load),
 add --processes to spawn one worker per core:
 EDGEFLOW_TARGET=adult-inference \
-locust -f locustfile_adult.py --host ignored --headless -u 100 -r 10 -t 60s --processes 4
+locust -f locustfile_adult.py --headless -u 100 -r 10 -t 60s --processes 4
 """
 
 import json
@@ -224,14 +224,6 @@ class AdultIncomeUser(FastHttpUser):
                 resp.success()
             elif resp.status_code == 429:
                 resp.success()
-                self.environment.events.request.fire(
-                    request_type="POST",
-                    name="/infer [429 backpressure]",
-                    response_time=resp.elapsed.total_seconds() * 1000,
-                    response_length=len(resp.content),
-                    context={},
-                    exception=None,
-                )
             elif resp.status_code == 503:
                 resp.failure("503 no model loaded")
             else:

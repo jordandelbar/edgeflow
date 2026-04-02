@@ -20,19 +20,19 @@ Quick-start examples (after `make_payloads.py`)
 # iris (raw floats)
 EDGEFLOW_TARGET=iris-inference \
 PAYLOAD_FILE=payloads/iris.bin \
-locust -f locustfile.py --host ignored --headless -u 10 -r 2 -t 60s
+locust -f locustfile.py --headless -u 10 -r 2 -t 60s
 
 # adult income (JSON)
 EDGEFLOW_TARGET=adult-inference \
 PAYLOAD_FILE=payloads/adult.json \
 CONTENT_TYPE=application/json \
-locust -f locustfile.py --host ignored --headless -u 10 -r 2 -t 60s
+locust -f locustfile.py --headless -u 10 -r 2 -t 60s
 
 # yolov8 (JPEG)
 EDGEFLOW_TARGET=yolo-inference \
 PAYLOAD_FILE=payloads/sample.jpg \
 CONTENT_TYPE=image/jpeg \
-locust -f locustfile.py --host ignored --headless -u 4 -r 1 -t 60s
+locust -f locustfile.py --headless -u 4 -r 1 -t 60s
 """
 
 import os
@@ -109,19 +109,8 @@ class InferenceUser(FastHttpUser):
                 resp.success()
             elif resp.status_code == 429:
                 # Backpressure from the semaphore — expected under saturation.
-                # Mark success so it doesn't inflate the failure rate, but
-                # Locust still records it separately by status code in the CSV.
+                # Mark success so it doesn't inflate the failure rate.
                 resp.success()
-                # Re-fire under a distinct name so the two stat lines are easy
-                # to compare side-by-side in the Locust UI / CSV report.
-                self.environment.events.request.fire(
-                    request_type="POST",
-                    name="/infer [429 backpressure]",
-                    response_time=resp.elapsed.total_seconds() * 1000,
-                    response_length=len(resp.content),
-                    context={},
-                    exception=None,
-                )
             elif resp.status_code == 503:
                 # Model not loaded yet — fail visibly.
                 resp.failure("503 no model loaded")
