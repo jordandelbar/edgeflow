@@ -13,11 +13,8 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 # ── build images ──────────────────────────────────────────────────────────────
-echo "==> building edgeflow-server image..."
-docker build -f deploy/server.Dockerfile -t edgeflow-server:dev .
-
-echo "==> building edgeflow-inference image..."
-docker build -f deploy/inference.Dockerfile -t edgeflow-inference:dev .
+echo "==> building images (server + inference in parallel)..."
+docker buildx bake -f deploy/docker-bake.hcl
 
 # ── k3d cluster ───────────────────────────────────────────────────────────────
 echo "==> creating k3d cluster..."

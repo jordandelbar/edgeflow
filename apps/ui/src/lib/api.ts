@@ -19,6 +19,16 @@ async function mget<T>(path: string, params?: Record<string, string>): Promise<T
   return res.json();
 }
 
+async function mdelete<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${MLFLOW}${path}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
 async function v1post<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`${V1}${path}`, {
     method: 'POST',
@@ -181,7 +191,7 @@ export const registeredModels = {
   create: (name: string, description?: string) =>
     mpost<{ registered_model: RegisteredModel }>('/registered-models/create', { name, description }),
   delete: (name: string) =>
-    mpost('/registered-models/delete', { name }),
+    mdelete('/registered-models/delete', { name }),
   createVersion: (name: string, run_id: string, source?: string) =>
     mpost<{ model_version: ModelVersion }>('/model-versions/create', { name, run_id, source }),
   listVersions: (name: string) =>
@@ -191,7 +201,7 @@ export const registeredModels = {
   transitionStage: (name: string, version: string, stage: string) =>
     mpost<{ model_version: ModelVersion }>('/model-versions/transition-stage', { name, version, stage }),
   deleteVersion: (name: string, version: string) =>
-    mpost('/model-versions/delete', { name, version }),
+    mdelete('/model-versions/delete', { name, version }),
 };
 
 // ── Deployments ────────────────────────────────────────────────────────────

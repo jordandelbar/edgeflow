@@ -15,6 +15,14 @@
   let expanded: Record<string, 'history' | 'test' | null> = {};
   let confirming: Record<string, boolean> = {};
   let tearing: Record<string, boolean> = {};
+  let collapsedNodes: Record<string, boolean> = {};
+
+  function nodeKey(node: string | null): string { return node ?? ''; }
+  function toggleNode(node: string | null) {
+    const k = nodeKey(node);
+    collapsedNodes[k] = !collapsedNodes[k];
+    collapsedNodes = collapsedNodes;
+  }
 
   let error   = '';
   let loading = true;
@@ -211,7 +219,10 @@
         <!-- Node group header row -->
         <tr class="border-t border-gray-100 first:border-t-0">
           <td colspan="5" class="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
-            <div class="flex items-center gap-2">
+            <button
+              on:click={() => toggleNode(group.node)}
+              class="w-full flex items-center gap-2 text-left"
+            >
               <i class="fa-solid fa-server text-xs text-sage"></i>
               <span class="text-xs font-semibold text-gray-600 uppercase tracking-wide">
                 {group.node ?? 'No node assigned'}
@@ -219,10 +230,13 @@
               <span class="ml-auto text-xs text-gray-400">
                 {group.targets.length} {group.targets.length === 1 ? 'target' : 'targets'}
               </span>
-            </div>
+              <i class="fa-solid fa-chevron-down text-xs text-gray-400 transition-transform duration-200
+                {collapsedNodes[nodeKey(group.node)] ? '-rotate-90' : ''}"></i>
+            </button>
           </td>
         </tr>
 
+          {#if !collapsedNodes[nodeKey(group.node)]}
           {#each group.targets as t (t)}
             {@const deps = byTarget[t]}
             {@const latest = deps[0]}
@@ -423,6 +437,7 @@
             {/if}
 
           {/each}
+          {/if}
     {/each}
       </tbody>
     </table>

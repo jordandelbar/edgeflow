@@ -9,6 +9,8 @@ ports:
     nodeFilters: [loadbalancer]
   - port: 8080:30808
     nodeFilters: [loadbalancer]
+  - port: 8081:30809
+    nodeFilters: [loadbalancer]
 options:
   k3d:
     wait: true

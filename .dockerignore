@@ -1,0 +1,25 @@
+# Git
+.git/
+
+# Rust build output — the Dockerfiles mount a layer cache for target/
+target/
+
+# Python — not part of any Docker image
+apps/sdk/
+scripts/
+**/.venv/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+
+# Node artifacts — rebuilt inside the server image
+apps/ui/node_modules/
+apps/ui/build/
+apps/ui/.svelte-kit/
+
+# Docs & notes
+docs/
+*.md
+
+# Deploy configs — Dockerfiles are passed via -f, not read from context
+deploy/
