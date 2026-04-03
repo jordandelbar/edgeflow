@@ -90,6 +90,8 @@ spec:
               value: edgeflow-inference:dev
             - name: EDGEFLOW_IMAGE_PULL_POLICY
               value: Never
+            - name: LOG_FORMAT
+              value: json
           volumeMounts:
             - name: data
               mountPath: /data

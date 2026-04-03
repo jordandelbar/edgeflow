@@ -1,4 +1,5 @@
 pub mod backoff;
+pub mod logging;
 mod shutdown;
 pub mod tensor;
 

@@ -5,28 +5,20 @@ mod state;
 mod target_client;
 
 use axum::Router;
-use std::path::PathBuf;
-use std::sync::Arc;
-use tower_http::cors::CorsLayer;
-use tower_http::services::{ServeDir, ServeFile};
-use tower_http::trace::TraceLayer;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-
 use edgeflow_common::shutdown_signal;
 use edgeflow_core::DeploymentState;
 use edgeflow_store::sqlite::SqliteStore;
 use edgeflow_store::Store;
 use state::AppState;
+use std::path::PathBuf;
+use std::sync::Arc;
+use tower_http::cors::CorsLayer;
+use tower_http::services::{ServeDir, ServeFile};
+use tower_http::trace::TraceLayer;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "edgeflow_server=debug,tower_http=debug".into()),
-        )
-        .with(tracing_subscriber::fmt::layer())
-        .init();
+    edgeflow_common::logging::init_logging("edgeflow_server=info,tower_http=warn");
 
     let cancel = shutdown_signal();
 

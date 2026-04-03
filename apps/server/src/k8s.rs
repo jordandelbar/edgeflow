@@ -188,6 +188,13 @@ pub async fn create_inference_pod(target: &str, node: Option<&str>, resources: &
                                 }),
                                 ..Default::default()
                             },
+                            EnvVar {
+                                name: "LOG_FORMAT".to_string(),
+                                value: Some(
+                                    std::env::var("LOG_FORMAT").unwrap_or_else(|_| "json".into()),
+                                ),
+                                ..Default::default()
+                            },
                         ]),
                         resources: Some(ResourceRequirements {
                             requests: Some(
