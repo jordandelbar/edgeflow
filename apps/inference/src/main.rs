@@ -1,6 +1,7 @@
 // Core inference modules live in lib.rs so tests and benches can import them.
 mod client;
 mod deployment;
+mod mqtt;
 mod server;
 
 use anyhow::{Context, Result};
@@ -91,6 +92,17 @@ async fn main() -> Result<()> {
     .await;
     tracing::info!("registered — polling for deployments");
 
+    // If EDGEFLOW_MQTT_URL is set, publish heartbeats over MQTT instead of HTTP.
+    let mqtt_heartbeat = std::env::var("EDGEFLOW_MQTT_URL").ok().and_then(|url| {
+        match mqtt::MqttHeartbeat::new(&url, &target) {
+            Ok(hb) => Some(hb),
+            Err(e) => {
+                tracing::warn!("mqtt heartbeat init failed, falling back to HTTP: {e}");
+                None
+            }
+        }
+    });
+
     // Background task: heartbeat every 30 s, poll for pending deployments every 5 s.
     let poll_active = state.active.clone();
     let poll_client = client.clone();
@@ -107,7 +119,11 @@ async fn main() -> Result<()> {
                 _ = poll_cancel.cancelled() => break,
 
                 _ = heartbeat.tick() => {
-                    if let Err(e) = poll_client.heartbeat(&poll_target).await {
+                    if let Some(ref hb) = mqtt_heartbeat {
+                        if let Err(e) = hb.beat().await {
+                            tracing::warn!("mqtt heartbeat failed: {e}");
+                        }
+                    } else if let Err(e) = poll_client.heartbeat(&poll_target).await {
                         tracing::warn!("heartbeat failed: {e}");
                     }
                 }

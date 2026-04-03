@@ -1,5 +1,6 @@
 mod api;
 mod k8s;
+mod mqtt;
 mod state;
 mod target_client;
 
@@ -81,6 +82,27 @@ async fn main() -> anyhow::Result<()> {
                 Err(e) => tracing::error!("timeout sweep error: {e}"),
             }
         }
+    });
+
+    // ── MQTT ─────────────────────────────────────────────────────────────────
+    // If EDGEFLOW_MQTT_URL is set, connect to that external broker.
+    // Otherwise, start the embedded rumqttd broker and connect to it.
+    let mqtt_url = std::env::var("EDGEFLOW_MQTT_URL").ok();
+    let mqtt_port = std::env::var("EDGEFLOW_MQTT_PORT")
+        .ok()
+        .and_then(|s| s.parse::<u16>().ok())
+        .unwrap_or(1883);
+
+    if mqtt_url.is_none() {
+        mqtt::start_embedded_broker(mqtt_port)?;
+        // Give the broker a moment to open its listener before we subscribe.
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+
+    let mqtt_store = state.store.clone();
+    let mqtt_cancel = cancel.clone();
+    tokio::spawn(async move {
+        mqtt::subscribe_heartbeats(mqtt_url, mqtt_port, mqtt_store, mqtt_cancel).await;
     });
 
     let static_dir = std::env::var("EDGEFLOW_STATIC_DIR").unwrap_or_else(|_| "./static".into());
