@@ -1,1 +1,0 @@
-ALTER TABLE targets ADD COLUMN last_seen INTEGER;
