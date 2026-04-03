@@ -94,7 +94,7 @@ pub async fn subscribe_heartbeats(
 
         // Queue the SUBSCRIBE — sent once the eventloop connects.
         if let Err(e) = client
-            .subscribe("edgeflow/targets/+/heartbeat", QoS::AtMostOnce)
+            .subscribe("edgeflow/targets/+/pods/+/heartbeat", QoS::AtMostOnce)
             .await
         {
             tracing::warn!("mqtt: failed to queue subscribe: {e}; retrying in 5s");
@@ -111,14 +111,14 @@ pub async fn subscribe_heartbeats(
                 event = eventloop.poll() => {
                     match event {
                         Ok(Event::Incoming(Packet::Publish(p))) => {
-                            // Topic: "edgeflow/targets/{target}/heartbeat"
-                            let parts: Vec<&str> = p.topic.splitn(4, '/').collect();
-                            if parts.len() == 4 {
-                                let target = parts[2];
-                                if let Err(e) = store.heartbeat_target(target).await {
-                                    tracing::warn!(target, "mqtt: heartbeat store error: {e}");
+                            // Topic: "edgeflow/targets/{target}/pods/{pod_id}/heartbeat"
+                            let parts: Vec<&str> = p.topic.splitn(6, '/').collect();
+                            if parts.len() == 6 {
+                                let pod_id = parts[4];
+                                if let Err(e) = store.heartbeat_pod(pod_id).await {
+                                    tracing::warn!(pod_id, "mqtt: heartbeat store error: {e}");
                                 } else {
-                                    tracing::debug!(target, "mqtt: heartbeat recorded");
+                                    tracing::debug!(pod_id, "mqtt: heartbeat recorded");
                                 }
                             }
                         }

@@ -13,15 +13,17 @@ impl EdgeflowClient {
         }
     }
 
-    /// Register this pod as the active inference server for `target`.
-    pub async fn register_target(
+    /// Register this pod with the server.
+    pub async fn register_pod(
         &self,
+        pod_id: &str,
         target: &str,
         address: &str,
         node: Option<&str>,
     ) -> Result<()> {
         let url = format!("{}/api/v1/targets/register", self.server);
-        let mut body = serde_json::json!({ "target": target, "address": address });
+        let mut body =
+            serde_json::json!({ "target": target, "pod_id": pod_id, "address": address });
         if let Some(n) = node {
             body["node"] = serde_json::Value::String(n.to_string());
         }
@@ -30,9 +32,9 @@ impl EdgeflowClient {
             .json(&body)
             .send()
             .await
-            .context("failed to register target with edgeflow-server")?
+            .context("failed to register pod with edgeflow-server")?
             .error_for_status()
-            .context("server rejected target registration")?;
+            .context("server rejected pod registration")?;
         Ok(())
     }
 
@@ -62,9 +64,12 @@ impl EdgeflowClient {
         Ok(())
     }
 
-    /// Record a heartbeat so the server knows this target is alive.
-    pub async fn heartbeat(&self, target: &str) -> Result<()> {
-        let url = format!("{}/api/v1/targets/{}/heartbeat", self.server, target);
+    /// Record a heartbeat so the server knows this pod is alive.
+    pub async fn heartbeat(&self, target: &str, pod_id: &str) -> Result<()> {
+        let url = format!(
+            "{}/api/v1/targets/{}/pods/{}/heartbeat",
+            self.server, target, pod_id
+        );
         self.client
             .post(&url)
             .send()

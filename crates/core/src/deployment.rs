@@ -62,13 +62,13 @@ pub struct ResourceSettings {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TargetHealth {
-    /// No heartbeat ever recorded (old pod, newly registered device).
+    /// No heartbeat ever recorded.
     Unknown,
     /// Last heartbeat within 2× the 30 s interval.
     Healthy,
     /// Heartbeat overdue but recent enough that it may recover (60 s – 5 min).
     Stale,
-    /// No heartbeat for > 5 min — device is almost certainly down.
+    /// No heartbeat for > 5 min — pod is almost certainly down.
     Unhealthy,
 }
 
@@ -84,18 +84,42 @@ impl TargetHealth {
             _ => Self::Unhealthy,
         }
     }
+
+    /// Best health across a set of pods (Healthy > Stale > Unhealthy > Unknown).
+    pub fn aggregate(pods: &[TargetPod]) -> Self {
+        pods.iter()
+            .map(|p| p.health.clone())
+            .max_by_key(|h| match h {
+                Self::Healthy => 3,
+                Self::Stale => 2,
+                Self::Unhealthy => 1,
+                Self::Unknown => 0,
+            })
+            .unwrap_or(Self::Unknown)
+    }
+}
+
+/// A single running inference pod registered with the server.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TargetPod {
+    pub pod_id: String,
+    pub address: String,
+    pub node: Option<String>,
+    pub registered_at: i64,
+    pub last_seen: Option<i64>,
+    pub health: TargetHealth,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Target {
     pub target: String,
-    pub address: String,
-    pub pod_name: Option<String>,
-    pub node: Option<String>,
     pub registered_at: i64,
-    pub last_seen: Option<i64>,
-    pub health: TargetHealth,
+    pub resources: ResourceSettings,
     pub current_run_id: Option<String>,
     pub model_loaded_at: Option<String>,
-    pub resources: ResourceSettings,
+    pub pods: Vec<TargetPod>,
+    // Aggregated from pods for API backwards compatibility.
+    pub health: TargetHealth,
+    pub node: Option<String>,
+    pub last_seen: Option<i64>,
 }

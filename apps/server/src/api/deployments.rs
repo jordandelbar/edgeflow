@@ -28,7 +28,10 @@ pub fn router() -> Router<AppState> {
         .route("/targets/:target/model", get(target_model_status))
         .route("/targets/:target/schema", get(target_schema))
         .route("/targets/:target/health", get(target_health))
-        .route("/targets/:target/heartbeat", post(target_heartbeat))
+        .route(
+            "/targets/:target/pods/:pod_id/heartbeat",
+            post(target_heartbeat),
+        )
         .route("/targets/:target/pending", get(target_pending))
         .route("/targets/:target/infer/playground", post(infer_playground))
         .route("/nodes", get(list_nodes))
@@ -40,6 +43,14 @@ async fn require_target(state: &AppState, target: &str) -> Result<edgeflow_core:
         .get_target(target)
         .await?
         .ok_or_else(|| anyhow::anyhow!("target '{target}' not registered").into())
+}
+
+fn first_pod_address(target: &edgeflow_core::Target) -> Result<&str, ApiError> {
+    target
+        .pods
+        .first()
+        .map(|p| p.address.as_str())
+        .ok_or_else(|| anyhow::anyhow!("target '{}' has no registered pods", target.target).into())
 }
 
 // ── GET /targets/:target/model ────────────────────────────────────────────────
@@ -73,19 +84,19 @@ async fn target_health(
     Path(target): Path<String>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let rec = require_target(&state, &target).await?;
-    let json = TargetClient::new(&state.http_client, &rec.address)
+    let json = TargetClient::new(&state.http_client, first_pod_address(&rec)?)
         .health()
         .await?;
     Ok(Json(json))
 }
 
-// ── POST /targets/:target/heartbeat ──────────────────────────────────────────
+// ── POST /targets/:target/pods/:pod_id/heartbeat ─────────────────────────────
 
 async fn target_heartbeat(
     State(state): State<AppState>,
-    Path(target): Path<String>,
+    Path((_target, pod_id)): Path<(String, String)>,
 ) -> Result<StatusCode, ApiError> {
-    state.store.heartbeat_target(&target).await?;
+    state.store.heartbeat_pod(&pod_id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -117,7 +128,7 @@ async fn target_schema(
     Path(target): Path<String>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let rec = require_target(&state, &target).await?;
-    let json = TargetClient::new(&state.http_client, &rec.address)
+    let json = TargetClient::new(&state.http_client, first_pod_address(&rec)?)
         .schema()
         .await
         .map_err(|e| anyhow::anyhow!("no schema available on target '{target}': {e}"))?;
@@ -141,7 +152,7 @@ async fn infer_playground(
     // Send raw packed floats — same format as the Python client (struct.pack('<Nf', ...)).
     // The preprocess WASM (FloatBytesToTensor) expects this, not a tensor-encoded header.
     let body: Vec<u8> = req.data.iter().flat_map(|&v| v.to_le_bytes()).collect();
-    let infer_result = TargetClient::new(&state.http_client, &rec.address)
+    let infer_result = TargetClient::new(&state.http_client, first_pod_address(&rec)?)
         .infer(body)
         .await?;
 
@@ -222,7 +233,7 @@ async fn create_deployment(
         if resources_provided {
             state
                 .store
-                .store_target_resources(&req.target, req.node.as_deref(), &req.resources)
+                .store_target_resources(&req.target, &req.resources)
                 .await?;
         }
 
@@ -234,7 +245,12 @@ async fn create_deployment(
             .and_then(|t| t.resources.sessions)
             .unwrap_or(1) as usize;
 
-        match TargetClient::new(&state.http_client, &target_rec.address)
+        let pod_addr = target_rec
+            .pods
+            .first()
+            .map(|p| p.address.as_str())
+            .unwrap_or_default();
+        match TargetClient::new(&state.http_client, pod_addr)
             .upgrade(&deployment.run_id, &deployment.deployment_id, sessions)
             .await
         {
@@ -264,7 +280,7 @@ async fn create_deployment(
         let resolved = crate::k8s::resolve_resources(&req.resources);
         state
             .store
-            .store_target_resources(&req.target, req.node.as_deref(), &resolved)
+            .store_target_resources(&req.target, &resolved)
             .await?;
         crate::k8s::create_inference_pod(&req.target, req.node.as_deref(), &resolved).await;
     }
@@ -384,8 +400,8 @@ async fn confirm_deployment(
 #[derive(Deserialize)]
 struct RegisterTargetRequest {
     target: String,
+    pod_id: String,
     address: String,
-    pod_name: Option<String>,
     node: Option<String>,
 }
 
@@ -395,12 +411,7 @@ async fn register_target(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let target = state
         .store
-        .register_target(
-            &req.target,
-            &req.address,
-            req.pod_name.as_deref(),
-            req.node.as_deref(),
-        )
+        .register_pod(&req.pod_id, &req.target, &req.address, req.node.as_deref())
         .await?;
 
     // Check for a pending deployment for this target — trigger the load.
@@ -490,14 +501,19 @@ async fn update_target_resources(
 
     state
         .store
-        .store_target_resources(&target, existing.node.as_deref(), &resolved)
+        .store_target_resources(&target, &resolved)
         .await?;
 
     // Whether the k8s Deployment was actually patched (and thus a rolling
     // restart triggered). False when k8s is unreachable or nothing required it.
     let mut pod_restarted = false;
 
-    if !existing.address.is_empty() {
+    if !existing.pods.is_empty() {
+        let pod_addr = existing
+            .pods
+            .first()
+            .map(|p| p.address.clone())
+            .unwrap_or_default();
         // Sessions: live-reload via upgrade — rebuilds the ORT pool without a
         // pod restart. max_concurrent cannot be changed live (semaphore is
         // fixed at startup), so it falls through to the k8s patch below.
@@ -505,7 +521,7 @@ async fn update_target_resources(
             if let Some(run_id) = &existing.current_run_id {
                 if let Ok(dep) = state.store.get_latest_deployment(&target).await {
                     let sessions = resolved.sessions.unwrap_or(1) as usize;
-                    let _ = TargetClient::new(&state.http_client, &existing.address)
+                    let _ = TargetClient::new(&state.http_client, &pod_addr)
                         .upgrade(run_id, &dep.deployment_id, sessions)
                         .await;
                 }

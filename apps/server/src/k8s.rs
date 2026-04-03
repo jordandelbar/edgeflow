@@ -167,6 +167,17 @@ pub async fn create_inference_pod(target: &str, node: Option<&str>, resources: &
                                 ..Default::default()
                             },
                             EnvVar {
+                                name: "EDGEFLOW_POD_NAME".to_string(),
+                                value_from: Some(EnvVarSource {
+                                    field_ref: Some(ObjectFieldSelector {
+                                        field_path: "metadata.name".to_string(),
+                                        ..Default::default()
+                                    }),
+                                    ..Default::default()
+                                }),
+                                ..Default::default()
+                            },
+                            EnvVar {
                                 name: "EDGEFLOW_POD_IP".to_string(),
                                 value_from: Some(EnvVarSource {
                                     field_ref: Some(ObjectFieldSelector {

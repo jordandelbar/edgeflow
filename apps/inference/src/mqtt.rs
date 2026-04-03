@@ -27,10 +27,10 @@ pub struct MqttHeartbeat {
 
 impl MqttHeartbeat {
     /// Connect to the broker at `broker_url` and prepare to publish heartbeats
-    /// for `target`.
-    pub fn new(broker_url: &str, target: &str) -> Result<Self> {
+    /// for `(target, pod_id)`.
+    pub fn new(broker_url: &str, target: &str, pod_id: &str) -> Result<Self> {
         let (host, port) = parse_broker_addr(broker_url);
-        let client_id = format!("edgeflow-inference-{target}");
+        let client_id = format!("edgeflow-inference-{pod_id}");
 
         let mut options = MqttOptions::new(&client_id, &host, port);
         options.set_keep_alive(Duration::from_secs(30));
@@ -51,7 +51,7 @@ impl MqttHeartbeat {
             }
         });
 
-        let topic = format!("edgeflow/targets/{target}/heartbeat");
+        let topic = format!("edgeflow/targets/{target}/pods/{pod_id}/heartbeat");
         tracing::info!(broker = %host, port, topic, "mqtt: heartbeat publisher ready");
 
         Ok(Self { client, topic })

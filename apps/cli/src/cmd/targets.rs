@@ -118,8 +118,23 @@ fn inspect(api: &Api, target: &str) -> Result<()> {
         t["health"].as_str().unwrap_or("unknown")
     );
     println!("Node:         {}", t["node"].as_str().unwrap_or("—"));
-    println!("Pod:          {}", t["pod_name"].as_str().unwrap_or("—"));
-    println!("Address:      {}", t["address"].as_str().unwrap_or("—"));
+
+    if let Some(pods) = t["pods"].as_array() {
+        if pods.is_empty() {
+            println!("Pods:         —");
+        } else {
+            for (i, pod) in pods.iter().enumerate() {
+                let prefix = if i == 0 { "Pods:" } else { "     " };
+                println!(
+                    "{:<14}{} ({}) — {}",
+                    prefix,
+                    pod["pod_id"].as_str().unwrap_or("?"),
+                    pod["address"].as_str().unwrap_or("?"),
+                    pod["health"].as_str().unwrap_or("unknown"),
+                );
+            }
+        }
+    }
 
     if let Some(run_id) = t["current_run_id"].as_str() {
         println!("Loaded run:   {run_id}");

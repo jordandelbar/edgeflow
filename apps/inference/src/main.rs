@@ -24,6 +24,8 @@ async fn main() -> Result<()> {
     let infer_addr = std::env::var("EDGEFLOW_INFER_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".into());
 
     let node_name = std::env::var("EDGEFLOW_NODE_NAME").ok();
+    // Pod identity: use the k8s pod name if available, fall back to target name.
+    let pod_id = std::env::var("EDGEFLOW_POD_NAME").unwrap_or_else(|_| target.clone());
 
     let pod_ip = std::env::var("EDGEFLOW_POD_IP").unwrap_or_else(|_| {
         infer_addr
@@ -69,15 +71,16 @@ async fn main() -> Result<()> {
     // Small pause to let the listener bind before we register.
     tokio::time::sleep(Duration::from_millis(200)).await;
 
-    tracing::info!(target = %target, address = %self_address, node = ?node_name, "registering with edgeflow-server");
+    tracing::info!(target = %target, pod_id = %pod_id, address = %self_address, node = ?node_name, "registering with edgeflow-server");
     retry_forever("register with edgeflow-server", || {
         let client = client.clone();
         let target = target.clone();
+        let pod_id = pod_id.clone();
         let self_address = self_address.clone();
         let node = node_name.clone();
         async move {
             client
-                .register_target(&target, &self_address, node.as_deref())
+                .register_pod(&pod_id, &target, &self_address, node.as_deref())
                 .await
         }
     })
@@ -86,7 +89,7 @@ async fn main() -> Result<()> {
 
     // If EDGEFLOW_MQTT_URL is set, publish heartbeats over MQTT instead of HTTP.
     let mqtt_heartbeat = std::env::var("EDGEFLOW_MQTT_URL").ok().and_then(|url| {
-        match mqtt::MqttHeartbeat::new(&url, &target) {
+        match mqtt::MqttHeartbeat::new(&url, &target, &pod_id) {
             Ok(hb) => Some(hb),
             Err(e) => {
                 tracing::warn!("mqtt heartbeat init failed, falling back to HTTP: {e}");
@@ -99,6 +102,7 @@ async fn main() -> Result<()> {
     let poll_active = state.active.clone();
     let poll_client = client.clone();
     let poll_target = target.clone();
+    let poll_pod_id = pod_id.clone();
     let poll_cancel = cancel.clone();
     let poll_sessions = state.sessions;
     tokio::spawn(async move {
@@ -115,7 +119,7 @@ async fn main() -> Result<()> {
                         if let Err(e) = hb.beat().await {
                             tracing::warn!("mqtt heartbeat failed: {e}");
                         }
-                    } else if let Err(e) = poll_client.heartbeat(&poll_target).await {
+                    } else if let Err(e) = poll_client.heartbeat(&poll_target, &poll_pod_id).await {
                         tracing::warn!("heartbeat failed: {e}");
                     }
                 }

@@ -134,19 +134,18 @@ pub trait Store: Send + Sync {
     async fn search_model_versions(&self, filter: Option<&str>) -> Result<Vec<ModelVersion>>;
 
     // Targets
-    async fn register_target(
+    async fn register_pod(
         &self,
+        pod_id: &str,
         target: &str,
         address: &str,
-        pod_name: Option<&str>,
         node: Option<&str>,
     ) -> Result<Target>;
-    async fn heartbeat_target(&self, target: &str) -> Result<()>;
+    async fn heartbeat_pod(&self, pod_id: &str) -> Result<()>;
     async fn set_target_model(&self, target: &str, run_id: &str, loaded_at: &str) -> Result<()>;
     async fn store_target_resources(
         &self,
         target: &str,
-        node: Option<&str>,
         resources: &ResourceSettings,
     ) -> Result<()>;
     async fn get_target(&self, target: &str) -> Result<Option<Target>>;
