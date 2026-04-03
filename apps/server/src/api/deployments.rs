@@ -7,7 +7,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use edgeflow_core::{DeploymentState, ResourceSettings};
+use edgeflow_core::{DeploymentState, InfraSettings, ResourceSettings};
 use edgeflow_store::Store;
 use serde::Deserialize;
 
@@ -177,8 +177,13 @@ struct CreateDeploymentRequest {
     model_version: String,
     target: String,
     node: Option<String>,
+    /// Edgeflow-owned settings (sessions, max_concurrent).
     #[serde(default)]
     resources: ResourceSettings,
+    /// k8s-owned infrastructure settings (cpu/memory/replicas/spread/node_selector).
+    /// Passed directly to k8s; never stored in SQLite.
+    #[serde(default)]
+    infra: InfraSettings,
 }
 
 async fn create_deployment(
@@ -220,17 +225,11 @@ async fn create_deployment(
         )
         .await?;
 
-    // Check if we already have a registered address for this target.
-    if let Some(target_rec) = state.store.get_target(&req.target).await? {
+    // Check if pods are already registered for this target.
+    if state.store.get_target(&req.target).await?.is_some() {
         // Upgrade path: pod is alive, tell it to load the new run.
-        // If resource settings were provided, persist them so the new sessions
-        // value is used for this and future upgrades.
-        let resources_provided = req.resources.sessions.is_some()
-            || req.resources.max_concurrent.is_some()
-            || req.resources.cpu_request.is_some()
-            || req.resources.memory_request.is_some()
-            || req.resources.memory_limit.is_some();
-        if resources_provided {
+        // If edgeflow resource settings were provided, persist them.
+        if req.resources.sessions.is_some() || req.resources.max_concurrent.is_some() {
             state
                 .store
                 .store_target_resources(&req.target, &req.resources)
@@ -245,44 +244,56 @@ async fn create_deployment(
             .and_then(|t| t.resources.sessions)
             .unwrap_or(1) as usize;
 
-        let pod_addr = target_rec
-            .pods
-            .first()
-            .map(|p| p.address.as_str())
-            .unwrap_or_default();
-        match TargetClient::new(&state.http_client, pod_addr)
-            .upgrade(&deployment.run_id, &deployment.deployment_id, sessions)
-            .await
-        {
-            Ok(true) => {
-                state
-                    .store
-                    .update_deployment_state(&deployment.deployment_id, DeploymentState::Upgrading)
-                    .await?;
-            }
-            Ok(false) => {
-                tracing::warn!(
-                    deployment_id = %deployment.deployment_id,
-                    "upgrade call to pod returned non-success"
-                );
-            }
-            Err(e) => {
+        if let Some(ref publisher) = state.mqtt_publisher {
+            // Mark Upgrading before publishing so pods can't confirm before
+            // the state transition — eliminates a race with the local broker.
+            state
+                .store
+                .update_deployment_state(&deployment.deployment_id, DeploymentState::Upgrading)
+                .await?;
+
+            if let Err(e) = publisher
+                .publish_upgrade(
+                    &req.target,
+                    &deployment.run_id,
+                    &deployment.deployment_id,
+                    sessions,
+                )
+                .await
+            {
                 tracing::warn!(
                     deployment_id = %deployment.deployment_id,
                     error = %e,
-                    "failed to reach inference pod for upgrade"
+                    "mqtt upgrade publish failed — deployment stays upgrading"
+                );
+            } else {
+                tracing::info!(
+                    deployment_id = %deployment.deployment_id,
+                    target = %req.target,
+                    "upgrade command published via MQTT"
                 );
             }
+        } else {
+            tracing::warn!(
+                deployment_id = %deployment.deployment_id,
+                "no mqtt publisher available — deployment stays pending"
+            );
         }
     } else {
-        // First deploy: pod doesn't exist yet — resolve defaults so the DB reflects
-        // exactly what the pod will be configured with, then create it via k8s.
-        let resolved = crate::k8s::resolve_resources(&req.resources);
+        // First deploy: pod doesn't exist yet. Persist edgeflow-owned settings,
+        // then create the k8s Deployment (k8s owns cpu/memory/replicas/etc.).
+        let resolved_resources = crate::k8s::resolve_resources(&req.resources);
         state
             .store
-            .store_target_resources(&req.target, &resolved)
+            .store_target_resources(&req.target, &resolved_resources)
             .await?;
-        crate::k8s::create_inference_pod(&req.target, req.node.as_deref(), &resolved).await;
+        crate::k8s::create_inference_pod(
+            &req.target,
+            req.node.as_deref(),
+            &resolved_resources,
+            &req.infra,
+        )
+        .await;
     }
 
     let deployment = state
@@ -346,6 +357,17 @@ async fn confirm_deployment(
     Json(req): Json<ConfirmRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let deployment = state.store.get_deployment(&id).await?;
+
+    // Idempotency guard: with multiple pods each sends its own confirm.
+    // If already in a terminal state, return current state without modification.
+    // We intentionally allow Pending (pod confirmed before server updated state —
+    // race with local MQTT broker) as well as Deploying/Upgrading.
+    if matches!(
+        deployment.state,
+        DeploymentState::Deployed | DeploymentState::Failed | DeploymentState::Superseded
+    ) {
+        return Ok(Json(serde_json::json!({ "deployment": deployment })));
+    }
 
     match req.status.as_str() {
         "deployed" => {
@@ -473,39 +495,44 @@ async fn register_target(
 
 // ── PATCH /targets/:target/resources ─────────────────────────────────────────
 
+#[derive(Deserialize, Default)]
+struct UpdateResourcesRequest {
+    /// Edgeflow-owned settings.
+    #[serde(default)]
+    resources: ResourceSettings,
+    /// k8s-owned infrastructure settings — applied directly to the k8s Deployment.
+    #[serde(default)]
+    infra: InfraSettings,
+}
+
 async fn update_target_resources(
     State(state): State<AppState>,
     Path(target): Path<String>,
-    Json(req): Json<ResourceSettings>,
+    Json(req): Json<UpdateResourcesRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let existing = require_target(&state, &target).await?;
-
-    // Classify what changes before consuming existing.resources in the merge.
     let prev = &existing.resources;
-    let sessions_changed = req.sessions.is_some() && req.sessions != prev.sessions;
-    let max_conc_changed =
-        req.max_concurrent.is_some() && req.max_concurrent != prev.max_concurrent;
-    let resources_changed = (req.cpu_request.is_some() && req.cpu_request != prev.cpu_request)
-        || (req.memory_request.is_some() && req.memory_request != prev.memory_request)
-        || (req.memory_limit.is_some() && req.memory_limit != prev.memory_limit);
 
-    // Merge: only overwrite fields the caller explicitly provided (Some).
-    let merged = ResourceSettings {
-        cpu_request: req.cpu_request.or(existing.resources.cpu_request),
-        memory_request: req.memory_request.or(existing.resources.memory_request),
-        memory_limit: req.memory_limit.or(existing.resources.memory_limit),
-        sessions: req.sessions.or(existing.resources.sessions),
-        max_concurrent: req.max_concurrent.or(existing.resources.max_concurrent),
-    };
-    let resolved = crate::k8s::resolve_resources(&merged);
+    let sessions_changed =
+        req.resources.sessions.is_some() && req.resources.sessions != prev.sessions;
+    let max_conc_changed = req.resources.max_concurrent.is_some()
+        && req.resources.max_concurrent != prev.max_concurrent;
+    let infra_changed = req.infra.cpu_request.is_some()
+        || req.infra.memory_request.is_some()
+        || req.infra.memory_limit.is_some()
+        || req.infra.replicas.is_some()
+        || req.infra.spread.is_some()
+        || req.infra.node_selector.is_some();
 
-    state
-        .store
-        .store_target_resources(&target, &resolved)
-        .await?;
+    // Persist edgeflow-owned changes to SQLite.
+    if sessions_changed || max_conc_changed {
+        let merged = ResourceSettings {
+            sessions: req.resources.sessions.or(prev.sessions),
+            max_concurrent: req.resources.max_concurrent.or(prev.max_concurrent),
+        };
+        state.store.store_target_resources(&target, &merged).await?;
+    }
 
-    // Whether the k8s Deployment was actually patched (and thus a rolling
-    // restart triggered). False when k8s is unreachable or nothing required it.
     let mut pod_restarted = false;
 
     if !existing.pods.is_empty() {
@@ -514,13 +541,13 @@ async fn update_target_resources(
             .first()
             .map(|p| p.address.clone())
             .unwrap_or_default();
+
         // Sessions: live-reload via upgrade — rebuilds the ORT pool without a
-        // pod restart. max_concurrent cannot be changed live (semaphore is
-        // fixed at startup), so it falls through to the k8s patch below.
+        // pod restart. max_concurrent requires restart (semaphore is fixed at startup).
         if sessions_changed {
             if let Some(run_id) = &existing.current_run_id {
                 if let Ok(dep) = state.store.get_latest_deployment(&target).await {
-                    let sessions = resolved.sessions.unwrap_or(1) as usize;
+                    let sessions = req.resources.sessions.unwrap_or(1) as usize;
                     let _ = TargetClient::new(&state.http_client, &pod_addr)
                         .upgrade(run_id, &dep.deployment_id, sessions)
                         .await;
@@ -528,15 +555,26 @@ async fn update_target_resources(
             }
         }
 
-        // CPU / memory / max_concurrent require a pod restart via k8s patch.
-        // When sessions also changed, include the updated env var in the same
-        // patch so the restarted pod comes up with the correct count.
-        if resources_changed || max_conc_changed {
-            pod_restarted = crate::k8s::patch_inference_pod_resources(&target, &resolved).await;
+        // k8s infra changes and max_concurrent require a pod restart via k8s patch.
+        if infra_changed || max_conc_changed {
+            let res_patch = if max_conc_changed {
+                Some(&req.resources)
+            } else {
+                None
+            };
+            let infra_patch = if infra_changed {
+                Some(&req.infra)
+            } else {
+                None
+            };
+            pod_restarted =
+                crate::k8s::patch_inference_pod_resources(&target, res_patch, infra_patch).await;
         }
     }
 
-    let updated = require_target(&state, &target).await?;
+    let mut updated = require_target(&state, &target).await?;
+    // Enrich with fresh k8s infra data.
+    updated.infra = crate::k8s::get_inference_pod_infra(&target).await;
     Ok(Json(
         serde_json::json!({ "target": updated, "pod_restarted": pod_restarted }),
     ))
@@ -548,8 +586,13 @@ async fn get_target(
     State(state): State<AppState>,
     Path(target): Path<String>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let target = require_target(&state, &target).await?;
-    Ok(Json(serde_json::json!({ "target": target })))
+    // Reconcile pod list against k8s — removes records for pods k8s has already terminated.
+    if let Some(running) = crate::k8s::list_running_pod_names(&target).await {
+        state.store.prune_pods(&target, &running).await?;
+    }
+    let mut t = require_target(&state, &target).await?;
+    t.infra = crate::k8s::get_inference_pod_infra(&t.target).await;
+    Ok(Json(serde_json::json!({ "target": t })))
 }
 
 // ── DELETE /targets/:target ───────────────────────────────────────────────────
@@ -571,7 +614,25 @@ async fn teardown_target(
 // ── GET /targets ──────────────────────────────────────────────────────────────
 
 async fn list_targets(State(state): State<AppState>) -> Result<Json<serde_json::Value>, ApiError> {
-    let targets = state.store.list_targets().await?;
+    // One k8s call to get all running pods, then prune stale records in bulk.
+    if let Some(pods_by_target) = crate::k8s::list_all_running_pod_names().await {
+        for (target, running) in &pods_by_target {
+            let _ = state.store.prune_pods(target, running).await;
+        }
+        // Also prune pods for targets that have no running pods at all in k8s.
+        let all_targets = state.store.list_targets().await?;
+        for t in &all_targets {
+            if !pods_by_target.contains_key(&t.target) {
+                // k8s returned successfully but no pods for this target — all gone.
+                let _ = state.store.prune_all_pods(&t.target).await;
+            }
+        }
+    }
+
+    let mut targets = state.store.list_targets().await?;
+    for t in &mut targets {
+        t.infra = crate::k8s::get_inference_pod_infra(&t.target).await;
+    }
     Ok(Json(serde_json::json!({ "targets": targets })))
 }
 

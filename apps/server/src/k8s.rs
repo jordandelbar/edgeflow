@@ -1,15 +1,45 @@
 use std::collections::BTreeMap;
 
-use edgeflow_core::ResourceSettings;
+use edgeflow_core::{InfraSettings, ResourceSettings};
 use k8s_openapi::api::apps::v1::{Deployment, DeploymentSpec};
 use k8s_openapi::api::core::v1::{
-    Container, ContainerPort, EnvVar, EnvVarSource, HTTPGetAction, ObjectFieldSelector, PodSpec,
-    PodTemplateSpec, Probe, ResourceRequirements,
+    Affinity, Container, ContainerPort, EnvVar, EnvVarSource, HTTPGetAction, ObjectFieldSelector,
+    PodAffinityTerm, PodAntiAffinity, PodSpec, PodTemplateSpec, Probe, ResourceRequirements,
+    WeightedPodAffinityTerm,
 };
 use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::{LabelSelector, ObjectMeta};
 use k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
 use kube::api::{Api, DeleteParams, ListParams, PostParams};
+
+/// Build a pod anti-affinity rule that prefers spreading replicas across nodes.
+fn spread_affinity() -> Affinity {
+    Affinity {
+        pod_anti_affinity: Some(PodAntiAffinity {
+            preferred_during_scheduling_ignored_during_execution: Some(vec![
+                WeightedPodAffinityTerm {
+                    weight: 100,
+                    pod_affinity_term: PodAffinityTerm {
+                        label_selector: Some(LabelSelector {
+                            match_labels: Some(
+                                [(
+                                    "app.kubernetes.io/name".to_string(),
+                                    "edgeflow-inference".to_string(),
+                                )]
+                                .into(),
+                            ),
+                            ..Default::default()
+                        }),
+                        topology_key: "kubernetes.io/hostname".to_string(),
+                        ..Default::default()
+                    },
+                },
+            ]),
+            ..Default::default()
+        }),
+        ..Default::default()
+    }
+}
 
 /// Sanitise a target name into a valid k8s resource name.
 /// k8s names: lowercase alphanumeric + `-`, max 63 chars.
@@ -25,25 +55,9 @@ fn k8s_name(target: &str) -> String {
     )
 }
 
-/// Resolve effective resource settings by applying env-var overrides and
-/// hardcoded defaults. The result has all fields set — callers should persist
-/// this so the DB reflects what was actually deployed.
+/// Resolve effective edgeflow resource settings by applying env-var overrides
+/// and hardcoded defaults. Returns a fully-populated `ResourceSettings`.
 pub fn resolve_resources(resources: &ResourceSettings) -> ResourceSettings {
-    let cpu_request = resources
-        .cpu_request
-        .clone()
-        .or_else(|| std::env::var("EDGEFLOW_INFERENCE_CPU_REQUEST").ok())
-        .unwrap_or_else(|| "100m".into());
-    let memory_request = resources
-        .memory_request
-        .clone()
-        .or_else(|| std::env::var("EDGEFLOW_INFERENCE_MEMORY_REQUEST").ok())
-        .unwrap_or_else(|| "256Mi".into());
-    let memory_limit = resources
-        .memory_limit
-        .clone()
-        .or_else(|| std::env::var("EDGEFLOW_INFERENCE_MEMORY_LIMIT").ok())
-        .unwrap_or_else(|| "512Mi".into());
     let sessions = resources
         .sessions
         .or_else(|| {
@@ -61,12 +75,98 @@ pub fn resolve_resources(resources: &ResourceSettings) -> ResourceSettings {
         })
         .unwrap_or(sessions);
     ResourceSettings {
-        cpu_request: Some(cpu_request),
-        memory_request: Some(memory_request),
-        memory_limit: Some(memory_limit),
         sessions: Some(sessions),
         max_concurrent: Some(max_concurrent),
     }
+}
+
+/// Resolve effective k8s infrastructure settings by applying env-var overrides
+/// and hardcoded defaults for cpu/memory. Replica/spread/node_selector are
+/// left as-is (None means "not set by the user").
+pub fn resolve_infra(infra: &InfraSettings) -> InfraSettings {
+    let cpu_request = infra
+        .cpu_request
+        .clone()
+        .or_else(|| std::env::var("EDGEFLOW_INFERENCE_CPU_REQUEST").ok())
+        .unwrap_or_else(|| "100m".into());
+    let memory_request = infra
+        .memory_request
+        .clone()
+        .or_else(|| std::env::var("EDGEFLOW_INFERENCE_MEMORY_REQUEST").ok())
+        .unwrap_or_else(|| "256Mi".into());
+    let memory_limit = infra
+        .memory_limit
+        .clone()
+        .or_else(|| std::env::var("EDGEFLOW_INFERENCE_MEMORY_LIMIT").ok())
+        .unwrap_or_else(|| "512Mi".into());
+    InfraSettings {
+        cpu_request: Some(cpu_request),
+        memory_request: Some(memory_request),
+        memory_limit: Some(memory_limit),
+        replicas: infra.replicas,
+        spread: infra.spread,
+        node_selector: infra.node_selector.clone(),
+    }
+}
+
+/// Read infrastructure settings for `target` from the k8s Deployment spec.
+/// Returns `None` when k8s is unreachable or the Deployment doesn't exist.
+pub async fn get_inference_pod_infra(target: &str) -> Option<InfraSettings> {
+    let namespace = std::env::var("EDGEFLOW_NAMESPACE").unwrap_or_else(|_| "default".into());
+    let client = kube::Client::try_default().await.ok()?;
+    let api: kube::api::Api<Deployment> = kube::api::Api::namespaced(client, &namespace);
+    let name = k8s_name(target);
+    let dep = api.get(&name).await.ok()?;
+    let spec = dep.spec?;
+
+    let replicas = spec.replicas;
+    let pod_spec = spec.template.spec?;
+
+    let cpu_request = pod_spec
+        .containers
+        .first()
+        .and_then(|c| c.resources.as_ref())
+        .and_then(|r| r.requests.as_ref())
+        .and_then(|m| m.get("cpu"))
+        .map(|q| q.0.clone());
+    let memory_request = pod_spec
+        .containers
+        .first()
+        .and_then(|c| c.resources.as_ref())
+        .and_then(|r| r.requests.as_ref())
+        .and_then(|m| m.get("memory"))
+        .map(|q| q.0.clone());
+    let memory_limit = pod_spec
+        .containers
+        .first()
+        .and_then(|c| c.resources.as_ref())
+        .and_then(|r| r.limits.as_ref())
+        .and_then(|m| m.get("memory"))
+        .map(|q| q.0.clone());
+
+    let node_selector = pod_spec
+        .node_selector
+        .map(|m| m.into_iter().collect::<std::collections::BTreeMap<_, _>>());
+
+    let spread = pod_spec.affinity.as_ref().map(|a| {
+        a.pod_anti_affinity
+            .as_ref()
+            .and_then(|pa| {
+                pa.preferred_during_scheduling_ignored_during_execution
+                    .as_ref()
+            })
+            .map(|v| !v.is_empty())
+            .unwrap_or(false)
+    });
+
+    Some(InfraSettings {
+        cpu_request,
+        memory_request,
+        memory_limit,
+        replicas,
+        spread,
+        node_selector,
+    })
 }
 
 /// Create a k8s Deployment for an inference pod serving `target`.
@@ -77,7 +177,12 @@ pub fn resolve_resources(resources: &ResourceSettings) -> ResourceSettings {
 /// No-ops gracefully if:
 /// - the cluster is unreachable (local dev without k8s)
 /// - the Deployment already exists (pod is starting but hasn't registered yet)
-pub async fn create_inference_pod(target: &str, node: Option<&str>, resources: &ResourceSettings) {
+pub async fn create_inference_pod(
+    target: &str,
+    node: Option<&str>,
+    resources: &ResourceSettings,
+    infra: &InfraSettings,
+) {
     let image = std::env::var("EDGEFLOW_INFERENCE_IMAGE")
         .unwrap_or_else(|_| "edgeflow-inference:latest".into());
     let server_url = std::env::var("EDGEFLOW_SERVER_URL")
@@ -86,12 +191,13 @@ pub async fn create_inference_pod(target: &str, node: Option<&str>, resources: &
     let pull_policy =
         std::env::var("EDGEFLOW_IMAGE_PULL_POLICY").unwrap_or_else(|_| "IfNotPresent".into());
 
-    let resolved = resolve_resources(resources);
-    let cpu_request = resolved.cpu_request.unwrap();
-    let memory_request = resolved.memory_request.unwrap();
-    let memory_limit = resolved.memory_limit.unwrap();
-    let sessions = resolved.sessions.unwrap();
-    let max_concurrent = resolved.max_concurrent.unwrap();
+    let resolved_infra = resolve_infra(infra);
+    let cpu_request = resolved_infra.cpu_request.unwrap();
+    let memory_request = resolved_infra.memory_request.unwrap();
+    let memory_limit = resolved_infra.memory_limit.unwrap();
+    let resolved_res = resolve_resources(resources);
+    let sessions = resolved_res.sessions.unwrap();
+    let max_concurrent = resolved_res.max_concurrent.unwrap();
     // No CPU limit — throttling degrades inference latency more than an OOM would.
 
     let client = match kube::Client::try_default().await {
@@ -120,7 +226,7 @@ pub async fn create_inference_pod(target: &str, node: Option<&str>, resources: &
             ..Default::default()
         },
         spec: Some(DeploymentSpec {
-            replicas: Some(1),
+            replicas: Some(resolved_infra.replicas.unwrap_or(1)),
             selector: LabelSelector {
                 match_labels: Some(labels.clone()),
                 ..Default::default()
@@ -132,6 +238,11 @@ pub async fn create_inference_pod(target: &str, node: Option<&str>, resources: &
                 }),
                 spec: Some(PodSpec {
                     node_name: node.map(String::from),
+                    node_selector: resolved_infra
+                        .node_selector
+                        .clone()
+                        .map(|m| m.into_iter().collect::<BTreeMap<String, String>>()),
+                    affinity: resolved_infra.spread.unwrap_or(false).then(spread_affinity),
                     containers: vec![Container {
                         name: "edgeflow-inference".to_string(),
                         image: Some(image.clone()),
@@ -270,9 +381,17 @@ pub async fn create_inference_pod(target: &str, node: Option<&str>, resources: &
 /// Update the resource requests/limits on the k8s Deployment for `target`
 /// using a read-modify-write cycle, then trigger a rolling restart.
 ///
+/// `resources` carries edgeflow-owned fields (sessions, max_concurrent);
+/// `infra` carries k8s-owned fields (cpu/memory/replicas/spread/node_selector).
+/// Either can be `None` — only the provided parts are changed.
+///
 /// Returns `true` if the update was accepted, `false` if the cluster is
 /// unreachable, the Deployment doesn't exist, or the update failed.
-pub async fn patch_inference_pod_resources(target: &str, resources: &ResourceSettings) -> bool {
+pub async fn patch_inference_pod_resources(
+    target: &str,
+    resources: Option<&ResourceSettings>,
+    infra: Option<&InfraSettings>,
+) -> bool {
     let namespace = std::env::var("EDGEFLOW_NAMESPACE").unwrap_or_else(|_| "default".into());
 
     let client = match kube::Client::try_default().await {
@@ -282,21 +401,6 @@ pub async fn patch_inference_pod_resources(target: &str, resources: &ResourceSet
             return false;
         }
     };
-
-    let cpu_request = resources
-        .cpu_request
-        .clone()
-        .unwrap_or_else(|| "100m".into());
-    let memory_request = resources
-        .memory_request
-        .clone()
-        .unwrap_or_else(|| "256Mi".into());
-    let memory_limit = resources
-        .memory_limit
-        .clone()
-        .unwrap_or_else(|| "512Mi".into());
-    let sessions = resources.sessions.unwrap_or(1);
-    let max_concurrent = resources.max_concurrent.unwrap_or(sessions);
 
     let name = k8s_name(target);
     let api: Api<Deployment> = Api::namespaced(client, &namespace);
@@ -321,7 +425,7 @@ pub async fn patch_inference_pod_resources(target: &str, resources: &ResourceSet
 
     // Find the edgeflow-inference container and update its resources + env vars.
     let updated = (|| {
-        let containers = deployment
+        let container = deployment
             .spec
             .as_mut()?
             .template
@@ -331,25 +435,38 @@ pub async fn patch_inference_pod_resources(target: &str, resources: &ResourceSet
             .iter_mut()
             .find(|c| c.name == "edgeflow-inference")?;
 
-        containers.resources = Some(ResourceRequirements {
-            requests: Some(
-                [
-                    ("cpu".into(), Quantity(cpu_request)),
-                    ("memory".into(), Quantity(memory_request)),
-                ]
-                .into(),
-            ),
-            limits: Some([("memory".into(), Quantity(memory_limit))].into()),
-            ..Default::default()
-        });
+        if let Some(inf) = infra {
+            let resolved = resolve_infra(inf);
+            let cpu = resolved.cpu_request.unwrap_or_else(|| "100m".into());
+            let mem_req = resolved.memory_request.unwrap_or_else(|| "256Mi".into());
+            let mem_lim = resolved.memory_limit.unwrap_or_else(|| "512Mi".into());
+            container.resources = Some(ResourceRequirements {
+                requests: Some(
+                    [
+                        ("cpu".into(), Quantity(cpu)),
+                        ("memory".into(), Quantity(mem_req)),
+                    ]
+                    .into(),
+                ),
+                limits: Some([("memory".into(), Quantity(mem_lim))].into()),
+                ..Default::default()
+            });
+        }
 
-        // Update the two env vars we control; leave all others intact.
-        if let Some(env) = containers.env.as_mut() {
-            for var in env.iter_mut() {
-                match var.name.as_str() {
-                    "EDGEFLOW_SESSIONS" => var.value = Some(sessions.to_string()),
-                    "EDGEFLOW_MAX_CONCURRENT_INFER" => var.value = Some(max_concurrent.to_string()),
-                    _ => {}
+        // Update edgeflow env vars when sessions/max_concurrent changed.
+        if let Some(res) = resources {
+            let resolved = resolve_resources(res);
+            let sessions = resolved.sessions.unwrap_or(1);
+            let max_concurrent = resolved.max_concurrent.unwrap_or(sessions);
+            if let Some(env) = container.env.as_mut() {
+                for var in env.iter_mut() {
+                    match var.name.as_str() {
+                        "EDGEFLOW_SESSIONS" => var.value = Some(sessions.to_string()),
+                        "EDGEFLOW_MAX_CONCURRENT_INFER" => {
+                            var.value = Some(max_concurrent.to_string())
+                        }
+                        _ => {}
+                    }
                 }
             }
         }
@@ -360,6 +477,23 @@ pub async fn patch_inference_pod_resources(target: &str, resources: &ResourceSet
     if updated.is_none() {
         tracing::warn!(target = %target, name = %name, "edgeflow-inference container not found in deployment spec");
         return false;
+    }
+
+    // Update replica count, node_selector, and spread affinity when infra provided.
+    if let Some(inf) = infra {
+        if let Some(spec) = deployment.spec.as_mut() {
+            if let Some(r) = inf.replicas {
+                spec.replicas = Some(r);
+            }
+            if let Some(pod_spec) = spec.template.spec.as_mut() {
+                if let Some(ns) = inf.node_selector.clone() {
+                    pod_spec.node_selector = Some(ns.into_iter().collect());
+                }
+                if let Some(s) = inf.spread {
+                    pod_spec.affinity = s.then(spread_affinity);
+                }
+            }
+        }
     }
 
     match api
@@ -407,6 +541,47 @@ pub async fn delete_inference_pod(target: &str) {
             tracing::error!(target = %target, error = %e, "failed to delete inference deployment");
         }
     }
+}
+
+/// List the names of currently running pods for `target` by querying the
+/// `edgeflow-target` pod label. Returns `None` when k8s is unreachable.
+pub async fn list_running_pod_names(target: &str) -> Option<Vec<String>> {
+    let namespace = std::env::var("EDGEFLOW_NAMESPACE").unwrap_or_else(|_| "default".into());
+    let client = kube::Client::try_default().await.ok()?;
+    let api: kube::api::Api<k8s_openapi::api::core::v1::Pod> =
+        kube::api::Api::namespaced(client, &namespace);
+    let lp = kube::api::ListParams::default().labels(&format!("edgeflow-target={target}"));
+    let pods = api.list(&lp).await.ok()?;
+    Some(
+        pods.items
+            .into_iter()
+            .filter_map(|p| p.metadata.name)
+            .collect(),
+    )
+}
+
+/// List running pod names for ALL edgeflow targets in one k8s call.
+/// Returns a map of `target_name → [pod_id, ...]`, or `None` when k8s is unreachable.
+pub async fn list_all_running_pod_names() -> Option<std::collections::HashMap<String, Vec<String>>>
+{
+    let namespace = std::env::var("EDGEFLOW_NAMESPACE").unwrap_or_else(|_| "default".into());
+    let client = kube::Client::try_default().await.ok()?;
+    let api: kube::api::Api<k8s_openapi::api::core::v1::Pod> =
+        kube::api::Api::namespaced(client, &namespace);
+    let lp = kube::api::ListParams::default().labels("edgeflow-target");
+    let pods = api.list(&lp).await.ok()?;
+    let mut map: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+    for pod in pods.items {
+        let name = pod.metadata.name?;
+        let target = pod
+            .metadata
+            .labels
+            .as_ref()
+            .and_then(|l| l.get("edgeflow-target"))
+            .cloned()?;
+        map.entry(target).or_default().push(name);
+    }
+    Some(map)
 }
 
 /// List all node names in the cluster.

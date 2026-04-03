@@ -252,20 +252,28 @@ impl Api {
     pub fn update_target_resources(
         &self,
         target: &str,
+        sessions: Option<i64>,
+        max_concurrent: Option<i64>,
         cpu_request: Option<&str>,
         memory_request: Option<&str>,
         memory_limit: Option<&str>,
-        sessions: Option<i64>,
-        max_concurrent: Option<i64>,
+        replicas: Option<i64>,
+        spread: Option<bool>,
     ) -> Result<Value> {
         self.patch(
             &self.v1(&format!("/targets/{target}/resources")),
             &serde_json::json!({
-                "cpu_request":    cpu_request,
-                "memory_request": memory_request,
-                "memory_limit":   memory_limit,
-                "sessions":       sessions,
-                "max_concurrent": max_concurrent,
+                "resources": {
+                    "sessions":       sessions,
+                    "max_concurrent": max_concurrent,
+                },
+                "infra": {
+                    "cpu_request":    cpu_request,
+                    "memory_request": memory_request,
+                    "memory_limit":   memory_limit,
+                    "replicas":       replicas,
+                    "spread":         spread,
+                },
             }),
         )
     }

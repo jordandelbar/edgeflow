@@ -112,23 +112,43 @@ export type Deployment = {
 
 export type TargetHealth = 'healthy' | 'stale' | 'unhealthy' | 'unknown';
 
-export type Target = {
-  target: string;
+export type TargetPod = {
+  pod_id: string;
   address: string;
-  pod_name: string | null;
   node: string | null;
   registered_at: number;
   last_seen: number | null;
   health: TargetHealth;
-  resources: ResourceSettings | null;
 };
 
+export type Target = {
+  target: string;
+  registered_at: number;
+  node: string | null;
+  last_seen: number | null;
+  health: TargetHealth;
+  resources: ResourceSettings | null;
+  /** k8s infrastructure settings; null when k8s is unreachable. */
+  infra: InfraSettings | null;
+  pods: TargetPod[];
+  current_run_id: string | null;
+  model_loaded_at: string | null;
+};
+
+/** Edgeflow-owned settings, persisted in SQLite. */
 export type ResourceSettings = {
+  sessions:       number | null;
+  max_concurrent: number | null;
+};
+
+/** k8s-owned infrastructure settings, read from / written to the k8s Deployment spec. */
+export type InfraSettings = {
   cpu_request:    string | null;
   memory_request: string | null;
   memory_limit:   string | null;
-  sessions:       number | null;
-  max_concurrent: number | null;
+  replicas:       number | null;
+  spread:         boolean | null;
+  node_selector:  Record<string, string> | null;
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -228,8 +248,15 @@ export type ModelStatus = {
 export const targets = {
   list:    () => v1get<{ targets: Target[] }>('/targets'),
   get:     (target: string) => v1get<{ target: Target }>(`/targets/${target}`),
-  updateResources: (target: string, resources: Partial<ResourceSettings>) =>
-    v1patch<{ target: Target; pod_restarted: boolean }>(`/targets/${target}/resources`, resources),
+  updateResources: (
+    target: string,
+    resources?: Partial<ResourceSettings>,
+    infra?: Partial<InfraSettings>,
+  ) =>
+    v1patch<{ target: Target; pod_restarted: boolean }>(
+      `/targets/${target}/resources`,
+      { resources: resources ?? {}, infra: infra ?? {} },
+    ),
   model:   (target: string) =>
     v1get<ModelStatus>(`/targets/${target}/model`),
   health:  (target: string) =>
@@ -247,8 +274,15 @@ export const nodes = {
 };
 
 export const deployments = {
-  create:  (model_name: string, model_version: string, target: string, node?: string | null, resources?: Partial<ResourceSettings>) =>
-    v1post<{ deployment: Deployment }>('/deployments', { model_name, model_version, target, node, resources }),
+  create:  (
+    model_name: string,
+    model_version: string,
+    target: string,
+    node?: string | null,
+    resources?: Partial<ResourceSettings>,
+    infra?: Partial<InfraSettings>,
+  ) =>
+    v1post<{ deployment: Deployment }>('/deployments', { model_name, model_version, target, node, resources, infra }),
   list:    () =>
     v1get<{ deployments: Deployment[] }>('/deployments'),
   listForTarget: (target: string) =>

@@ -30,10 +30,13 @@ async fn main() -> anyhow::Result<()> {
     std::fs::create_dir_all(&artifact_root)?;
 
     let store = SqliteStore::new(&db_path, artifact_root.clone()).await?;
-    let state = AppState {
+    // AppState is built after MQTT setup so the publisher can be passed in.
+    // Declare state as mutable so we can attach the publisher below.
+    let mut state = AppState {
         store: Arc::new(store),
         artifact_root,
         http_client: reqwest::Client::new(),
+        mqtt_publisher: None,
     };
 
     // Background task: time out deployments stuck in deploying/upgrading.
@@ -91,10 +94,14 @@ async fn main() -> anyhow::Result<()> {
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     }
 
+    let mqtt_publisher = mqtt::MqttPublisher::new(mqtt_url.as_deref(), mqtt_port);
+    state.mqtt_publisher = Some(mqtt_publisher);
+
     let mqtt_store = state.store.clone();
     let mqtt_cancel = cancel.clone();
+    let sub_url = mqtt_url.clone();
     tokio::spawn(async move {
-        mqtt::subscribe_heartbeats(mqtt_url, mqtt_port, mqtt_store, mqtt_cancel).await;
+        mqtt::subscribe_heartbeats(sub_url, mqtt_port, mqtt_store, mqtt_cancel).await;
     });
 
     let static_dir = std::env::var("EDGEFLOW_STATIC_DIR").unwrap_or_else(|_| "./static".into());

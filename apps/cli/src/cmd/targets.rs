@@ -21,18 +21,25 @@ pub enum Cmd {
     SetResources {
         /// Target name
         target: String,
-        #[arg(long)]
-        cpu_request: Option<String>,
-        #[arg(long)]
-        memory_request: Option<String>,
-        #[arg(long)]
-        memory_limit: Option<String>,
         /// Number of ORT sessions (parallel inference workers)
         #[arg(long)]
         sessions: Option<i64>,
         /// Max in-flight requests before 429 (defaults to --sessions)
         #[arg(long)]
         max_concurrent: Option<i64>,
+        // ── k8s infrastructure ──────────────────────────────────────────
+        #[arg(long)]
+        cpu_request: Option<String>,
+        #[arg(long)]
+        memory_request: Option<String>,
+        #[arg(long)]
+        memory_limit: Option<String>,
+        /// Number of pod replicas
+        #[arg(long)]
+        replicas: Option<i64>,
+        /// Spread replicas across nodes using pod anti-affinity
+        #[arg(long)]
+        spread: Option<bool>,
     },
     /// Tear down an inference target (removes pod and deployment record)
     Teardown {
@@ -50,19 +57,23 @@ pub fn run(cmd: Cmd, api: &Api) -> Result<()> {
         Cmd::Inspect { target } => inspect(api, &target),
         Cmd::SetResources {
             target,
+            sessions,
+            max_concurrent,
             cpu_request,
             memory_request,
             memory_limit,
-            sessions,
-            max_concurrent,
+            replicas,
+            spread,
         } => set_resources(
             api,
             &target,
+            sessions,
+            max_concurrent,
             cpu_request.as_deref(),
             memory_request.as_deref(),
             memory_limit.as_deref(),
-            sessions,
-            max_concurrent,
+            replicas,
+            spread,
         ),
         Cmd::Teardown { target, yes } => teardown(api, &target, yes),
     }
@@ -145,19 +156,7 @@ fn inspect(api: &Api, target: &str) -> Result<()> {
 
     let r = &t["resources"];
     println!();
-    println!("Resources:");
-    println!(
-        "  CPU request:    {}",
-        r["cpu_request"].as_str().unwrap_or("—")
-    );
-    println!(
-        "  Memory request: {}",
-        r["memory_request"].as_str().unwrap_or("—")
-    );
-    println!(
-        "  Memory limit:   {}",
-        r["memory_limit"].as_str().unwrap_or("—")
-    );
+    println!("Resources (edgeflow):");
     println!(
         "  Sessions:       {}",
         r["sessions"]
@@ -172,6 +171,41 @@ fn inspect(api: &Api, target: &str) -> Result<()> {
             .map(|v| v.to_string())
             .unwrap_or_else(|| "—".into())
     );
+
+    let inf = &t["infra"];
+    if !inf.is_null() {
+        println!();
+        println!("Infrastructure (k8s):");
+        println!(
+            "  CPU request:    {}",
+            inf["cpu_request"].as_str().unwrap_or("—")
+        );
+        println!(
+            "  Memory request: {}",
+            inf["memory_request"].as_str().unwrap_or("—")
+        );
+        println!(
+            "  Memory limit:   {}",
+            inf["memory_limit"].as_str().unwrap_or("—")
+        );
+        println!(
+            "  Replicas:       {}",
+            inf["replicas"]
+                .as_i64()
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "—".into())
+        );
+        if let Some(true) = inf["spread"].as_bool() {
+            println!("  Spread:         yes (anti-affinity across nodes)");
+        }
+        if let Some(ns) = inf["node_selector"].as_object() {
+            let pairs: Vec<String> = ns
+                .iter()
+                .map(|(k, v)| format!("{k}={}", v.as_str().unwrap_or("?")))
+                .collect();
+            println!("  Node selector:  {}", pairs.join(", "));
+        }
+    }
 
     Ok(())
 }
@@ -179,36 +213,29 @@ fn inspect(api: &Api, target: &str) -> Result<()> {
 fn set_resources(
     api: &Api,
     target: &str,
+    sessions: Option<i64>,
+    max_concurrent: Option<i64>,
     cpu_request: Option<&str>,
     memory_request: Option<&str>,
     memory_limit: Option<&str>,
-    sessions: Option<i64>,
-    max_concurrent: Option<i64>,
+    replicas: Option<i64>,
+    spread: Option<bool>,
 ) -> Result<()> {
     let res = api.update_target_resources(
         target,
+        sessions,
+        max_concurrent,
         cpu_request,
         memory_request,
         memory_limit,
-        sessions,
-        max_concurrent,
+        replicas,
+        spread,
     )?;
     let t = &res["target"];
     let r = &t["resources"];
+    let inf = &t["infra"];
 
     println!("Updated resources for '{target}':");
-    println!(
-        "  CPU request:    {}",
-        r["cpu_request"].as_str().unwrap_or("—")
-    );
-    println!(
-        "  Memory request: {}",
-        r["memory_request"].as_str().unwrap_or("—")
-    );
-    println!(
-        "  Memory limit:   {}",
-        r["memory_limit"].as_str().unwrap_or("—")
-    );
     println!(
         "  Sessions:       {}",
         r["sessions"]
@@ -223,6 +250,28 @@ fn set_resources(
             .map(|v| v.to_string())
             .unwrap_or_else(|| "—".into())
     );
+    if !inf.is_null() {
+        println!("Infrastructure (from k8s):");
+        println!(
+            "  CPU request:    {}",
+            inf["cpu_request"].as_str().unwrap_or("—")
+        );
+        println!(
+            "  Memory request: {}",
+            inf["memory_request"].as_str().unwrap_or("—")
+        );
+        println!(
+            "  Memory limit:   {}",
+            inf["memory_limit"].as_str().unwrap_or("—")
+        );
+        println!(
+            "  Replicas:       {}",
+            inf["replicas"]
+                .as_i64()
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "—".into())
+        );
+    }
 
     Ok(())
 }

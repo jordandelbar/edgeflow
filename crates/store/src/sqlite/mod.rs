@@ -979,19 +979,13 @@ impl Store for SqliteStore {
         resources: &ResourceSettings,
     ) -> Result<()> {
         sqlx::query(
-            "INSERT INTO targets (target, registered_at, cpu_request, memory_request, memory_limit, sessions, max_concurrent)
-             VALUES (?, 0, ?, ?, ?, ?, ?)
+            "INSERT INTO targets (target, registered_at, sessions, max_concurrent)
+             VALUES (?, 0, ?, ?)
              ON CONFLICT(target) DO UPDATE SET
-               cpu_request    = excluded.cpu_request,
-               memory_request = excluded.memory_request,
-               memory_limit   = excluded.memory_limit,
                sessions       = excluded.sessions,
                max_concurrent = excluded.max_concurrent",
         )
         .bind(target)
-        .bind(&resources.cpu_request)
-        .bind(&resources.memory_request)
-        .bind(&resources.memory_limit)
         .bind(resources.sessions)
         .bind(resources.max_concurrent)
         .execute(&self.pool)
@@ -1021,8 +1015,8 @@ impl Store for SqliteStore {
 
     async fn get_target(&self, target: &str) -> Result<Option<Target>> {
         let row = sqlx::query(
-            "SELECT target, registered_at, cpu_request, memory_request, memory_limit,
-                    sessions, max_concurrent, current_run_id, model_loaded_at
+            "SELECT target, registered_at, sessions, max_concurrent,
+                    current_run_id, model_loaded_at
              FROM targets WHERE target = ?",
         )
         .bind(target)
@@ -1047,13 +1041,8 @@ impl Store for SqliteStore {
         Ok(Some(Target {
             target: r.get("target"),
             registered_at: r.get("registered_at"),
-            resources: ResourceSettings {
-                cpu_request: r.get("cpu_request"),
-                memory_request: r.get("memory_request"),
-                memory_limit: r.get("memory_limit"),
-                sessions: r.get("sessions"),
-                max_concurrent: r.get("max_concurrent"),
-            },
+            resources: row_to_resource_settings(&r),
+            infra: None,
             current_run_id: r.get("current_run_id"),
             model_loaded_at: r.get("model_loaded_at"),
             pods,
@@ -1065,8 +1054,8 @@ impl Store for SqliteStore {
 
     async fn list_targets(&self) -> Result<Vec<Target>> {
         let target_rows = sqlx::query(
-            "SELECT target, registered_at, cpu_request, memory_request, memory_limit,
-                    sessions, max_concurrent, current_run_id, model_loaded_at
+            "SELECT target, registered_at, sessions, max_concurrent,
+                    current_run_id, model_loaded_at
              FROM targets ORDER BY registered_at DESC",
         )
         .fetch_all(&self.pool)
@@ -1106,13 +1095,8 @@ impl Store for SqliteStore {
                 Target {
                     target: target_name,
                     registered_at: r.get("registered_at"),
-                    resources: ResourceSettings {
-                        cpu_request: r.get("cpu_request"),
-                        memory_request: r.get("memory_request"),
-                        memory_limit: r.get("memory_limit"),
-                        sessions: r.get("sessions"),
-                        max_concurrent: r.get("max_concurrent"),
-                    },
+                    resources: row_to_resource_settings(r),
+                    infra: None,
                     current_run_id: r.get("current_run_id"),
                     model_loaded_at: r.get("model_loaded_at"),
                     pods,
@@ -1122,6 +1106,35 @@ impl Store for SqliteStore {
                 }
             })
             .collect())
+    }
+
+    async fn prune_pods(&self, target: &str, keep_pod_ids: &[String]) -> Result<()> {
+        if keep_pod_ids.is_empty() {
+            return Ok(());
+        }
+        // Build a parameterised NOT IN clause.
+        let placeholders = keep_pod_ids
+            .iter()
+            .enumerate()
+            .map(|(i, _)| format!("?{}", i + 2))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sql =
+            format!("DELETE FROM target_pods WHERE target = ?1 AND pod_id NOT IN ({placeholders})");
+        let mut q = sqlx::query(&sql).bind(target);
+        for id in keep_pod_ids {
+            q = q.bind(id);
+        }
+        q.execute(&self.pool).await?;
+        Ok(())
+    }
+
+    async fn prune_all_pods(&self, target: &str) -> Result<()> {
+        sqlx::query("DELETE FROM target_pods WHERE target = ?")
+            .bind(target)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
     }
 
     async fn delete_target(&self, target: &str) -> Result<()> {
@@ -1141,6 +1154,13 @@ impl Store for SqliteStore {
             .await?;
 
         Ok(())
+    }
+}
+
+fn row_to_resource_settings(r: &sqlx::sqlite::SqliteRow) -> ResourceSettings {
+    ResourceSettings {
+        sessions: r.get("sessions"),
+        max_concurrent: r.get("max_concurrent"),
     }
 }
 

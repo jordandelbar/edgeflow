@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { runs, targets, type Deployment, type ModelStatus, type TargetHealth, type Target, type ResourceSettings } from '$lib/api';
+  import { runs, targets, type Deployment, type ModelStatus, type TargetHealth, type Target, type TargetPod, type ResourceSettings, type InfraSettings } from '$lib/api';
   import { liveData } from '$lib/stores';
   import { fmtDateTime, fmtAgo } from '$lib/utils';
   import ErrorCard from '$lib/components/ErrorCard.svelte';
@@ -7,7 +7,6 @@
 
   let byTarget: Record<string, Deployment[]> = {};
   let targetList: string[] = [];
-  let nodeForTarget: Record<string, string | null> = {};
   let targetHealth: Record<string, TargetHealth> = {};
   let lastSeenAt: Record<string, number | null> = {};
   let modelStatus: Record<string, ModelStatus | null> = {};
@@ -16,14 +15,6 @@
   let targetMap: Record<string, Target> = {};
   let confirming: Record<string, boolean> = {};
   let tearing: Record<string, boolean> = {};
-  let collapsedNodes: Record<string, boolean> = {};
-
-  function nodeKey(node: string | null): string { return node ?? ''; }
-  function toggleNode(node: string | null) {
-    const k = nodeKey(node);
-    collapsedNodes[k] = !collapsedNodes[k];
-    collapsedNodes = collapsedNodes;
-  }
 
   let error   = '';
   let loading = true;
@@ -43,17 +34,14 @@
     const newTargetList = Object.keys(newByTarget);
 
     // Build fresh objects so mutations don't trigger reactive loops
-    const newNodeForTarget: Record<string, string | null> = { ...nodeForTarget };
     const newTargetHealth: Record<string, TargetHealth>   = { ...targetHealth };
     const newLastSeenAt:   Record<string, number | null>  = { ...lastSeenAt };
     const newTargetMap:    Record<string, Target>         = { ...targetMap };
     for (const tg of data.targets) {
-      newNodeForTarget[tg.target] = tg.node;
       newTargetHealth[tg.target]  = tg.health;
       newLastSeenAt[tg.target]    = tg.last_seen;
       newTargetMap[tg.target]     = tg;
     }
-    nodeForTarget = newNodeForTarget;
     targetHealth  = newTargetHealth;
     lastSeenAt    = newLastSeenAt;
     targetMap     = newTargetMap;
@@ -92,22 +80,7 @@
     });
   }
 
-  type NodeGroup = { node: string | null; targets: string[] };
-  $: nodeGroups = (() => {
-    const groups = new Map<string | null, string[]>();
-    for (const t of targetList) {
-      const node = nodeForTarget[t] ?? null;
-      if (!groups.has(node)) groups.set(node, []);
-      groups.get(node)!.push(t);
-    }
-    return [...groups.entries()]
-      .map(([node, tgts]) => ({ node, targets: tgts }) as NodeGroup)
-      .sort((a, b) => {
-        if (a.node === null) return 1;
-        if (b.node === null) return -1;
-        return a.node.localeCompare(b.node);
-      });
-  })();
+  $: sortedTargets = [...targetList].sort((a, b) => a.localeCompare(b));
 
   // Per-target playground state
   type Playground = {
@@ -189,43 +162,49 @@
   // Per-target resource edit state
   let editingResources: Record<string, boolean> = {};
   let resourceDraft: Record<string, ResourceSettings> = {};
+  let infraDraft: Record<string, InfraSettings> = {};
   let resourceSaving: Record<string, boolean> = {};
   let resourceError: Record<string, string> = {};
   let resourceNotice: Record<string, string> = {};
 
   function startEditResources(t: string) {
     const res = targetMap[t]?.resources;
+    const inf = targetMap[t]?.infra;
     resourceDraft[t] = {
-      cpu_request:    res?.cpu_request    ?? null,
-      memory_request: res?.memory_request ?? null,
-      memory_limit:   res?.memory_limit   ?? null,
       sessions:       res?.sessions       ?? null,
       max_concurrent: res?.max_concurrent ?? null,
+    };
+    infraDraft[t] = {
+      cpu_request:    inf?.cpu_request    ?? null,
+      memory_request: inf?.memory_request ?? null,
+      memory_limit:   inf?.memory_limit   ?? null,
+      replicas:       inf?.replicas       ?? null,
+      spread:         inf?.spread         ?? null,
+      node_selector:  inf?.node_selector  ?? null,
     };
     resourceError[t] = '';
     editingResources[t] = true;
     editingResources = editingResources;
     resourceDraft = resourceDraft;
+    infraDraft = infraDraft;
   }
 
   async function saveResources(t: string) {
     resourceSaving[t] = true; resourceSaving = resourceSaving;
     resourceError[t] = ''; resourceNotice[t] = '';
     try {
-      const res = await targets.updateResources(t, resourceDraft[t]);
+      const res = await targets.updateResources(t, resourceDraft[t], infraDraft[t]);
       targetMap[t] = res.target;
       targetMap = targetMap;
       editingResources[t] = false;
       editingResources = editingResources;
       if (!res.pod_restarted) {
-        // Check whether CPU/memory/max_concurrent changed — if so, warn that
-        // k8s was not reachable and the pod needs a manual restart.
-        const draft = resourceDraft[t];
-        const prev  = res.target.resources;
-        const needsRestart = draft.cpu_request    !== prev?.cpu_request
-                          || draft.memory_request !== prev?.memory_request
-                          || draft.memory_limit   !== prev?.memory_limit
-                          || draft.max_concurrent !== prev?.max_concurrent;
+        const draftInf = infraDraft[t];
+        const prevInf  = res.target.infra;
+        const needsRestart = draftInf.cpu_request    !== prevInf?.cpu_request
+                          || draftInf.memory_request !== prevInf?.memory_request
+                          || draftInf.memory_limit   !== prevInf?.memory_limit
+                          || resourceDraft[t].max_concurrent !== res.target.resources?.max_concurrent;
         if (needsRestart) {
           resourceNotice[t] = 'Saved. CPU / memory / max_concurrent changes require a pod restart to take effect — k8s was not reachable.';
           resourceNotice = resourceNotice;
@@ -239,11 +218,16 @@
   }
 
   const healthDot: Record<TargetHealth, { colour: string; label: string }> = {
-    healthy:   { colour: 'text-sage',     label: 'healthy'   },
-    stale:     { colour: 'text-amber-400', label: 'stale'    },
-    unhealthy: { colour: 'text-red-400',  label: 'unhealthy' },
-    unknown:   { colour: 'text-gray-300', label: 'unknown'   },
+    healthy:   { colour: 'text-sage',      label: 'healthy'   },
+    stale:     { colour: 'text-amber-400', label: 'stale'     },
+    unhealthy: { colour: 'text-red-400',   label: 'unhealthy' },
+    unknown:   { colour: 'text-gray-300',  label: 'unknown'   },
   };
+
+  function podLabel(pod: TargetPod): string {
+    // k8s pod names look like "edgeflow-inference-iris-<hash>"; trim the common prefix for display.
+    return pod.pod_id.replace(/^edgeflow-inference-/, '');
+  }
 </script>
 
 {#if error}
@@ -264,36 +248,14 @@
       <thead>
         <tr class="border-b border-gray-50">
           <th class="px-4 py-2 text-left text-xs font-medium text-gray-400 w-8"></th>
-          <th class="px-4 py-2 text-left text-xs font-medium text-gray-400"></th>
+          <th class="px-4 py-2 text-left text-xs font-medium text-gray-400">Target</th>
           <th class="px-4 py-2 text-left text-xs font-medium text-gray-400 hidden sm:table-cell w-56">Model</th>
           <th class="px-4 py-2 text-left text-xs font-medium text-gray-400 hidden md:table-cell w-36">Since</th>
           <th class="px-4 py-2 text-right text-xs font-medium text-gray-400 w-36">Actions</th>
         </tr>
       </thead>
       <tbody>
-    {#each nodeGroups as group (group.node)}
-        <!-- Node group header row -->
-        <tr class="border-t border-gray-100 first:border-t-0">
-          <td colspan="5" class="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
-            <button
-              on:click={() => toggleNode(group.node)}
-              class="w-full flex items-center gap-2 text-left"
-            >
-              <i class="fa-solid fa-server text-xs text-sage"></i>
-              <span class="text-xs font-semibold text-gray-600 uppercase tracking-wide">
-                {group.node ?? 'No node assigned'}
-              </span>
-              <span class="ml-auto text-xs text-gray-400">
-                {group.targets.length} {group.targets.length === 1 ? 'target' : 'targets'}
-              </span>
-              <i class="fa-solid fa-chevron-down text-xs text-gray-400 transition-transform duration-200
-                {collapsedNodes[nodeKey(group.node)] ? '-rotate-90' : ''}"></i>
-            </button>
-          </td>
-        </tr>
-
-          {#if !collapsedNodes[nodeKey(group.node)]}
-          {#each group.targets as t (t)}
+    {#each sortedTargets as t (t)}
             {@const deps = byTarget[t]}
             {@const latest = deps[0]}
             {@const status = modelStatus[t]}
@@ -303,11 +265,17 @@
             {@const hs = targetHealth[t] ?? 'unknown'}
 
             <!-- Target row -->
+            {@const podCount = targetMap[t]?.pods?.length ?? 0}
             <tr class="border-b border-gray-50 last:border-0 hover:bg-gray-50/50 transition-colors">
-              <!-- Health dot — server-computed from heartbeat timestamps -->
+              <!-- Health dot + optional replica count -->
               <td class="pl-4 pr-2 py-3">
-                <i class="fa-solid fa-circle text-xs {healthDot[hs].colour}"
-                   title="{healthDot[hs].label}{ls ? ` — heartbeat ${fmtAgo(ls)}` : ''}"></i>
+                <div class="flex flex-col items-center gap-0.5">
+                  <i class="fa-solid fa-circle text-xs {healthDot[hs].colour}"
+                     title="{healthDot[hs].label}{ls ? ` — heartbeat ${fmtAgo(ls)}` : ''}"></i>
+                  {#if podCount > 1}
+                    <span class="text-gray-400 font-mono leading-none" style="font-size:9px">{podCount}</span>
+                  {/if}
+                </div>
               </td>
 
               <!-- Target name -->
@@ -470,6 +438,7 @@
             {#if expanded[t] === 'inspect'}
               {@const tgt = targetMap[t]}
               {@const res = tgt?.resources}
+              {@const inf = tgt?.infra}
               {@const currentDep2 = status ? deps.find(d => d.deployment_id === status.deployment_id) : deps[0]}
               <tr class="border-b border-gray-50">
                 <td colspan="5" class="px-4 py-4 bg-gray-50/50">
@@ -487,18 +456,6 @@
                           <dt class="text-gray-400 w-28 shrink-0">State</dt>
                           <dd class="text-gray-700">{currentDep2?.state ?? '—'}</dd>
                         </div>
-                        {#if tgt?.pod_name}
-                          <div class="flex gap-2 text-xs">
-                            <dt class="text-gray-400 w-28 shrink-0">Pod</dt>
-                            <dd class="font-mono text-gray-700 truncate">{tgt.pod_name}</dd>
-                          </div>
-                        {/if}
-                        {#if tgt?.node}
-                          <div class="flex gap-2 text-xs">
-                            <dt class="text-gray-400 w-28 shrink-0">Node</dt>
-                            <dd class="font-mono text-gray-700 truncate">{tgt.node}</dd>
-                          </div>
-                        {/if}
                         {#if status?.run_id}
                           <div class="flex gap-2 text-xs">
                             <dt class="text-gray-400 w-28 shrink-0">Run</dt>
@@ -540,21 +497,6 @@
                         <div class="space-y-2">
                           <div class="grid grid-cols-2 gap-2">
                             <div>
-                              <label class="block text-xs text-gray-500 mb-1">CPU request</label>
-                              <input type="text" bind:value={resourceDraft[t].cpu_request} placeholder="100m"
-                                class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-sage/50 bg-white" />
-                            </div>
-                            <div>
-                              <label class="block text-xs text-gray-500 mb-1">Memory request</label>
-                              <input type="text" bind:value={resourceDraft[t].memory_request} placeholder="256Mi"
-                                class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-sage/50 bg-white" />
-                            </div>
-                            <div>
-                              <label class="block text-xs text-gray-500 mb-1">Memory limit</label>
-                              <input type="text" bind:value={resourceDraft[t].memory_limit} placeholder="512Mi"
-                                class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-sage/50 bg-white" />
-                            </div>
-                            <div>
                               <label class="block text-xs text-gray-500 mb-1">Sessions</label>
                               <input type="number" min="1" bind:value={resourceDraft[t].sessions} placeholder="1"
                                 class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-sage/50 bg-white" />
@@ -563,6 +505,34 @@
                               <label class="block text-xs text-gray-500 mb-1">Max concurrent</label>
                               <input type="number" min="1" bind:value={resourceDraft[t].max_concurrent} placeholder="= sessions"
                                 class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-sage/50 bg-white" />
+                            </div>
+                            <div>
+                              <label class="block text-xs text-gray-500 mb-1">CPU request</label>
+                              <input type="text" bind:value={infraDraft[t].cpu_request} placeholder="100m"
+                                class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-sage/50 bg-white" />
+                            </div>
+                            <div>
+                              <label class="block text-xs text-gray-500 mb-1">Memory request</label>
+                              <input type="text" bind:value={infraDraft[t].memory_request} placeholder="256Mi"
+                                class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-sage/50 bg-white" />
+                            </div>
+                            <div>
+                              <label class="block text-xs text-gray-500 mb-1">Memory limit</label>
+                              <input type="text" bind:value={infraDraft[t].memory_limit} placeholder="512Mi"
+                                class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-sage/50 bg-white" />
+                            </div>
+                            <div>
+                              <label class="block text-xs text-gray-500 mb-1">Replicas</label>
+                              <input type="number" min="1" bind:value={infraDraft[t].replicas} placeholder="1"
+                                class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-sage/50 bg-white" />
+                            </div>
+                            <div class="col-span-2 flex items-center gap-2 pt-1">
+                              <input type="checkbox" id="spread-{t}" bind:checked={infraDraft[t].spread}
+                                class="rounded border-gray-300 text-sage focus:ring-sage/50" />
+                              <label for="spread-{t}" class="text-xs text-gray-600 cursor-pointer">
+                                Spread replicas across nodes
+                                <span class="text-gray-400">(pod anti-affinity)</span>
+                              </label>
                             </div>
                           </div>
 
@@ -597,18 +567,6 @@
                       {:else}
                         <dl class="space-y-1">
                           <div class="flex gap-2 text-xs">
-                            <dt class="text-gray-400 w-28 shrink-0">CPU request</dt>
-                            <dd class="font-mono text-gray-700">{res?.cpu_request ?? '—'}</dd>
-                          </div>
-                          <div class="flex gap-2 text-xs">
-                            <dt class="text-gray-400 w-28 shrink-0">Memory request</dt>
-                            <dd class="font-mono text-gray-700">{res?.memory_request ?? '—'}</dd>
-                          </div>
-                          <div class="flex gap-2 text-xs">
-                            <dt class="text-gray-400 w-28 shrink-0">Memory limit</dt>
-                            <dd class="font-mono text-gray-700">{res?.memory_limit ?? '—'}</dd>
-                          </div>
-                          <div class="flex gap-2 text-xs">
                             <dt class="text-gray-400 w-28 shrink-0">Sessions</dt>
                             <dd class="font-mono text-gray-700">{res?.sessions ?? '—'}</dd>
                           </div>
@@ -616,11 +574,76 @@
                             <dt class="text-gray-400 w-28 shrink-0">Max concurrent</dt>
                             <dd class="font-mono text-gray-700">{res?.max_concurrent ?? '—'}</dd>
                           </div>
+                          {#if inf}
+                            <div class="flex gap-2 text-xs">
+                              <dt class="text-gray-400 w-28 shrink-0">CPU request</dt>
+                              <dd class="font-mono text-gray-700">{inf.cpu_request ?? '—'}</dd>
+                            </div>
+                            <div class="flex gap-2 text-xs">
+                              <dt class="text-gray-400 w-28 shrink-0">Memory request</dt>
+                              <dd class="font-mono text-gray-700">{inf.memory_request ?? '—'}</dd>
+                            </div>
+                            <div class="flex gap-2 text-xs">
+                              <dt class="text-gray-400 w-28 shrink-0">Memory limit</dt>
+                              <dd class="font-mono text-gray-700">{inf.memory_limit ?? '—'}</dd>
+                            </div>
+                            {#if inf.replicas != null}
+                              <div class="flex gap-2 text-xs">
+                                <dt class="text-gray-400 w-28 shrink-0">Replicas</dt>
+                                <dd class="font-mono text-gray-700">{inf.replicas}</dd>
+                              </div>
+                            {/if}
+                            {#if inf.spread}
+                              <div class="flex gap-2 text-xs">
+                                <dt class="text-gray-400 w-28 shrink-0">Spread</dt>
+                                <dd class="text-gray-700">anti-affinity</dd>
+                              </div>
+                            {/if}
+                            {#if inf.node_selector}
+                              <div class="flex gap-2 text-xs">
+                                <dt class="text-gray-400 w-28 shrink-0">Node selector</dt>
+                                <dd class="font-mono text-gray-700 truncate">
+                                  {Object.entries(inf.node_selector).map(([k,v]) => `${k}=${v}`).join(', ')}
+                                </dd>
+                              </div>
+                            {/if}
+                          {:else}
+                            <div class="flex gap-2 text-xs">
+                              <dt class="text-gray-400 w-28 shrink-0 italic">k8s</dt>
+                              <dd class="text-gray-400 italic">unreachable</dd>
+                            </div>
+                          {/if}
                         </dl>
                       {/if}
                     </div>
 
                   </div>
+
+                  <!-- Pods -->
+                  {#if tgt?.pods?.length}
+                    <div class="mt-4">
+                      <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
+                        Pods
+                        <span class="normal-case font-normal text-gray-300 ml-1">({tgt.pods.length})</span>
+                      </p>
+                      <div class="space-y-1">
+                        {#each tgt.pods as pod (pod.pod_id)}
+                          {@const ph = pod.health}
+                          <div class="flex items-center gap-3 px-3 py-1.5 rounded-lg bg-white border border-gray-100 text-xs">
+                            <i class="fa-solid fa-circle text-xs {healthDot[ph].colour} shrink-0"
+                               title="{healthDot[ph].label}{pod.last_seen ? ` — ${fmtAgo(pod.last_seen)}` : ''}"></i>
+                            <span class="font-mono text-gray-700 truncate flex-1" title={pod.pod_id}>{podLabel(pod)}</span>
+                            {#if pod.node}
+                              <span class="text-gray-400 shrink-0">{pod.node}</span>
+                            {/if}
+                            {#if pod.last_seen}
+                              <span class="text-gray-300 shrink-0">{fmtAgo(pod.last_seen)}</span>
+                            {/if}
+                          </div>
+                        {/each}
+                      </div>
+                    </div>
+                  {/if}
 
                   {#if resourceNotice[t]}
                     <p class="text-xs text-amber-600 mt-3">
@@ -667,8 +690,6 @@
               </tr>
             {/if}
 
-          {/each}
-          {/if}
     {/each}
       </tbody>
     </table>

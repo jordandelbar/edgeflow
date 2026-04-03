@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher, onDestroy } from 'svelte';
-  import { deployments, nodes, type RegisteredModel, type ModelVersion, type Deployment, type ResourceSettings } from '$lib/api';
+  import { deployments, nodes, type RegisteredModel, type ModelVersion, type Deployment, type ResourceSettings, type InfraSettings } from '$lib/api';
   import DeployStateBadge from './DeployStateBadge.svelte';
 
   // Provide either a specific version (skips version picker) or a whole model.
@@ -27,11 +27,17 @@
   }>();
 
   const DEFAULT_RESOURCES: ResourceSettings = {
+    sessions:       1,
+    max_concurrent: null,
+  };
+
+  const DEFAULT_INFRA: InfraSettings = {
     cpu_request:    '100m',
     memory_request: '256Mi',
     memory_limit:   '512Mi',
-    sessions:       1,
-    max_concurrent: null,
+    replicas:       null,
+    spread:         null,
+    node_selector:  null,
   };
 
   type ActiveDep = { target: string; dep: Deployment };
@@ -41,6 +47,7 @@
   let selectedNodes: string[] = [];
   let showAdvanced = false;
   let resources: ResourceSettings = { ...DEFAULT_RESOURCES };
+  let infra: InfraSettings = { ...DEFAULT_INFRA };
   let err = '';
   let activeDeps: ActiveDep[] = [];
   let polling = false;
@@ -152,7 +159,7 @@
 
     const results = await Promise.allSettled(
       pairs.map(({ node, target }) =>
-        deployments.create(resolvedVersion!.name, resolvedVersion!.version, target, node, resources)
+        deployments.create(resolvedVersion!.name, resolvedVersion!.version, target, node, resources, infra)
           .then(res => ({ target, dep: res.deployment }))
       )
     );
@@ -393,21 +400,6 @@
           {#if showAdvanced}
             <div class="grid grid-cols-2 gap-2 bg-gray-50 rounded-lg p-3">
               <div>
-                <label class="block text-xs text-gray-500 mb-1">CPU request</label>
-                <input type="text" bind:value={resources.cpu_request} placeholder="100m"
-                  class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-peach/50 bg-white" />
-              </div>
-              <div>
-                <label class="block text-xs text-gray-500 mb-1">Memory request</label>
-                <input type="text" bind:value={resources.memory_request} placeholder="256Mi"
-                  class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-peach/50 bg-white" />
-              </div>
-              <div>
-                <label class="block text-xs text-gray-500 mb-1">Memory limit</label>
-                <input type="text" bind:value={resources.memory_limit} placeholder="512Mi"
-                  class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-peach/50 bg-white" />
-              </div>
-              <div>
                 <label class="block text-xs text-gray-500 mb-1">Sessions</label>
                 <input type="number" min="1" bind:value={resources.sessions} placeholder="1"
                   class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-peach/50 bg-white" />
@@ -416,6 +408,34 @@
                 <label class="block text-xs text-gray-500 mb-1">Max concurrent <span class="text-gray-400">(default: sessions)</span></label>
                 <input type="number" min="1" bind:value={resources.max_concurrent} placeholder="= sessions"
                   class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-peach/50 bg-white" />
+              </div>
+              <div>
+                <label class="block text-xs text-gray-500 mb-1">CPU request</label>
+                <input type="text" bind:value={infra.cpu_request} placeholder="100m"
+                  class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-peach/50 bg-white" />
+              </div>
+              <div>
+                <label class="block text-xs text-gray-500 mb-1">Memory request</label>
+                <input type="text" bind:value={infra.memory_request} placeholder="256Mi"
+                  class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-peach/50 bg-white" />
+              </div>
+              <div>
+                <label class="block text-xs text-gray-500 mb-1">Memory limit</label>
+                <input type="text" bind:value={infra.memory_limit} placeholder="512Mi"
+                  class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-peach/50 bg-white" />
+              </div>
+              <div>
+                <label class="block text-xs text-gray-500 mb-1">Replicas</label>
+                <input type="number" min="1" bind:value={infra.replicas} placeholder="1"
+                  class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-peach/50 bg-white" />
+              </div>
+              <div class="col-span-2 flex items-center gap-2 pt-1">
+                <input type="checkbox" id="deploy-spread" bind:checked={infra.spread}
+                  class="rounded border-gray-300 text-peach focus:ring-peach/50" />
+                <label for="deploy-spread" class="text-xs text-gray-600 cursor-pointer">
+                  Spread replicas across nodes
+                  <span class="text-gray-400">(pod anti-affinity)</span>
+                </label>
               </div>
             </div>
           {/if}

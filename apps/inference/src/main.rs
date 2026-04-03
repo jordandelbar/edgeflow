@@ -87,18 +87,23 @@ async fn main() -> Result<()> {
     .await;
     tracing::info!("registered — polling for deployments");
 
-    // If EDGEFLOW_MQTT_URL is set, publish heartbeats over MQTT instead of HTTP.
-    let mqtt_heartbeat = std::env::var("EDGEFLOW_MQTT_URL").ok().and_then(|url| {
-        match mqtt::MqttHeartbeat::new(&url, &target, &pod_id) {
-            Ok(hb) => Some(hb),
+    // If EDGEFLOW_MQTT_URL is set, connect for heartbeats + upgrade commands.
+    let (mqtt_client, mut mqtt_commands): (
+        Option<mqtt::MqttPodClient>,
+        Option<tokio::sync::mpsc::Receiver<deployment::DeployInstruction>>,
+    ) = match std::env::var("EDGEFLOW_MQTT_URL").ok() {
+        Some(url) => match mqtt::MqttPodClient::new(&url, &target, &pod_id) {
+            Ok((c, rx)) => (Some(c), Some(rx)),
             Err(e) => {
-                tracing::warn!("mqtt heartbeat init failed, falling back to HTTP: {e}");
-                None
+                tracing::warn!("mqtt init failed: {e}");
+                (None, None)
             }
-        }
-    });
+        },
+        None => (None, None),
+    };
 
-    // Background task: heartbeat every 30 s, poll for pending deployments every 5 s.
+    // Background task: heartbeat every 30 s, poll for pending deployments every 5 s,
+    // and process upgrade commands received via MQTT.
     let poll_active = state.active.clone();
     let poll_client = client.clone();
     let poll_target = target.clone();
@@ -115,13 +120,32 @@ async fn main() -> Result<()> {
                 _ = poll_cancel.cancelled() => break,
 
                 _ = heartbeat.tick() => {
-                    if let Some(ref hb) = mqtt_heartbeat {
+                    if let Some(ref hb) = mqtt_client {
                         if let Err(e) = hb.beat().await {
                             tracing::warn!("mqtt heartbeat failed: {e}");
                         }
                     } else if let Err(e) = poll_client.heartbeat(&poll_target, &poll_pod_id).await {
                         tracing::warn!("heartbeat failed: {e}");
                     }
+                }
+
+                // Upgrade command received via MQTT — act immediately.
+                Some(instr) = async {
+                    if let Some(ref mut rx) = mqtt_commands { rx.recv().await }
+                    else { std::future::pending().await }
+                } => {
+                    tracing::info!(
+                        run_id        = %instr.run_id,
+                        deployment_id = %instr.deployment_id,
+                        sessions      = instr.sessions,
+                        "picked up upgrade command via MQTT"
+                    );
+                    let active = poll_active.clone();
+                    let c      = poll_client.clone();
+                    let tgt    = poll_target.clone();
+                    tokio::task::spawn_blocking(move || {
+                        deployment::load_and_swap(instr, active, c, tgt);
+                    });
                 }
 
                 _ = poll.tick() => {
@@ -134,10 +158,10 @@ async fn main() -> Result<()> {
                                 "picked up pending deployment via poll"
                             );
                             let active = poll_active.clone();
-                            let client = poll_client.clone();
+                            let c      = poll_client.clone();
                             let tgt    = poll_target.clone();
                             tokio::task::spawn_blocking(move || {
-                                deployment::load_and_swap(instr, active, client, tgt);
+                                deployment::load_and_swap(instr, active, c, tgt);
                             });
                         }
                         Ok(None) => {}

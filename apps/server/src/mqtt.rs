@@ -8,6 +8,69 @@ use tokio_util::sync::CancellationToken;
 use edgeflow_store::sqlite::SqliteStore;
 use edgeflow_store::Store as _;
 
+// ── Publisher ─────────────────────────────────────────────────────────────────
+
+/// Shared MQTT client for publishing commands from the server to inference pods.
+pub struct MqttPublisher {
+    client: AsyncClient,
+}
+
+impl MqttPublisher {
+    /// Create a publisher connected to either an external broker (`broker_url`)
+    /// or the embedded broker on localhost.  The eventloop runs in a background
+    /// task; this function returns immediately.
+    pub fn new(broker_url: Option<&str>, mqtt_port: u16) -> Arc<Self> {
+        let (host, port) = broker_url
+            .map(parse_broker_addr)
+            .unwrap_or_else(|| ("localhost".to_string(), mqtt_port));
+
+        let mut options = MqttOptions::new("edgeflow-server-pub", &host, port);
+        options.set_keep_alive(Duration::from_secs(30));
+
+        let (client, mut eventloop) = AsyncClient::new(options, 64);
+
+        tokio::spawn(async move {
+            loop {
+                match eventloop.poll().await {
+                    Ok(_) => {}
+                    Err(e) => {
+                        tracing::warn!("mqtt publisher: {e}");
+                        tokio::time::sleep(Duration::from_secs(5)).await;
+                    }
+                }
+            }
+        });
+
+        tracing::info!(broker = %host, port, "mqtt: publisher ready");
+        Arc::new(Self { client })
+    }
+
+    /// Publish an upgrade command to all pods registered for `target`.
+    pub async fn publish_upgrade(
+        &self,
+        target: &str,
+        run_id: &str,
+        deployment_id: &str,
+        sessions: usize,
+    ) -> Result<()> {
+        let topic = format!("edgeflow/targets/{target}/commands");
+        let payload = serde_json::json!({
+            "command":       "upgrade",
+            "run_id":        run_id,
+            "deployment_id": deployment_id,
+            "sessions":      sessions,
+        })
+        .to_string();
+
+        self.client
+            .publish(topic, QoS::AtLeastOnce, false, payload.as_bytes())
+            .await
+            .context("mqtt publish_upgrade failed")?;
+
+        Ok(())
+    }
+}
+
 /// Parse "mqtt://host:port" (or bare "host:port") into (host, port).
 fn parse_broker_addr(url: &str) -> (String, u16) {
     let stripped = url

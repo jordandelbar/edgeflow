@@ -65,11 +65,8 @@ CREATE INDEX IF NOT EXISTS idx_deployments_target_created ON deployments(target,
 CREATE TABLE IF NOT EXISTS targets (
     target          TEXT    PRIMARY KEY,
     registered_at   INTEGER NOT NULL,
-    cpu_request     TEXT,
-    memory_request  TEXT,
-    memory_limit    TEXT,
-    max_concurrent  INTEGER,
     sessions        INTEGER,
+    max_concurrent  INTEGER,
     current_run_id  TEXT,
     model_loaded_at TEXT
 );

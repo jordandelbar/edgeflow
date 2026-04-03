@@ -150,5 +150,10 @@ pub trait Store: Send + Sync {
     ) -> Result<()>;
     async fn get_target(&self, target: &str) -> Result<Option<Target>>;
     async fn list_targets(&self) -> Result<Vec<Target>>;
+    /// Remove pod records for `target` whose pod_id is not in `keep_pod_ids`.
+    /// No-op when `keep_pod_ids` is empty (avoids wiping all pods if k8s is unreachable).
+    async fn prune_pods(&self, target: &str, keep_pod_ids: &[String]) -> Result<()>;
+    /// Remove all pod records for `target`. Use only when k8s confirms no pods exist.
+    async fn prune_all_pods(&self, target: &str) -> Result<()>;
     async fn delete_target(&self, target: &str) -> Result<()>;
 }
