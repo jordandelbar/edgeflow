@@ -13,8 +13,8 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 # ── build images ──────────────────────────────────────────────────────────────
-echo "==> building images (server + inference-ort)..."
-docker buildx bake -f deploy/docker-bake.hcl server inference-ort
+echo "==> building images (server + inference-ort + inference-tract)..."
+docker buildx bake -f deploy/docker-bake.hcl server inference-ort inference-tract
 
 # ── k3d cluster ───────────────────────────────────────────────────────────────
 echo "==> creating k3d cluster..."
@@ -29,7 +29,7 @@ kubectl label node k3d-edgeflow-server-0 edgeflow-role=server --overwrite
 kubectl label node k3d-edgeflow-agent-0 k3d-edgeflow-agent-1 k3d-edgeflow-agent-2 edgeflow-role=agent --overwrite
 
 echo "==> importing images into cluster..."
-k3d image import edgeflow-server:dev edgeflow-inference:dev-ort -c edgeflow
+k3d image import edgeflow-server:dev edgeflow-inference:dev-ort edgeflow-inference:dev-tract -c edgeflow
 
 # ── deploy ────────────────────────────────────────────────────────────────────
 echo "==> deploying manifests..."
