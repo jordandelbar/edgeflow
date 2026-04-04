@@ -60,7 +60,7 @@ impl MqttPublisher {
         .to_string();
 
         self.client
-            .publish(topic, QoS::AtLeastOnce, false, payload.as_bytes())
+            .publish(topic, QoS::AtLeastOnce, true, payload.as_bytes())
             .await
             .context("mqtt publish_upgrade failed")?;
 
@@ -94,7 +94,7 @@ connection_timeout_ms = 5000
 max_payload_size = 4096
 max_inflight_count = 16
 max_inflight_size = 4096
-dynamic_filters = false
+dynamic_filters = true
 "#
     );
 

@@ -64,46 +64,6 @@ impl EdgeflowClient {
         Ok(())
     }
 
-    /// Poll for the oldest pending deployment for this target. Returns None if
-    /// there is nothing to do.
-    pub async fn poll_pending(
-        &self,
-        target: &str,
-        default_sessions: usize,
-    ) -> Result<Option<crate::deployment::DeployInstruction>> {
-        #[derive(serde::Deserialize)]
-        struct PendingResponse {
-            deployment: Option<PendingDeployment>,
-            sessions: Option<usize>,
-        }
-        #[derive(serde::Deserialize)]
-        struct PendingDeployment {
-            run_id: String,
-            deployment_id: String,
-        }
-
-        let url = format!("{}/api/v1/targets/{}/pending", self.server, target);
-        let resp: PendingResponse = self
-            .client
-            .get(&url)
-            .send()
-            .await
-            .context("failed to poll for pending deployment")?
-            .error_for_status()
-            .context("server error on pending poll")?
-            .json()
-            .await?;
-
-        let sessions = resp.sessions.unwrap_or(default_sessions);
-        Ok(resp
-            .deployment
-            .map(|d| crate::deployment::DeployInstruction {
-                run_id: d.run_id,
-                deployment_id: d.deployment_id,
-                sessions,
-            }))
-    }
-
     /// Kept for backwards-compat / dev polling.
     #[allow(dead_code)]
     pub async fn latest_run_id(&self, target: &str) -> Result<String> {

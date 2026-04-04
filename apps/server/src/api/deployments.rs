@@ -28,7 +28,6 @@ pub fn router() -> Router<AppState> {
         .route("/targets/{target}/model", get(target_model_status))
         .route("/targets/{target}/schema", get(target_schema))
         .route("/targets/{target}/health", get(target_health))
-        .route("/targets/{target}/pending", get(target_pending))
         .route("/targets/{target}/infer/playground", post(infer_playground))
         .route("/nodes", get(list_nodes))
 }
@@ -88,27 +87,6 @@ async fn target_health(
         .health()
         .await?;
     Ok(Json(json))
-}
-
-// ── GET /targets/:target/pending ──────────────────────────────────────────────
-
-async fn target_pending(
-    State(state): State<AppState>,
-    Path(target): Path<String>,
-) -> Result<Json<serde_json::Value>, ApiError> {
-    let dep = state
-        .store
-        .get_pending_deployment_for_target(&target)
-        .await?;
-    let sessions = state
-        .store
-        .get_target(&target)
-        .await?
-        .and_then(|t| t.resources.sessions)
-        .unwrap_or(1);
-    Ok(Json(
-        serde_json::json!({ "deployment": dep, "sessions": sessions }),
-    ))
 }
 
 // ── GET /targets/:target/schema ───────────────────────────────────────────────
@@ -414,8 +392,6 @@ async fn confirm_deployment(
 #[derive(Deserialize)]
 struct RegisterTargetRequest {
     target: String,
-    pod_id: String,
-    address: String,
 }
 
 async fn register_target(
@@ -424,71 +400,34 @@ async fn register_target(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let target = state.store.ensure_target(&req.target).await?;
 
-    // Check for a pending deployment for this target — trigger the load.
-    // Also handle the re-registration case (e.g. after a rolling restart
-    // triggered by a resource update): if there is no pending deployment but
-    // there IS a currently-deployed one, reload it on the new pod so it can
-    // pass its readiness probe and let the old pod terminate.
-    let pending = state
-        .store
-        .get_pending_deployment_for_target(&req.target)
-        .await?;
-    let deployment_to_load = if pending.is_some() {
-        pending
-    } else {
-        // Look for the latest deployed (or deploying) deployment to reload.
-        // Deploying covers the race where multiple pods register concurrently:
-        // pod A advances state to Deploying, pods B and C register moments
-        // later and must also receive the load trigger instead of being left
-        // polling with nothing to find.
-        state
+    // If there is a pending or upgrading deployment for this target, publish
+    // it now. The pod subscribes to MQTT before calling this endpoint, so it
+    // is guaranteed to be listening when we push.
+    if let Some(ref publisher) = state.mqtt_publisher {
+        if let Ok(dep) = state
             .store
-            .get_latest_deployment(&req.target)
-            .await
-            .ok()
-            .filter(|d| {
-                matches!(
-                    d.state,
-                    DeploymentState::Deployed | DeploymentState::Deploying
-                )
-            })
-    };
-
-    if let Some(deployment) = deployment_to_load {
-        // Deployed  → reload (pod restarted, model already confirmed once)
-        // Pending   → first load (fresh deployment)
-        // Upgrading → MQTT was sent but pod missed it, retrigger via HTTP
-        let is_reload = deployment.state == DeploymentState::Deployed;
-        let sessions = target.resources.sessions.unwrap_or(1) as usize;
-        match TargetClient::new(&state.http_client, &req.address)
-            .upgrade(&deployment.run_id, &deployment.deployment_id, sessions)
+            .get_pending_deployment_for_target(&req.target)
             .await
         {
-            Ok(true) => {
-                // Only advance state for pending → deploying; leave upgrading as-is
-                // so confirm_deployment takes the upgrade code path (supersedes previous).
-                if deployment.state == DeploymentState::Pending {
-                    state
-                        .store
-                        .update_deployment_state(
-                            &deployment.deployment_id,
-                            DeploymentState::Deploying,
-                        )
-                        .await?;
+            if let Some(dep) = dep {
+                let sessions = target.resources.sessions.unwrap_or(1) as usize;
+                if let Err(e) = publisher
+                    .publish_upgrade(&req.target, &dep.run_id, &dep.deployment_id, sessions)
+                    .await
+                {
+                    tracing::warn!(
+                        target = %req.target,
+                        deployment_id = %dep.deployment_id,
+                        error = %e,
+                        "failed to push pending deployment on pod registration"
+                    );
+                } else {
+                    tracing::info!(
+                        target = %req.target,
+                        deployment_id = %dep.deployment_id,
+                        "pushed pending deployment to newly registered pod"
+                    );
                 }
-                tracing::info!(
-                    deployment_id = %deployment.deployment_id,
-                    target = %req.target,
-                    is_reload,
-                    state = %deployment.state.as_str(),
-                    "triggered model load on newly registered pod"
-                );
-            }
-            Ok(false) => {
-                tracing::warn!("upgrade call to pod after registration returned non-success");
-            }
-            Err(e) => {
-                tracing::warn!(error = %e, "failed to reach newly registered pod");
             }
         }
     }

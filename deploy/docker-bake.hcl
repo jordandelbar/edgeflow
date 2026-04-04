@@ -3,7 +3,7 @@ variable "TAG" {
 }
 
 group "default" {
-  targets = ["server", "inference"]
+  targets = ["server", "inference-tract", "inference-ort"]
 }
 
 target "server" {
@@ -12,8 +12,16 @@ target "server" {
   tags       = ["edgeflow-server:${TAG}"]
 }
 
-target "inference" {
+target "inference-tract" {
   dockerfile = "deploy/inference.Dockerfile"
   context    = "."
-  tags       = ["edgeflow-inference:${TAG}"]
+  args       = { BACKEND = "tract-backend" }
+  tags       = ["edgeflow-inference:${TAG}-tract"]
+}
+
+target "inference-ort" {
+  dockerfile = "deploy/inference.Dockerfile"
+  context    = "."
+  args       = { BACKEND = "ort-backend" }
+  tags       = ["edgeflow-inference:${TAG}-ort"]
 }

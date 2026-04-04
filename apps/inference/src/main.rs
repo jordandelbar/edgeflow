@@ -71,6 +71,24 @@ async fn main() -> Result<()> {
     // Small pause to let the listener bind before we register.
     tokio::time::sleep(Duration::from_millis(200)).await;
 
+    // Connect to MQTT *before* registering so we are already subscribed when
+    // the server publishes the pending deployment on registration.
+    let mut mqtt_commands: Option<tokio::sync::mpsc::Receiver<deployment::DeployInstruction>> =
+        match std::env::var("EDGEFLOW_MQTT_URL").ok() {
+            Some(url) => match mqtt::MqttPodClient::new(&url, &target, &pod_id) {
+                Ok((_client, rx)) => Some(rx),
+                Err(e) => {
+                    tracing::warn!("mqtt init failed: {e}");
+                    None
+                }
+            },
+            None => None,
+        };
+
+    // Give the MQTT event loop a moment to connect and subscribe before we
+    // register — the server will publish immediately on registration.
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
     tracing::info!(target = %target, pod_id = %pod_id, address = %self_address, node = ?node_name, "registering with edgeflow-server");
     retry_forever("register with edgeflow-server", || {
         let client = client.clone();
@@ -85,36 +103,21 @@ async fn main() -> Result<()> {
         }
     })
     .await;
-    tracing::info!("registered — polling for deployments");
+    tracing::info!("registered");
 
-    // If EDGEFLOW_MQTT_URL is set, connect for upgrade commands.
-    let mut mqtt_commands: Option<tokio::sync::mpsc::Receiver<deployment::DeployInstruction>> =
-        match std::env::var("EDGEFLOW_MQTT_URL").ok() {
-            Some(url) => match mqtt::MqttPodClient::new(&url, &target, &pod_id) {
-                Ok((_client, rx)) => Some(rx),
-                Err(e) => {
-                    tracing::warn!("mqtt init failed: {e}");
-                    None
-                }
-            },
-            None => None,
-        };
-
-    // Background task: poll for pending deployments every 5 s and process
-    // upgrade commands received via MQTT.
-    let poll_active = state.active.clone();
-    let poll_client = client.clone();
-    let poll_target = target.clone();
-    let poll_cancel = cancel.clone();
-    let poll_sessions = state.sessions;
+    // Background task: process upgrade commands received via MQTT.
+    // Retained messages on the commands topic ensure the pod receives the
+    // current desired deployment immediately on subscribe, even if the server
+    // published before this pod existed.
+    let mqtt_active = state.active.clone();
+    let mqtt_client = client.clone();
+    let mqtt_target = target.clone();
+    let mqtt_cancel = cancel.clone();
     tokio::spawn(async move {
-        let mut poll = tokio::time::interval(Duration::from_secs(5));
-
         loop {
             tokio::select! {
-                _ = poll_cancel.cancelled() => break,
+                _ = mqtt_cancel.cancelled() => break,
 
-                // Upgrade command received via MQTT — act immediately.
                 Some(instr) = async {
                     if let Some(ref mut rx) = mqtt_commands { rx.recv().await }
                     else { std::future::pending().await }
@@ -123,35 +126,14 @@ async fn main() -> Result<()> {
                         run_id        = %instr.run_id,
                         deployment_id = %instr.deployment_id,
                         sessions      = instr.sessions,
-                        "picked up upgrade command via MQTT"
+                        "upgrade command received via MQTT"
                     );
-                    let active = poll_active.clone();
-                    let c      = poll_client.clone();
-                    let tgt    = poll_target.clone();
+                    let active = mqtt_active.clone();
+                    let c      = mqtt_client.clone();
+                    let tgt    = mqtt_target.clone();
                     tokio::task::spawn_blocking(move || {
                         deployment::load_and_swap(instr, active, c, tgt);
                     });
-                }
-
-                _ = poll.tick() => {
-                    match poll_client.poll_pending(&poll_target, poll_sessions).await {
-                        Ok(Some(instr)) => {
-                            tracing::info!(
-                                run_id        = %instr.run_id,
-                                deployment_id = %instr.deployment_id,
-                                sessions      = instr.sessions,
-                                "picked up pending deployment via poll"
-                            );
-                            let active = poll_active.clone();
-                            let c      = poll_client.clone();
-                            let tgt    = poll_target.clone();
-                            tokio::task::spawn_blocking(move || {
-                                deployment::load_and_swap(instr, active, c, tgt);
-                            });
-                        }
-                        Ok(None) => {}
-                        Err(e) => tracing::warn!("deployment poll failed: {e}"),
-                    }
                 }
             }
         }
