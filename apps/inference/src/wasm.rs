@@ -12,7 +12,7 @@ use wasmtime::{
     component::{Component, Func, Linker, Val},
     Config, Engine, Store,
 };
-use wasmtime_wasi::{ResourceTable, WasiCtx, WasiCtxBuilder, WasiView};
+use wasmtime_wasi::{ResourceTable, WasiCtx, WasiCtxBuilder, WasiCtxView, WasiView};
 
 // Static host-side bindings for the standard Rust pipeline.
 // Generated at compile time from the WIT definition; list<u8> params/returns
@@ -30,11 +30,11 @@ struct State {
 }
 
 impl WasiView for State {
-    fn table(&mut self) -> &mut ResourceTable {
-        &mut self.table
-    }
-    fn ctx(&mut self) -> &mut WasiCtx {
-        &mut self.ctx
+    fn ctx(&mut self) -> WasiCtxView<'_> {
+        WasiCtxView {
+            ctx: &mut self.ctx,
+            table: &mut self.table,
+        }
     }
 }
 
@@ -61,7 +61,9 @@ impl WasmTransform {
         let mut cfg = Config::new();
         cfg.wasm_component_model(true);
         cfg.cranelift_opt_level(wasmtime::OptLevel::None);
-        Engine::new(&cfg).context("failed to create wasmtime engine")
+        Engine::new(&cfg)
+            .map_err(anyhow::Error::from)
+            .context("failed to create wasmtime engine")
     }
 
     /// Build a transform from raw WASM bytes using an already-created Engine.
@@ -69,11 +71,13 @@ impl WasmTransform {
     /// `config` is `Some` for standard Rust pipelines (triggers `init`) and
     /// `None` for legacy componentize-py components.
     pub fn new(engine: &Engine, wasm_bytes: &[u8], config: Option<&[u8]>) -> Result<Self> {
-        let component =
-            Component::new(engine, wasm_bytes).context("failed to compile WASM component")?;
+        let component = Component::new(engine, wasm_bytes)
+            .map_err(anyhow::Error::from)
+            .context("failed to compile WASM component")?;
 
         let mut linker: Linker<State> = Linker::new(engine);
-        wasmtime_wasi::add_to_linker_sync(&mut linker)
+        wasmtime_wasi::p2::add_to_linker_sync(&mut linker)
+            .map_err(anyhow::Error::from)
             .context("failed to add WASI to component linker")?;
 
         let state = State {
@@ -89,10 +93,12 @@ impl WasmTransform {
             // Standard Rust pipeline: static bindings give us a memcpy boundary.
             let component_bindings =
                 bindings::ConfigurableTransform::instantiate(&mut store, &component, &linker)
+                    .map_err(anyhow::Error::from)
                     .context("failed to instantiate standard WASM component")?;
 
             component_bindings
                 .call_init(&mut store, cfg_bytes)
+                .map_err(anyhow::Error::from)
                 .context("init call failed")?;
 
             Inner::Standard(component_bindings)
@@ -100,6 +106,7 @@ impl WasmTransform {
             // Legacy componentize-py: keep the dynamic path untouched.
             let instance = linker
                 .instantiate(&mut store, &component)
+                .map_err(anyhow::Error::from)
                 .context("failed to instantiate legacy WASM component")?;
             let func = instance
                 .get_func(&mut store, "transform")
@@ -113,7 +120,9 @@ impl WasmTransform {
     pub fn run(&mut self, input: &[u8]) -> Result<Vec<u8>> {
         let WasmTransform { store, inner } = self;
         match inner {
-            Inner::Standard(b) => b.call_transform(&mut *store, input),
+            Inner::Standard(b) => b
+                .call_transform(&mut *store, input)
+                .map_err(anyhow::Error::from),
             Inner::Legacy(func) => run_legacy(func, &mut *store, input),
         }
         .context("transform call failed")
@@ -127,8 +136,8 @@ fn run_legacy(func: &Func, store: &mut Store<State>, input: &[u8]) -> Result<Vec
     let mut results = vec![Val::Bool(false)];
 
     func.call(&mut *store, &[input_val], &mut results)
+        .map_err(anyhow::Error::from)
         .context("transform call failed")?;
-    func.post_return(store).context("post_return failed")?;
 
     match results.remove(0) {
         Val::List(items) => {

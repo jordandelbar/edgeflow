@@ -581,6 +581,19 @@ impl Store for SqliteStore {
         Ok(row_to_deployment(&row))
     }
 
+    async fn get_latest_deployment(&self, target: &str) -> Result<Deployment> {
+        let row = sqlx::query(
+            "SELECT deployment_id, target, run_id, model_name, model_version, created_at, state FROM deployments
+             WHERE target = ? ORDER BY created_at DESC LIMIT 1"
+        )
+        .bind(target)
+        .fetch_one(&self.pool)
+        .await
+        .context("deployment not found")?;
+
+        Ok(row_to_deployment(&row))
+    }
+
     async fn list_deployments(&self, target: Option<&str>) -> Result<Vec<Deployment>> {
         // JOIN with targets so deployments for torn-down targets are excluded.
         let rows = match target {
@@ -604,19 +617,6 @@ impl Store for SqliteStore {
         };
 
         Ok(rows.iter().map(row_to_deployment).collect())
-    }
-
-    async fn get_latest_deployment(&self, target: &str) -> Result<Deployment> {
-        let row = sqlx::query(
-            "SELECT deployment_id, target, run_id, model_name, model_version, created_at, state FROM deployments
-             WHERE target = ? ORDER BY created_at DESC LIMIT 1"
-        )
-        .bind(target)
-        .fetch_one(&self.pool)
-        .await
-        .context("deployment not found")?;
-
-        Ok(row_to_deployment(&row))
     }
 
     async fn update_deployment_state(
@@ -948,6 +948,16 @@ impl Store for SqliteStore {
         self.get_target(target).await.map(|t| t.unwrap())
     }
 
+    async fn set_target_model(&self, target: &str, run_id: &str, loaded_at: &str) -> Result<()> {
+        sqlx::query("UPDATE targets SET current_run_id = ?, model_loaded_at = ? WHERE target = ?")
+            .bind(run_id)
+            .bind(loaded_at)
+            .bind(target)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
     async fn store_target_resources(
         &self,
         target: &str,
@@ -965,16 +975,6 @@ impl Store for SqliteStore {
         .bind(resources.max_concurrent)
         .execute(&self.pool)
         .await?;
-        Ok(())
-    }
-
-    async fn set_target_model(&self, target: &str, run_id: &str, loaded_at: &str) -> Result<()> {
-        sqlx::query("UPDATE targets SET current_run_id = ?, model_loaded_at = ? WHERE target = ?")
-            .bind(run_id)
-            .bind(loaded_at)
-            .bind(target)
-            .execute(&self.pool)
-            .await?;
         Ok(())
     }
 

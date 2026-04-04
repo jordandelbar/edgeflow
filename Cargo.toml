@@ -20,15 +20,15 @@ panic = "abort"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
-axum = { version = "0.7", features = ["multipart"] }
-tower-http = { version = "0.5", features = ["fs", "cors", "trace"] }
+axum = { version = "0.8", features = ["multipart"] }
+tower-http = { version = "0.6", features = ["fs", "cors", "trace"] }
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "migrate", "chrono"] }
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 anyhow = "1"
-thiserror = "1"
+thiserror = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 async-trait = "0.1"
-rumqttc = { version = "0.24", default-features = false }
-rumqttd = "0.19"
+rumqttc = { version = "0.25", default-features = false }
+rumqttd = "0.20"

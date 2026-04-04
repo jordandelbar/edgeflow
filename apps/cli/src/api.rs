@@ -35,9 +35,12 @@ impl Api {
     }
 
     fn get_params<T: DeserializeOwned>(&self, url: &str, params: &[(&str, &str)]) -> Result<T> {
+        let mut full_url = reqwest::Url::parse(url).context("invalid URL")?;
+        full_url
+            .query_pairs_mut()
+            .extend_pairs(params.iter().copied());
         self.client
-            .get(url)
-            .query(params)
+            .get(full_url)
             .send()?
             .error_for_status()
             .context("request failed")?

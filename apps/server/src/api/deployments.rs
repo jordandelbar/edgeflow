@@ -16,20 +16,20 @@ pub fn router() -> Router<AppState> {
         .route("/deployments", post(create_deployment))
         .route("/deployments", get(list_deployments))
         .route("/deployments/latest", get(get_latest_deployment))
-        .route("/deployments/:id", get(get_deployment))
-        .route("/deployments/:id/confirm", post(confirm_deployment))
+        .route("/deployments/{id}", get(get_deployment))
+        .route("/deployments/{id}/confirm", post(confirm_deployment))
         .route("/targets", get(list_targets))
         .route("/targets/register", post(register_target))
-        .route("/targets/:target", get(get_target).delete(teardown_target))
+        .route("/targets/{target}", get(get_target).delete(teardown_target))
         .route(
-            "/targets/:target/resources",
+            "/targets/{target}/resources",
             axum::routing::patch(update_target_resources),
         )
-        .route("/targets/:target/model", get(target_model_status))
-        .route("/targets/:target/schema", get(target_schema))
-        .route("/targets/:target/health", get(target_health))
-        .route("/targets/:target/pending", get(target_pending))
-        .route("/targets/:target/infer/playground", post(infer_playground))
+        .route("/targets/{target}/model", get(target_model_status))
+        .route("/targets/{target}/schema", get(target_schema))
+        .route("/targets/{target}/health", get(target_health))
+        .route("/targets/{target}/pending", get(target_pending))
+        .route("/targets/{target}/infer/playground", post(infer_playground))
         .route("/nodes", get(list_nodes))
 }
 

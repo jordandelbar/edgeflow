@@ -30,15 +30,14 @@ http-body-util = "0.1"
 hyper = { version = "1", features = ["http1", "server"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 ort = { version = "2.0.0-rc.12", features = ["download-binaries"], optional = true }
-tract-onnx = { version = "0.21", optional = true }
-reqwest = { version = "0.12", features = ["json"], default-features = false }
+tract-onnx = { version = "0.22", optional = true }
+reqwest = { version = "0.13", features = ["json"], default-features = false }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-wasmtime = { version = "29", features = ["component-model"] }
-wasmtime-wasi = "29"
+wasmtime = { version = "43", features = ["component-model", "anyhow"] }
+wasmtime-wasi = "43"
 rumqttc = { workspace = true }
 
 [dev-dependencies]
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { version = "0.8", features = ["html_reports"] }

@@ -22,7 +22,7 @@ pub fn router() -> Router<AppState> {
 
 /// Router for /api/2.0/mlflow-artifacts — handles artifact proxy uploads/downloads.
 pub fn mlflow_artifacts_router() -> Router<AppState> {
-    Router::new().route("/artifacts/*path", put(upload_artifact))
+    Router::new().route("/artifacts/{*path}", put(upload_artifact))
 }
 
 #[derive(Deserialize)]
@@ -79,8 +79,7 @@ async fn get_artifact(
     Ok(Response::builder()
         .status(StatusCode::OK)
         .header("content-type", "application/octet-stream")
-        .body(body)
-        .unwrap())
+        .body(body)?)
 }
 
 async fn upload_artifact(
@@ -97,7 +96,7 @@ async fn upload_artifact(
     let body_bytes = axum::body::to_bytes(request.into_body(), usize::MAX)
         .await
         .map_err(|e| ApiError::from(anyhow::anyhow!("{e}")))?;
-    let mut file = tokio::fs::File::create(&dest)
+    let mut file = File::create(&dest)
         .await
         .map_err(|e| ApiError::from(anyhow::anyhow!("{e}")))?;
     file.write_all(&body_bytes)

@@ -1,4 +1,4 @@
-// Core inference modules live in lib.rs so tests and benches can import them.
+// Core inference modules live in lib.rs, so tests and benches can import them.
 mod client;
 mod deployment;
 mod mqtt;
@@ -24,7 +24,7 @@ async fn main() -> Result<()> {
     let infer_addr = std::env::var("EDGEFLOW_INFER_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".into());
 
     let node_name = std::env::var("EDGEFLOW_NODE_NAME").ok();
-    // Pod identity: use the k8s pod name if available, fall back to target name.
+    // Pod identity: use the k8s pod name if available, fall back to the target name.
     let pod_id = std::env::var("EDGEFLOW_POD_NAME").unwrap_or_else(|_| target.clone());
 
     let pod_ip = std::env::var("EDGEFLOW_POD_IP").unwrap_or_else(|_| {
