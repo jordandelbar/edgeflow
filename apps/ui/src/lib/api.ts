@@ -117,7 +117,6 @@ export type TargetPod = {
   address: string;
   node: string | null;
   registered_at: number;
-  last_seen: number | null;
   health: TargetHealth;
 };
 
@@ -125,7 +124,6 @@ export type Target = {
   target: string;
   registered_at: number;
   node: string | null;
-  last_seen: number | null;
   health: TargetHealth;
   resources: ResourceSettings | null;
   /** k8s infrastructure settings; null when k8s is unreachable. */
@@ -147,7 +145,7 @@ export type InfraSettings = {
   memory_request: string | null;
   memory_limit:   string | null;
   replicas:       number | null;
-  spread:         boolean | null;
+  placement:      'spread' | 'pack' | null;
   node_selector:  Record<string, string> | null;
 };
 

@@ -64,22 +64,6 @@ impl EdgeflowClient {
         Ok(())
     }
 
-    /// Record a heartbeat so the server knows this pod is alive.
-    pub async fn heartbeat(&self, target: &str, pod_id: &str) -> Result<()> {
-        let url = format!(
-            "{}/api/v1/targets/{}/pods/{}/heartbeat",
-            self.server, target, pod_id
-        );
-        self.client
-            .post(&url)
-            .send()
-            .await
-            .context("failed to send heartbeat")?
-            .error_for_status()
-            .context("server rejected heartbeat")?;
-        Ok(())
-    }
-
     /// Poll for the oldest pending deployment for this target. Returns None if
     /// there is nothing to do.
     pub async fn poll_pending(

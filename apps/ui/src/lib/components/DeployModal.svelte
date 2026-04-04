@@ -1,15 +1,29 @@
 <script lang="ts">
   import { createEventDispatcher, onDestroy } from 'svelte';
-  import { deployments, nodes, type RegisteredModel, type ModelVersion, type Deployment, type ResourceSettings, type InfraSettings } from '$lib/api';
+  import { deployments, nodes, registeredModels, type RegisteredModel, type ModelVersion, type Deployment, type ResourceSettings, type InfraSettings } from '$lib/api';
   import DeployStateBadge from './DeployStateBadge.svelte';
 
   // Provide either a specific version (skips version picker) or a whole model.
+  // When both are null, a model picker is shown first.
   export let modelVersion: ModelVersion | null = null;
   export let registeredModel: RegisteredModel | null = null;
   export let knownTargets: { name: string; state: string; model_name: string | null; model_version: string | null; node: string | null; sessions: number | null }[];
 
   // Resolved once the user picks (or was given) a version.
   let resolvedVersion: ModelVersion | null = modelVersion;
+
+  // Model picker state — active when both modelVersion and registeredModel are null.
+  let modelList: RegisteredModel[] = [];
+  let loadingModels = false;
+  let pickedModel: RegisteredModel | null = registeredModel;
+
+  if (!registeredModel && !modelVersion) {
+    loadingModels = true;
+    registeredModels.list()
+      .then(res => { modelList = res.registered_models ?? []; })
+      .catch(() => {})
+      .finally(() => { loadingModels = false; });
+  }
 
   function stageBadge(stage: string) {
     return ({
@@ -36,7 +50,7 @@
     memory_request: '256Mi',
     memory_limit:   '512Mi',
     replicas:       null,
-    spread:         null,
+    placement:      null,
     node_selector:  null,
   };
 
@@ -209,9 +223,12 @@
         {#if resolvedVersion.run_id}
           <p class="text-xs text-gray-400 font-mono mt-0.5">{resolvedVersion.run_id.slice(0, 12)}</p>
         {/if}
-      {:else}
-        <p class="font-semibold text-gray-800 text-sm">{registeredModel?.name}</p>
+      {:else if pickedModel}
+        <p class="font-semibold text-gray-800 text-sm">{pickedModel.name}</p>
         <p class="text-xs text-gray-400 mt-0.5">Select a version to deploy</p>
+      {:else}
+        <p class="font-semibold text-gray-800 text-sm">New deployment</p>
+        <p class="text-xs text-gray-400 mt-0.5">Choose a model to deploy</p>
       {/if}
     </div>
     <button on:click={close} class="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
@@ -222,11 +239,37 @@
   <!-- Body -->
   <div class="px-5 py-4 space-y-3">
 
-    {#if !resolvedVersion}
+    {#if !pickedModel && !resolvedVersion}
+      <!-- ── Step 0: model picker (only when no model was pre-selected) ─ -->
+      <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Choose model</p>
+      {#if loadingModels}
+        <p class="text-xs text-gray-400 italic"><i class="fa-solid fa-spinner fa-spin mr-1"></i>Loading models…</p>
+      {:else if modelList.length === 0}
+        <p class="text-xs text-red-400"><i class="fa-solid fa-circle-xmark mr-1"></i>No registered models found.</p>
+      {:else}
+        <div class="space-y-1.5">
+          {#each modelList as m (m.name)}
+            <button
+              on:click={() => { pickedModel = m; }}
+              class="w-full flex items-center justify-between px-3 py-2.5 rounded-lg border border-gray-200 hover:border-peach hover:bg-peach-light/5 transition-colors text-left"
+            >
+              <span class="text-sm font-medium text-gray-800">{m.name}</span>
+              <span class="text-xs text-gray-400">{m.latest_versions.length} version{m.latest_versions.length !== 1 ? 's' : ''}</span>
+            </button>
+          {/each}
+        </div>
+      {/if}
+
+    {:else if pickedModel && !resolvedVersion}
       <!-- ── Step 1: version picker ─────────────────────────────────── -->
+      {#if !registeredModel}
+        <button on:click={() => { pickedModel = null; }} class="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition-colors">
+          <i class="fa-solid fa-chevron-left text-xs"></i>Back
+        </button>
+      {/if}
       <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Choose version</p>
       <div class="space-y-1.5">
-        {#each (registeredModel?.latest_versions ?? []) as mv (mv.version)}
+        {#each (pickedModel.latest_versions ?? []) as mv (mv.version)}
           {@const badge = stageBadge(mv.current_stage)}
           <button
             on:click={() => { resolvedVersion = mv; }}
@@ -245,7 +288,7 @@
         {/each}
       </div>
 
-    {:else if activeDeps.length > 0}
+    {:else if resolvedVersion && activeDeps.length > 0}
       <!-- ── Deployment results ──────────────────────────────────────── -->
       <div class="space-y-2">
         {#each activeDeps as { target, dep } (target)}
@@ -266,7 +309,7 @@
         </button>
       </div>
 
-    {:else}
+    {:else if resolvedVersion}
       <!-- ── Step 2: target picker ───────────────────────────────────── -->
       <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Deploy to target</p>
 
@@ -429,13 +472,14 @@
                 <input type="number" min="1" bind:value={infra.replicas} placeholder="1"
                   class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-peach/50 bg-white" />
               </div>
-              <div class="col-span-2 flex items-center gap-2 pt-1">
-                <input type="checkbox" id="deploy-spread" bind:checked={infra.spread}
-                  class="rounded border-gray-300 text-peach focus:ring-peach/50" />
-                <label for="deploy-spread" class="text-xs text-gray-600 cursor-pointer">
-                  Spread replicas across nodes
-                  <span class="text-gray-400">(pod anti-affinity)</span>
-                </label>
+              <div class="col-span-2">
+                <label class="block text-xs text-gray-500 mb-1">Placement</label>
+                <select bind:value={infra.placement}
+                  class="w-full border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-peach/50 bg-white">
+                  <option value={null}>None — scheduler decides</option>
+                  <option value="spread">Spread — anti-affinity (different nodes)</option>
+                  <option value="pack">Pack — affinity (same node)</option>
+                </select>
               </div>
             </div>
           {/if}

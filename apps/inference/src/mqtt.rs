@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use rumqttc::{AsyncClient, Event, MqttOptions, Packet, QoS};
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -20,12 +20,10 @@ fn parse_broker_addr(url: &str) -> (String, u16) {
 
 /// MQTT client for a single inference pod.
 ///
-/// Publishes heartbeats and subscribes to upgrade commands for its target.
-/// Returns a `mpsc::Receiver<DeployInstruction>` — each received upgrade
-/// command is forwarded there so `main` can drive `load_and_swap`.
+/// Subscribes to upgrade commands for its target and forwards them via a
+/// `mpsc::Receiver<DeployInstruction>` so `main` can drive `load_and_swap`.
 pub struct MqttPodClient {
-    client: AsyncClient,
-    heartbeat_topic: String,
+    _client: AsyncClient,
 }
 
 impl MqttPodClient {
@@ -88,35 +86,8 @@ impl MqttPodClient {
             }
         });
 
-        let heartbeat_topic = format!("edgeflow/targets/{target}/pods/{pod_id}/heartbeat");
-        tracing::info!(broker = %host, port, %heartbeat_topic, "mqtt: pod client ready");
+        tracing::info!(broker = %host, port, "mqtt: pod client ready");
 
-        Ok((
-            Self {
-                client,
-                heartbeat_topic,
-            },
-            cmd_rx,
-        ))
-    }
-
-    /// Publish a heartbeat. QoS 0 — fire and forget.
-    pub async fn beat(&self) -> Result<()> {
-        let ts = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis();
-        let payload = format!(r#"{{"ts":{ts}}}"#);
-
-        self.client
-            .publish(
-                &self.heartbeat_topic,
-                QoS::AtMostOnce,
-                false,
-                payload.as_bytes(),
-            )
-            .await
-            .context("mqtt publish failed")?;
-        Ok(())
+        Ok((Self { _client: client }, cmd_rx))
     }
 }

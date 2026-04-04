@@ -3,6 +3,7 @@ members = [
     "crates/core",
     "crates/store",
     "crates/common",
+    "crates/k8s",
     "apps/server",
     "apps/inference",
     "apps/cli",

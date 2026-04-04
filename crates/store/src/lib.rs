@@ -134,14 +134,8 @@ pub trait Store: Send + Sync {
     async fn search_model_versions(&self, filter: Option<&str>) -> Result<Vec<ModelVersion>>;
 
     // Targets
-    async fn register_pod(
-        &self,
-        pod_id: &str,
-        target: &str,
-        address: &str,
-        node: Option<&str>,
-    ) -> Result<Target>;
-    async fn heartbeat_pod(&self, pod_id: &str) -> Result<()>;
+    /// Ensure a target record exists (creates it if new). Used when a pod registers.
+    async fn ensure_target(&self, target: &str) -> Result<Target>;
     async fn set_target_model(&self, target: &str, run_id: &str, loaded_at: &str) -> Result<()>;
     async fn store_target_resources(
         &self,
@@ -150,10 +144,5 @@ pub trait Store: Send + Sync {
     ) -> Result<()>;
     async fn get_target(&self, target: &str) -> Result<Option<Target>>;
     async fn list_targets(&self) -> Result<Vec<Target>>;
-    /// Remove pod records for `target` whose pod_id is not in `keep_pod_ids`.
-    /// No-op when `keep_pod_ids` is empty (avoids wiping all pods if k8s is unreachable).
-    async fn prune_pods(&self, target: &str, keep_pod_ids: &[String]) -> Result<()>;
-    /// Remove all pod records for `target`. Use only when k8s confirms no pods exist.
-    async fn prune_all_pods(&self, target: &str) -> Result<()>;
     async fn delete_target(&self, target: &str) -> Result<()>;
 }

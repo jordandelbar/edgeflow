@@ -1,4 +1,3 @@
-use super::fmt_ts;
 use crate::api::Api;
 use anyhow::Result;
 use clap::Subcommand;
@@ -37,9 +36,9 @@ pub enum Cmd {
         /// Number of pod replicas
         #[arg(long)]
         replicas: Option<i64>,
-        /// Spread replicas across nodes using pod anti-affinity
-        #[arg(long)]
-        spread: Option<bool>,
+        /// Pod placement strategy: spread (anti-affinity), pack (affinity), or none
+        #[arg(long, value_name = "STRATEGY")]
+        placement: Option<String>,
     },
     /// Tear down an inference target (removes pod and deployment record)
     Teardown {
@@ -63,7 +62,7 @@ pub fn run(cmd: Cmd, api: &Api) -> Result<()> {
             memory_request,
             memory_limit,
             replicas,
-            spread,
+            placement,
         } => set_resources(
             api,
             &target,
@@ -73,7 +72,7 @@ pub fn run(cmd: Cmd, api: &Api) -> Result<()> {
             memory_request.as_deref(),
             memory_limit.as_deref(),
             replicas,
-            spread,
+            placement.as_deref(),
         ),
         Cmd::Teardown { target, yes } => teardown(api, &target, yes),
     }
@@ -99,19 +98,13 @@ fn list(api: &Api, health_filter: Option<&str>) -> Result<()> {
 
     let mut table = Table::new();
     table.load_preset(UTF8_BORDERS_ONLY);
-    table.set_header(["Target", "Health", "Node", "Last seen"]);
+    table.set_header(["Target", "Health", "Node"]);
 
     for t in &targets {
-        let last_seen = t["last_seen"]
-            .as_i64()
-            .map(|ms| fmt_ts(ms))
-            .unwrap_or_else(|| "never".into());
-
         table.add_row([
             t["target"].as_str().unwrap_or("—"),
             t["health"].as_str().unwrap_or("unknown"),
             t["node"].as_str().unwrap_or("—"),
-            &last_seen,
         ]);
     }
 
@@ -195,8 +188,13 @@ fn inspect(api: &Api, target: &str) -> Result<()> {
                 .map(|v| v.to_string())
                 .unwrap_or_else(|| "—".into())
         );
-        if let Some(true) = inf["spread"].as_bool() {
-            println!("  Spread:         yes (anti-affinity across nodes)");
+        if let Some(p) = inf["placement"].as_str() {
+            let desc = match p {
+                "spread" => "spread (anti-affinity, different nodes)",
+                "pack" => "pack (affinity, same node)",
+                other => other,
+            };
+            println!("  Placement:      {desc}");
         }
         if let Some(ns) = inf["node_selector"].as_object() {
             let pairs: Vec<String> = ns
@@ -219,7 +217,7 @@ fn set_resources(
     memory_request: Option<&str>,
     memory_limit: Option<&str>,
     replicas: Option<i64>,
-    spread: Option<bool>,
+    placement: Option<&str>,
 ) -> Result<()> {
     let res = api.update_target_resources(
         target,
@@ -229,7 +227,7 @@ fn set_resources(
         memory_request,
         memory_limit,
         replicas,
-        spread,
+        placement,
     )?;
     let t = &res["target"];
     let r = &t["resources"];

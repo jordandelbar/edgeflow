@@ -71,18 +71,6 @@ CREATE TABLE IF NOT EXISTS targets (
     model_loaded_at TEXT
 );
 
--- One row per running inference pod.
--- address, node, and last_seen are per-pod; target-level metadata stays in targets.
-CREATE TABLE IF NOT EXISTS target_pods (
-    pod_id        TEXT    PRIMARY KEY,
-    target        TEXT    NOT NULL REFERENCES targets(target) ON DELETE CASCADE,
-    address       TEXT    NOT NULL,
-    node          TEXT,
-    registered_at INTEGER NOT NULL,
-    last_seen     INTEGER
-);
-
-CREATE INDEX IF NOT EXISTS idx_target_pods_target ON target_pods(target);
 
 CREATE TABLE IF NOT EXISTS registered_models (
     name              TEXT    PRIMARY KEY,

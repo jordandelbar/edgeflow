@@ -57,6 +57,16 @@ pub struct ResourceSettings {
     pub max_concurrent: Option<i64>,
 }
 
+/// Pod placement strategy. `None` means no affinity rule (scheduler decides freely).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Placement {
+    /// Anti-affinity: prefer scheduling each replica on a different node.
+    Spread,
+    /// Affinity: prefer scheduling all replicas on the same node.
+    Pack,
+}
+
 /// k8s-owned infrastructure settings. Never persisted by edgeflow;
 /// read from / written to the k8s Deployment spec directly.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -66,8 +76,9 @@ pub struct InfraSettings {
     pub memory_limit: Option<String>,
     /// Number of inference pod replicas in the k8s Deployment.
     pub replicas: Option<i32>,
-    /// If true, add pod anti-affinity so replicas spread across nodes.
-    pub spread: Option<bool>,
+    /// Pod placement strategy. `None` means no affinity rule (scheduler decides).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub placement: Option<Placement>,
     /// k8s nodeSelector labels — scheduler picks any node matching all labels.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub node_selector: Option<std::collections::BTreeMap<String, String>>,
@@ -76,51 +87,24 @@ pub struct InfraSettings {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TargetHealth {
-    /// No heartbeat ever recorded.
+    /// k8s status unknown (cluster unreachable or pod not yet scheduled).
     Unknown,
-    /// Last heartbeat within 2× the 30 s interval.
+    /// Pod is Running and its readiness probe is passing.
     Healthy,
-    /// Heartbeat overdue but recent enough that it may recover (60 s – 5 min).
+    /// Pod is Running but not yet ready (starting up or failing probe).
     Stale,
-    /// No heartbeat for > 5 min — pod is almost certainly down.
+    /// Pod is in Failed or Unknown phase.
     Unhealthy,
 }
 
-impl TargetHealth {
-    pub fn from_last_seen(last_seen: Option<i64>) -> Self {
-        let Some(ts) = last_seen else {
-            return Self::Unknown;
-        };
-        let age_secs = (chrono::Utc::now().timestamp_millis() - ts).max(0) / 1000;
-        match age_secs {
-            0..=59 => Self::Healthy,
-            60..=299 => Self::Stale,
-            _ => Self::Unhealthy,
-        }
-    }
-
-    /// Best health across a set of pods (Healthy > Stale > Unhealthy > Unknown).
-    pub fn aggregate(pods: &[TargetPod]) -> Self {
-        pods.iter()
-            .map(|p| p.health.clone())
-            .max_by_key(|h| match h {
-                Self::Healthy => 3,
-                Self::Stale => 2,
-                Self::Unhealthy => 1,
-                Self::Unknown => 0,
-            })
-            .unwrap_or(Self::Unknown)
-    }
-}
-
-/// A single running inference pod registered with the server.
+/// A single running inference pod, populated from k8s pod status.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TargetPod {
     pub pod_id: String,
+    /// `http://{pod_ip}:8080` derived from k8s pod status.
     pub address: String,
     pub node: Option<String>,
     pub registered_at: i64,
-    pub last_seen: Option<i64>,
     pub health: TargetHealth,
 }
 
@@ -137,8 +121,8 @@ pub struct Target {
     pub current_run_id: Option<String>,
     pub model_loaded_at: Option<String>,
     pub pods: Vec<TargetPod>,
-    // Aggregated from pods for API backwards compatibility.
+    /// Best health across all pods; Unknown when k8s is unreachable.
     pub health: TargetHealth,
+    /// Convenience alias: node of the first pod, if any.
     pub node: Option<String>,
-    pub last_seen: Option<i64>,
 }

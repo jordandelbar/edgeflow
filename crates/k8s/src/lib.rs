@@ -1,43 +1,68 @@
 use std::collections::BTreeMap;
 
-use edgeflow_core::{InfraSettings, ResourceSettings};
+use edgeflow_core::{InfraSettings, Placement, ResourceSettings, TargetHealth, TargetPod};
 use k8s_openapi::api::apps::v1::{Deployment, DeploymentSpec};
 use k8s_openapi::api::core::v1::{
     Affinity, Container, ContainerPort, EnvVar, EnvVarSource, HTTPGetAction, ObjectFieldSelector,
-    PodAffinityTerm, PodAntiAffinity, PodSpec, PodTemplateSpec, Probe, ResourceRequirements,
-    WeightedPodAffinityTerm,
+    PodAffinity, PodAffinityTerm, PodAntiAffinity, PodSpec, PodTemplateSpec, Probe,
+    ResourceRequirements, WeightedPodAffinityTerm,
 };
 use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::{LabelSelector, ObjectMeta};
 use k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
 use kube::api::{Api, DeleteParams, ListParams, PostParams};
 
-/// Build a pod anti-affinity rule that prefers spreading replicas across nodes.
-fn spread_affinity() -> Affinity {
+fn label_selector(target: &str) -> LabelSelector {
+    LabelSelector {
+        match_labels: Some([("edgeflow-target".to_string(), target.to_string())].into()),
+        ..Default::default()
+    }
+}
+
+fn affinity_term(target: &str) -> PodAffinityTerm {
+    PodAffinityTerm {
+        label_selector: Some(label_selector(target)),
+        topology_key: "kubernetes.io/hostname".to_string(),
+        ..Default::default()
+    }
+}
+
+/// Anti-affinity: prefer scheduling each replica on a different node.
+fn spread_affinity(target: &str) -> Affinity {
     Affinity {
         pod_anti_affinity: Some(PodAntiAffinity {
             preferred_during_scheduling_ignored_during_execution: Some(vec![
                 WeightedPodAffinityTerm {
                     weight: 100,
-                    pod_affinity_term: PodAffinityTerm {
-                        label_selector: Some(LabelSelector {
-                            match_labels: Some(
-                                [(
-                                    "app.kubernetes.io/name".to_string(),
-                                    "edgeflow-inference".to_string(),
-                                )]
-                                .into(),
-                            ),
-                            ..Default::default()
-                        }),
-                        topology_key: "kubernetes.io/hostname".to_string(),
-                        ..Default::default()
-                    },
+                    pod_affinity_term: affinity_term(target),
                 },
             ]),
             ..Default::default()
         }),
         ..Default::default()
+    }
+}
+
+/// Affinity: prefer scheduling all replicas on the same node.
+fn pack_affinity(target: &str) -> Affinity {
+    Affinity {
+        pod_affinity: Some(PodAffinity {
+            preferred_during_scheduling_ignored_during_execution: Some(vec![
+                WeightedPodAffinityTerm {
+                    weight: 100,
+                    pod_affinity_term: affinity_term(target),
+                },
+            ]),
+            ..Default::default()
+        }),
+        ..Default::default()
+    }
+}
+
+fn placement_affinity(placement: &Placement, target: &str) -> Affinity {
+    match placement {
+        Placement::Spread => spread_affinity(target),
+        Placement::Pack => pack_affinity(target),
     }
 }
 
@@ -104,7 +129,7 @@ pub fn resolve_infra(infra: &InfraSettings) -> InfraSettings {
         memory_request: Some(memory_request),
         memory_limit: Some(memory_limit),
         replicas: infra.replicas,
-        spread: infra.spread,
+        placement: infra.placement.clone(),
         node_selector: infra.node_selector.clone(),
     }
 }
@@ -113,10 +138,15 @@ pub fn resolve_infra(infra: &InfraSettings) -> InfraSettings {
 /// Returns `None` when k8s is unreachable or the Deployment doesn't exist.
 pub async fn get_inference_pod_infra(target: &str) -> Option<InfraSettings> {
     let namespace = std::env::var("EDGEFLOW_NAMESPACE").unwrap_or_else(|_| "default".into());
-    let client = kube::Client::try_default().await.ok()?;
+    let client = kube::Client::try_default()
+        .await
+        .map_err(|e| tracing::warn!(error = %e, "k8s client unavailable (get_inference_pod_infra)"))
+        .ok()?;
     let api: kube::api::Api<Deployment> = kube::api::Api::namespaced(client, &namespace);
     let name = k8s_name(target);
-    let dep = api.get(&name).await.ok()?;
+    let dep = api.get(&name).await
+        .map_err(|e| tracing::warn!(target = %target, error = %e, "failed to get inference deployment infra"))
+        .ok()?;
     let spec = dep.spec?;
 
     let replicas = spec.replicas;
@@ -148,15 +178,32 @@ pub async fn get_inference_pod_infra(target: &str) -> Option<InfraSettings> {
         .node_selector
         .map(|m| m.into_iter().collect::<std::collections::BTreeMap<_, _>>());
 
-    let spread = pod_spec.affinity.as_ref().map(|a| {
-        a.pod_anti_affinity
+    let placement = pod_spec.affinity.as_ref().and_then(|a| {
+        let has_anti = a
+            .pod_anti_affinity
             .as_ref()
             .and_then(|pa| {
                 pa.preferred_during_scheduling_ignored_during_execution
                     .as_ref()
             })
             .map(|v| !v.is_empty())
-            .unwrap_or(false)
+            .unwrap_or(false);
+        let has_pack = a
+            .pod_affinity
+            .as_ref()
+            .and_then(|pa| {
+                pa.preferred_during_scheduling_ignored_during_execution
+                    .as_ref()
+            })
+            .map(|v| !v.is_empty())
+            .unwrap_or(false);
+        if has_anti {
+            Some(Placement::Spread)
+        } else if has_pack {
+            Some(Placement::Pack)
+        } else {
+            None
+        }
     });
 
     Some(InfraSettings {
@@ -164,7 +211,7 @@ pub async fn get_inference_pod_infra(target: &str) -> Option<InfraSettings> {
         memory_request,
         memory_limit,
         replicas,
-        spread,
+        placement,
         node_selector,
     })
 }
@@ -242,7 +289,10 @@ pub async fn create_inference_pod(
                         .node_selector
                         .clone()
                         .map(|m| m.into_iter().collect::<BTreeMap<String, String>>()),
-                    affinity: resolved_infra.spread.unwrap_or(false).then(spread_affinity),
+                    affinity: resolved_infra
+                        .placement
+                        .as_ref()
+                        .map(|p| placement_affinity(p, target)),
                     containers: vec![Container {
                         name: "edgeflow-inference".to_string(),
                         image: Some(image.clone()),
@@ -489,9 +539,12 @@ pub async fn patch_inference_pod_resources(
                 if let Some(ns) = inf.node_selector.clone() {
                     pod_spec.node_selector = Some(ns.into_iter().collect());
                 }
-                if let Some(s) = inf.spread {
-                    pod_spec.affinity = s.then(spread_affinity);
-                }
+                // Always sync placement when infra is explicitly patched.
+                // None clears any existing affinity rule; Some(...) sets it.
+                pod_spec.affinity = inf
+                    .placement
+                    .as_ref()
+                    .map(|p| placement_affinity(p, target));
             }
         }
     }
@@ -543,43 +596,131 @@ pub async fn delete_inference_pod(target: &str) {
     }
 }
 
-/// List the names of currently running pods for `target` by querying the
-/// `edgeflow-target` pod label. Returns `None` when k8s is unreachable.
-pub async fn list_running_pod_names(target: &str) -> Option<Vec<String>> {
+/// Derive pod health from k8s pod status.
+/// `Running + Ready=True` → Healthy; `Running + Ready=False` → Stale; otherwise → Unhealthy.
+fn health_from_pod(pod: &k8s_openapi::api::core::v1::Pod) -> TargetHealth {
+    let phase = pod
+        .status
+        .as_ref()
+        .and_then(|s| s.phase.as_deref())
+        .unwrap_or("Unknown");
+    let ready = pod
+        .status
+        .as_ref()
+        .and_then(|s| s.conditions.as_ref())
+        .and_then(|cs| cs.iter().find(|c| c.type_ == "Ready"))
+        .map(|c| c.status == "True")
+        .unwrap_or(false);
+    match phase {
+        "Running" if ready => TargetHealth::Healthy,
+        "Running" => TargetHealth::Stale,
+        "Failed" | "Unknown" => TargetHealth::Unhealthy,
+        _ => TargetHealth::Stale, // Pending or other transient states
+    }
+}
+
+/// List running pods for `target`, populated with k8s-derived address/node/health.
+/// Returns `None` when k8s is unreachable.
+pub async fn list_running_pods(target: &str) -> Option<Vec<TargetPod>> {
     let namespace = std::env::var("EDGEFLOW_NAMESPACE").unwrap_or_else(|_| "default".into());
-    let client = kube::Client::try_default().await.ok()?;
+    let client = kube::Client::try_default()
+        .await
+        .map_err(|e| tracing::warn!(error = %e, "k8s client unavailable (list_running_pods)"))
+        .ok()?;
     let api: kube::api::Api<k8s_openapi::api::core::v1::Pod> =
         kube::api::Api::namespaced(client, &namespace);
     let lp = kube::api::ListParams::default().labels(&format!("edgeflow-target={target}"));
-    let pods = api.list(&lp).await.ok()?;
+    let pods = api
+        .list(&lp)
+        .await
+        .map_err(|e| tracing::warn!(target = %target, error = %e, "failed to list pods"))
+        .ok()?;
     Some(
         pods.items
             .into_iter()
-            .filter_map(|p| p.metadata.name)
+            .filter_map(|p| {
+                let pod_id = p.metadata.name.clone()?;
+                // pod_ip may be absent while the pod is starting; include it anyway
+                // with an empty address so it isn't silently pruned from the store.
+                let address = p
+                    .status
+                    .as_ref()
+                    .and_then(|s| s.pod_ip.as_ref())
+                    .map(|ip| format!("http://{}:8080", ip))
+                    .unwrap_or_default();
+                let node = p.spec.as_ref().and_then(|s| s.node_name.clone());
+                let registered_at = p
+                    .metadata
+                    .creation_timestamp
+                    .as_ref()
+                    .map(|t| t.0.timestamp_millis())
+                    .unwrap_or(0);
+                let health = health_from_pod(&p);
+                Some(TargetPod {
+                    pod_id,
+                    address,
+                    node,
+                    registered_at,
+                    health,
+                })
+            })
             .collect(),
     )
 }
 
-/// List running pod names for ALL edgeflow targets in one k8s call.
-/// Returns a map of `target_name → [pod_id, ...]`, or `None` when k8s is unreachable.
-pub async fn list_all_running_pod_names() -> Option<std::collections::HashMap<String, Vec<String>>>
-{
+/// List running pods for ALL edgeflow targets in one k8s call.
+/// Returns a map of `target_name → Vec<TargetPod>`, or `None` when k8s is unreachable.
+pub async fn list_all_running_pods() -> Option<std::collections::HashMap<String, Vec<TargetPod>>> {
     let namespace = std::env::var("EDGEFLOW_NAMESPACE").unwrap_or_else(|_| "default".into());
-    let client = kube::Client::try_default().await.ok()?;
+    let client = kube::Client::try_default()
+        .await
+        .map_err(|e| tracing::warn!(error = %e, "k8s client unavailable (list_all_running_pods)"))
+        .ok()?;
     let api: kube::api::Api<k8s_openapi::api::core::v1::Pod> =
         kube::api::Api::namespaced(client, &namespace);
     let lp = kube::api::ListParams::default().labels("edgeflow-target");
-    let pods = api.list(&lp).await.ok()?;
-    let mut map: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+    let pods = api
+        .list(&lp)
+        .await
+        .map_err(|e| tracing::warn!(error = %e, "failed to list all pods"))
+        .ok()?;
+    let mut map: std::collections::HashMap<String, Vec<TargetPod>> =
+        std::collections::HashMap::new();
     for pod in pods.items {
-        let name = pod.metadata.name?;
-        let target = pod
+        let Some(pod_id) = pod.metadata.name.clone() else {
+            continue;
+        };
+        let Some(target_name) = pod
             .metadata
             .labels
             .as_ref()
             .and_then(|l| l.get("edgeflow-target"))
-            .cloned()?;
-        map.entry(target).or_default().push(name);
+            .cloned()
+        else {
+            continue;
+        };
+        // pod_ip may be absent while the pod is starting; include it anyway.
+        let address = pod
+            .status
+            .as_ref()
+            .and_then(|s| s.pod_ip.as_ref())
+            .map(|ip| format!("http://{}:8080", ip))
+            .unwrap_or_default();
+        let node = pod.spec.as_ref().and_then(|s| s.node_name.clone());
+        let registered_at = pod
+            .metadata
+            .creation_timestamp
+            .as_ref()
+            .map(|t| t.0.timestamp_millis())
+            .unwrap_or(0);
+        let health = health_from_pod(&pod);
+        map.entry(target_name).or_default().push(TargetPod {
+            pod_id,
+            address,
+            node,
+            registered_at,
+            health,
+        });
     }
     Some(map)
 }
@@ -589,7 +730,10 @@ pub async fn list_all_running_pod_names() -> Option<std::collections::HashMap<St
 pub async fn list_nodes() -> Vec<String> {
     let client = match kube::Client::try_default().await {
         Ok(c) => c,
-        Err(_) => return vec![],
+        Err(e) => {
+            tracing::warn!(error = %e, "k8s client unavailable (list_nodes)");
+            return vec![];
+        }
     };
     let api: Api<k8s_openapi::api::core::v1::Node> = Api::all(client);
     match api.list(&ListParams::default()).await {

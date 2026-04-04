@@ -1,5 +1,4 @@
 mod api;
-mod k8s;
 mod mqtt;
 mod state;
 mod target_client;
@@ -96,13 +95,6 @@ async fn main() -> anyhow::Result<()> {
 
     let mqtt_publisher = mqtt::MqttPublisher::new(mqtt_url.as_deref(), mqtt_port);
     state.mqtt_publisher = Some(mqtt_publisher);
-
-    let mqtt_store = state.store.clone();
-    let mqtt_cancel = cancel.clone();
-    let sub_url = mqtt_url.clone();
-    tokio::spawn(async move {
-        mqtt::subscribe_heartbeats(sub_url, mqtt_port, mqtt_store, mqtt_cancel).await;
-    });
 
     let static_dir = std::env::var("EDGEFLOW_STATIC_DIR").unwrap_or_else(|_| "./static".into());
 

@@ -87,47 +87,32 @@ async fn main() -> Result<()> {
     .await;
     tracing::info!("registered — polling for deployments");
 
-    // If EDGEFLOW_MQTT_URL is set, connect for heartbeats + upgrade commands.
-    let (mqtt_client, mut mqtt_commands): (
-        Option<mqtt::MqttPodClient>,
-        Option<tokio::sync::mpsc::Receiver<deployment::DeployInstruction>>,
-    ) = match std::env::var("EDGEFLOW_MQTT_URL").ok() {
-        Some(url) => match mqtt::MqttPodClient::new(&url, &target, &pod_id) {
-            Ok((c, rx)) => (Some(c), Some(rx)),
-            Err(e) => {
-                tracing::warn!("mqtt init failed: {e}");
-                (None, None)
-            }
-        },
-        None => (None, None),
-    };
+    // If EDGEFLOW_MQTT_URL is set, connect for upgrade commands.
+    let mut mqtt_commands: Option<tokio::sync::mpsc::Receiver<deployment::DeployInstruction>> =
+        match std::env::var("EDGEFLOW_MQTT_URL").ok() {
+            Some(url) => match mqtt::MqttPodClient::new(&url, &target, &pod_id) {
+                Ok((_client, rx)) => Some(rx),
+                Err(e) => {
+                    tracing::warn!("mqtt init failed: {e}");
+                    None
+                }
+            },
+            None => None,
+        };
 
-    // Background task: heartbeat every 30 s, poll for pending deployments every 5 s,
-    // and process upgrade commands received via MQTT.
+    // Background task: poll for pending deployments every 5 s and process
+    // upgrade commands received via MQTT.
     let poll_active = state.active.clone();
     let poll_client = client.clone();
     let poll_target = target.clone();
-    let poll_pod_id = pod_id.clone();
     let poll_cancel = cancel.clone();
     let poll_sessions = state.sessions;
     tokio::spawn(async move {
-        let mut heartbeat = tokio::time::interval(Duration::from_secs(30));
         let mut poll = tokio::time::interval(Duration::from_secs(5));
-        heartbeat.tick().await;
 
         loop {
             tokio::select! {
                 _ = poll_cancel.cancelled() => break,
-
-                _ = heartbeat.tick() => {
-                    if let Some(ref hb) = mqtt_client {
-                        if let Err(e) = hb.beat().await {
-                            tracing::warn!("mqtt heartbeat failed: {e}");
-                        }
-                    } else if let Err(e) = poll_client.heartbeat(&poll_target, &poll_pod_id).await {
-                        tracing::warn!("heartbeat failed: {e}");
-                    }
-                }
 
                 // Upgrade command received via MQTT — act immediately.
                 Some(instr) = async {

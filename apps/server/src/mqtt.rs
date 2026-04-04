@@ -2,11 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use rumqttc::{AsyncClient, Event, MqttOptions, Packet, QoS};
-use tokio_util::sync::CancellationToken;
-
-use edgeflow_store::sqlite::SqliteStore;
-use edgeflow_store::Store as _;
+use rumqttc::{AsyncClient, MqttOptions, QoS};
 
 // ── Publisher ─────────────────────────────────────────────────────────────────
 
@@ -127,73 +123,4 @@ dynamic_filters = false
         .context("failed to spawn rumqttd thread")?;
 
     Ok(())
-}
-
-/// Subscribe to `edgeflow/targets/+/heartbeat` and record each heartbeat in
-/// the store.  Reconnects automatically on broker restarts or network errors.
-///
-/// `broker_url` — if `Some`, connect to an external broker (e.g. Mosquitto);
-/// if `None`, connect to the embedded broker on localhost.
-pub async fn subscribe_heartbeats(
-    broker_url: Option<String>,
-    mqtt_port: u16,
-    store: Arc<SqliteStore>,
-    cancel: CancellationToken,
-) {
-    let (host, port) = broker_url
-        .as_deref()
-        .map(parse_broker_addr)
-        .unwrap_or_else(|| ("localhost".to_string(), mqtt_port));
-
-    let mut options = MqttOptions::new("edgeflow-server-sub", &host, port);
-    options.set_keep_alive(Duration::from_secs(30));
-
-    loop {
-        if cancel.is_cancelled() {
-            return;
-        }
-
-        let (client, mut eventloop) = AsyncClient::new(options.clone(), 64);
-
-        // Queue the SUBSCRIBE — sent once the eventloop connects.
-        if let Err(e) = client
-            .subscribe("edgeflow/targets/+/pods/+/heartbeat", QoS::AtMostOnce)
-            .await
-        {
-            tracing::warn!("mqtt: failed to queue subscribe: {e}; retrying in 5s");
-            tokio::time::sleep(Duration::from_secs(5)).await;
-            continue;
-        }
-
-        tracing::info!(broker = %host, port, "mqtt: subscribing to heartbeats");
-
-        loop {
-            tokio::select! {
-                _ = cancel.cancelled() => return,
-
-                event = eventloop.poll() => {
-                    match event {
-                        Ok(Event::Incoming(Packet::Publish(p))) => {
-                            // Topic: "edgeflow/targets/{target}/pods/{pod_id}/heartbeat"
-                            let parts: Vec<&str> = p.topic.splitn(6, '/').collect();
-                            if parts.len() == 6 {
-                                let pod_id = parts[4];
-                                if let Err(e) = store.heartbeat_pod(pod_id).await {
-                                    tracing::warn!(pod_id, "mqtt: heartbeat store error: {e}");
-                                } else {
-                                    tracing::debug!(pod_id, "mqtt: heartbeat recorded");
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            tracing::warn!("mqtt: connection error: {e}; reconnecting in 5s");
-                            tokio::time::sleep(Duration::from_secs(5)).await;
-                            break; // recreate client + eventloop
-                        }
-                        _ => {}
-                    }
-                }
-            }
-        }
-    }
 }

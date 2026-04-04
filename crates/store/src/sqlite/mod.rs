@@ -2,7 +2,6 @@ use crate::Store;
 use anyhow::{Context, Result};
 use edgeflow_core::*;
 use sqlx::{Row, SqlitePool};
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 /// Parse `tag.\`key\` = 'value'` or `tag.'key' = 'value'` into `(key, value)`.
@@ -634,9 +633,11 @@ impl Store for SqliteStore {
     }
 
     async fn get_pending_deployment_for_target(&self, target: &str) -> Result<Option<Deployment>> {
+        // Include 'upgrading' so the pod poll loop can pick up MQTT-dispatched
+        // upgrades as a fallback when the pod has no MQTT connection.
         let row = sqlx::query(
             "SELECT deployment_id, target, run_id, model_name, model_version, created_at, state FROM deployments
-             WHERE target = ? AND state = 'pending' ORDER BY created_at DESC LIMIT 1"
+             WHERE target = ? AND state IN ('pending', 'upgrading') ORDER BY created_at DESC LIMIT 1"
         )
         .bind(target)
         .fetch_optional(&self.pool)
@@ -934,16 +935,8 @@ impl Store for SqliteStore {
 
     // ── Targets ───────────────────────────────────────────────────────────────
 
-    async fn register_pod(
-        &self,
-        pod_id: &str,
-        target: &str,
-        address: &str,
-        node: Option<&str>,
-    ) -> Result<Target> {
+    async fn ensure_target(&self, target: &str) -> Result<Target> {
         let now = chrono::Utc::now().timestamp_millis();
-
-        // Ensure the target record exists; do not overwrite registered_at if already set.
         sqlx::query(
             "INSERT INTO targets (target, registered_at) VALUES (?, ?)
              ON CONFLICT(target) DO NOTHING",
@@ -952,24 +945,6 @@ impl Store for SqliteStore {
         .bind(now)
         .execute(&self.pool)
         .await?;
-
-        // Upsert the pod record. Node is backfilled if currently NULL.
-        sqlx::query(
-            "INSERT INTO target_pods (pod_id, target, address, node, registered_at)
-             VALUES (?, ?, ?, ?, ?)
-             ON CONFLICT(pod_id) DO UPDATE SET
-               address       = excluded.address,
-               node          = COALESCE(target_pods.node, excluded.node),
-               registered_at = excluded.registered_at",
-        )
-        .bind(pod_id)
-        .bind(target)
-        .bind(address)
-        .bind(node)
-        .bind(now)
-        .execute(&self.pool)
-        .await?;
-
         self.get_target(target).await.map(|t| t.unwrap())
     }
 
@@ -990,16 +965,6 @@ impl Store for SqliteStore {
         .bind(resources.max_concurrent)
         .execute(&self.pool)
         .await?;
-        Ok(())
-    }
-
-    async fn heartbeat_pod(&self, pod_id: &str) -> Result<()> {
-        let now = chrono::Utc::now().timestamp_millis();
-        sqlx::query("UPDATE target_pods SET last_seen = ? WHERE pod_id = ?")
-            .bind(now)
-            .bind(pod_id)
-            .execute(&self.pool)
-            .await?;
         Ok(())
     }
 
@@ -1025,19 +990,6 @@ impl Store for SqliteStore {
 
         let Some(r) = row else { return Ok(None) };
 
-        let pod_rows = sqlx::query(
-            "SELECT pod_id, address, node, registered_at, last_seen
-             FROM target_pods WHERE target = ? ORDER BY registered_at ASC",
-        )
-        .bind(target)
-        .fetch_all(&self.pool)
-        .await?;
-
-        let pods = rows_to_pods(pod_rows);
-        let health = TargetHealth::aggregate(&pods);
-        let node = pods.first().and_then(|p| p.node.clone());
-        let last_seen = pods.iter().filter_map(|p| p.last_seen).max();
-
         Ok(Some(Target {
             target: r.get("target"),
             registered_at: r.get("registered_at"),
@@ -1045,15 +997,14 @@ impl Store for SqliteStore {
             infra: None,
             current_run_id: r.get("current_run_id"),
             model_loaded_at: r.get("model_loaded_at"),
-            pods,
-            health,
-            node,
-            last_seen,
+            pods: vec![],
+            health: TargetHealth::Unknown,
+            node: None,
         }))
     }
 
     async fn list_targets(&self) -> Result<Vec<Target>> {
-        let target_rows = sqlx::query(
+        let rows = sqlx::query(
             "SELECT target, registered_at, sessions, max_concurrent,
                     current_run_id, model_loaded_at
              FROM targets ORDER BY registered_at DESC",
@@ -1061,84 +1012,23 @@ impl Store for SqliteStore {
         .fetch_all(&self.pool)
         .await?;
 
-        let pod_rows = sqlx::query(
-            "SELECT pod_id, target, address, node, registered_at, last_seen
-             FROM target_pods ORDER BY registered_at ASC",
-        )
-        .fetch_all(&self.pool)
-        .await?;
-
-        // Group pods by target.
-        let mut pods_by_target: HashMap<String, Vec<TargetPod>> = HashMap::new();
-        for r in pod_rows {
-            let target_name: String = r.get("target");
-            let last_seen: Option<i64> = r.get("last_seen");
-            let pod = TargetPod {
-                pod_id: r.get("pod_id"),
-                address: r.get("address"),
-                node: r.get("node"),
-                registered_at: r.get("registered_at"),
-                last_seen,
-                health: TargetHealth::from_last_seen(last_seen),
-            };
-            pods_by_target.entry(target_name).or_default().push(pod);
-        }
-
-        Ok(target_rows
+        Ok(rows
             .iter()
-            .map(|r| {
-                let target_name: String = r.get("target");
-                let pods = pods_by_target.remove(&target_name).unwrap_or_default();
-                let health = TargetHealth::aggregate(&pods);
-                let node = pods.first().and_then(|p| p.node.clone());
-                let last_seen = pods.iter().filter_map(|p| p.last_seen).max();
-                Target {
-                    target: target_name,
-                    registered_at: r.get("registered_at"),
-                    resources: row_to_resource_settings(r),
-                    infra: None,
-                    current_run_id: r.get("current_run_id"),
-                    model_loaded_at: r.get("model_loaded_at"),
-                    pods,
-                    health,
-                    node,
-                    last_seen,
-                }
+            .map(|r| Target {
+                target: r.get("target"),
+                registered_at: r.get("registered_at"),
+                resources: row_to_resource_settings(r),
+                infra: None,
+                current_run_id: r.get("current_run_id"),
+                model_loaded_at: r.get("model_loaded_at"),
+                pods: vec![],
+                health: TargetHealth::Unknown,
+                node: None,
             })
             .collect())
     }
 
-    async fn prune_pods(&self, target: &str, keep_pod_ids: &[String]) -> Result<()> {
-        if keep_pod_ids.is_empty() {
-            return Ok(());
-        }
-        // Build a parameterised NOT IN clause.
-        let placeholders = keep_pod_ids
-            .iter()
-            .enumerate()
-            .map(|(i, _)| format!("?{}", i + 2))
-            .collect::<Vec<_>>()
-            .join(", ");
-        let sql =
-            format!("DELETE FROM target_pods WHERE target = ?1 AND pod_id NOT IN ({placeholders})");
-        let mut q = sqlx::query(&sql).bind(target);
-        for id in keep_pod_ids {
-            q = q.bind(id);
-        }
-        q.execute(&self.pool).await?;
-        Ok(())
-    }
-
-    async fn prune_all_pods(&self, target: &str) -> Result<()> {
-        sqlx::query("DELETE FROM target_pods WHERE target = ?")
-            .bind(target)
-            .execute(&self.pool)
-            .await?;
-        Ok(())
-    }
-
     async fn delete_target(&self, target: &str) -> Result<()> {
-        // Supersede any active deployments first so history is preserved.
         sqlx::query(
             "UPDATE deployments SET state = 'superseded'
              WHERE target = ? AND state NOT IN ('superseded', 'failed')",
@@ -1146,13 +1036,10 @@ impl Store for SqliteStore {
         .bind(target)
         .execute(&self.pool)
         .await?;
-
-        // ON DELETE CASCADE in target_pods handles pod row cleanup.
         sqlx::query("DELETE FROM targets WHERE target = ?")
             .bind(target)
             .execute(&self.pool)
             .await?;
-
         Ok(())
     }
 }
@@ -1162,20 +1049,4 @@ fn row_to_resource_settings(r: &sqlx::sqlite::SqliteRow) -> ResourceSettings {
         sessions: r.get("sessions"),
         max_concurrent: r.get("max_concurrent"),
     }
-}
-
-fn rows_to_pods(rows: Vec<sqlx::sqlite::SqliteRow>) -> Vec<TargetPod> {
-    rows.into_iter()
-        .map(|r| {
-            let last_seen: Option<i64> = r.get("last_seen");
-            TargetPod {
-                pod_id: r.get("pod_id"),
-                address: r.get("address"),
-                node: r.get("node"),
-                registered_at: r.get("registered_at"),
-                last_seen,
-                health: TargetHealth::from_last_seen(last_seen),
-            }
-        })
-        .collect()
 }

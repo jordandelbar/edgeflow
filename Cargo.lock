@@ -1229,6 +1229,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "edgeflow-k8s"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "edgeflow-core",
+ "k8s-openapi",
+ "kube",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "edgeflow-server"
 version = "0.1.0"
 dependencies = [
@@ -1238,9 +1251,8 @@ dependencies = [
  "chrono",
  "edgeflow-common",
  "edgeflow-core",
+ "edgeflow-k8s",
  "edgeflow-store",
- "k8s-openapi",
- "kube",
  "reqwest",
  "rumqttc",
  "rumqttd",

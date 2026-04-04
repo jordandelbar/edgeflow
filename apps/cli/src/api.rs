@@ -258,7 +258,7 @@ impl Api {
         memory_request: Option<&str>,
         memory_limit: Option<&str>,
         replicas: Option<i64>,
-        spread: Option<bool>,
+        placement: Option<&str>,
     ) -> Result<Value> {
         self.patch(
             &self.v1(&format!("/targets/{target}/resources")),
@@ -272,7 +272,7 @@ impl Api {
                     "memory_request": memory_request,
                     "memory_limit":   memory_limit,
                     "replicas":       replicas,
-                    "spread":         spread,
+                    "placement":      placement,
                 },
             }),
         )
