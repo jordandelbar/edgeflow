@@ -237,6 +237,15 @@ pub async fn create_inference_pod(
     let namespace = std::env::var("EDGEFLOW_NAMESPACE").unwrap_or_else(|_| "default".into());
     let pull_policy =
         std::env::var("EDGEFLOW_IMAGE_PULL_POLICY").unwrap_or_else(|_| "IfNotPresent".into());
+    // MQTT URL for upgrade fan-out. Forward an external broker URL if configured;
+    // otherwise point pods at the embedded broker running in the server pod.
+    let mqtt_url = std::env::var("EDGEFLOW_MQTT_URL").unwrap_or_else(|_| {
+        let port = std::env::var("EDGEFLOW_MQTT_PORT")
+            .ok()
+            .and_then(|s| s.parse::<u16>().ok())
+            .unwrap_or(1883);
+        format!("mqtt://edgeflow-server:{port}")
+    });
 
     let resolved_infra = resolve_infra(infra);
     let cpu_request = resolved_infra.cpu_request.unwrap();
@@ -365,6 +374,11 @@ pub async fn create_inference_pod(
                                 value: Some(
                                     std::env::var("LOG_FORMAT").unwrap_or_else(|_| "json".into()),
                                 ),
+                                ..Default::default()
+                            },
+                            EnvVar {
+                                name: "EDGEFLOW_MQTT_URL".to_string(),
+                                value: Some(mqtt_url),
                                 ..Default::default()
                             },
                         ]),

@@ -24,6 +24,10 @@ if k3d cluster list | grep -q "^edgeflow"; then
 fi
 k3d cluster create --config deploy/k3d-cluster.yaml
 
+echo "==> labelling nodes..."
+kubectl label node k3d-edgeflow-server-0 edgeflow-role=server --overwrite
+kubectl label node k3d-edgeflow-agent-0 k3d-edgeflow-agent-1 k3d-edgeflow-agent-2 edgeflow-role=agent --overwrite
+
 echo "==> importing images into cluster..."
 k3d image import edgeflow-server:dev edgeflow-inference:dev -c edgeflow
 

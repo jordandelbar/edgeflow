@@ -76,12 +76,15 @@ spec:
         app: edgeflow-server
     spec:
       serviceAccountName: edgeflow-server
+      nodeSelector:
+        edgeflow-role: server
       containers:
         - name: edgeflow-server
           image: edgeflow-server:dev
           imagePullPolicy: Never
           ports:
             - containerPort: 5000
+            - containerPort: 1883
           env:
             - name: EDGEFLOW_DATA_DIR
               value: /data
@@ -118,6 +121,10 @@ spec:
   selector:
     app: edgeflow-server
   ports:
-    - port: 5000
+    - name: http
+      port: 5000
       targetPort: 5000
       nodePort: 30500
+    - name: mqtt
+      port: 1883
+      targetPort: 1883

@@ -83,16 +83,14 @@
 
   async function openNewTarget() {
     addingNew = true;
+    selectedNodes = []; // default: any agent, no pin
     if (nodeList.length === 0 && !loadingNodes) {
       loadingNodes = true;
       try {
         const res = await nodes.list();
         nodeList = res.nodes;
-        if (nodeList.length === 1) selectedNodes = [nodeList[0]];
       } catch { /* k8s may not be reachable */ }
       loadingNodes = false;
-    } else if (nodeList.length === 1) {
-      selectedNodes = [nodeList[0]];
     }
   }
 
@@ -159,17 +157,20 @@
   async function deployNew() {
     if (!resolvedVersion) return;
     if (!newTarget.trim()) { err = 'Target name is required.'; return; }
-    if (selectedNodes.length === 0) { err = 'Select at least one node.'; return; }
 
     err = '';
     polling = true;
     activeDeps = [];
 
     const base = newTarget.trim();
-    const pairs = selectedNodes.map(node => ({
-      node,
-      target: selectedNodes.length === 1 ? base : `${base}-${nodeSuffix(node)}`,
-    }));
+    // selectedNodes = [] means "any agent" — create one unpinned target.
+    // selectedNodes with entries creates one target per node (heterogeneous hardware).
+    const pairs = selectedNodes.length === 0
+      ? [{ node: null as string | null, target: base }]
+      : selectedNodes.map(node => ({
+          node: node as string | null,
+          target: selectedNodes.length === 1 ? base : `${base}-${nodeSuffix(node)}`,
+        }));
 
     const results = await Promise.allSettled(
       pairs.map(({ node, target }) =>
@@ -198,11 +199,11 @@
   onDestroy(() => { activeIntervals.forEach(clearInterval); });
 </script>
 
-<!-- Backdrop -->
+<!-- Backdrop — locked during polling to prevent accidental dismissal -->
 <div
   class="fixed inset-0 z-40 bg-black/30"
-  on:click={close}
-  on:keydown={(e) => e.key === 'Escape' && close()}
+  on:click={() => { if (!polling) close(); }}
+  on:keydown={(e) => e.key === 'Escape' && !polling && close()}
   role="button"
   tabindex="-1"
   aria-label="Close"
@@ -231,7 +232,7 @@
         <p class="text-xs text-gray-400 mt-0.5">Choose a model to deploy</p>
       {/if}
     </div>
-    <button on:click={close} class="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
+    <button on:click={close} disabled={polling} class="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
       <i class="fa-solid fa-xmark"></i>
     </button>
   </div>
@@ -289,7 +290,7 @@
       </div>
 
     {:else if resolvedVersion && activeDeps.length > 0}
-      <!-- ── Deployment results ──────────────────────────────────────── -->
+      <!-- ── Deployment results (polling / settled) ────────────────── -->
       <div class="space-y-2">
         {#each activeDeps as { target, dep } (target)}
           <div class="flex items-center gap-2 text-sm">
@@ -311,6 +312,11 @@
 
     {:else if resolvedVersion}
       <!-- ── Step 2: target picker ───────────────────────────────────── -->
+      {#if !modelVersion}
+        <button on:click={() => { resolvedVersion = null; }} class="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition-colors">
+          <i class="fa-solid fa-chevron-left text-xs"></i>Back
+        </button>
+      {/if}
       <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Deploy to target</p>
 
       <div class="flex flex-wrap gap-2">
@@ -402,33 +408,44 @@
           </div>
 
           <div>
-            <p class="text-xs text-gray-500 mb-2"><i class="fa-solid fa-server mr-1"></i>Nodes</p>
+            <p class="text-xs text-gray-500 mb-2"><i class="fa-solid fa-server mr-1"></i>Node</p>
             {#if loadingNodes}
               <p class="text-xs text-gray-400 italic"><i class="fa-solid fa-spinner fa-spin mr-1"></i>Discovering nodes…</p>
             {:else if nodeList.length === 0}
               <p class="text-xs text-red-400"><i class="fa-solid fa-circle-xmark mr-1"></i>No nodes discovered — is the cluster reachable?</p>
-            {:else if nodeList.length === 1}
-              <p class="text-xs text-gray-500 font-mono">{nodeList[0]}</p>
             {:else}
               <div class="flex flex-wrap gap-2">
+                <!-- "Any agent" = no hostname pin; spread works across all matching nodes -->
+                <button
+                  on:click={() => { selectedNodes = []; }}
+                  class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors
+                    {selectedNodes.length === 0 ? 'border-sage bg-sage-light/30 text-sage-dark' : 'border-gray-200 text-gray-500 hover:border-gray-300'}"
+                >
+                  <i class="fa-solid fa-{selectedNodes.length === 0 ? 'square-check' : 'square'} text-xs"></i>
+                  Any agent
+                </button>
                 {#each nodeList as n (n)}
                   {@const selected = selectedNodes.includes(n)}
                   <button
                     on:click={() => toggleNode(n)}
                     class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors
-                      {selected ? 'border-sage bg-sage-light/30 text-sage-dark' : 'border-gray-200 text-gray-500 hover:border-gray-300'}"
+                      {selected ? 'border-peach bg-peach-light/20 text-peach-dark' : 'border-gray-200 text-gray-500 hover:border-gray-300'}"
                   >
                     <i class="fa-solid fa-{selected ? 'square-check' : 'square'} text-xs"></i>
                     {nodeSuffix(n)}
                   </button>
                 {/each}
               </div>
-            {/if}
-
-            {#if selectedNodes.length > 1 && newTarget.trim()}
-              <p class="text-xs text-gray-400 mt-2">
-                Creates: {selectedNodes.map(n => `${newTarget.trim()}-${nodeSuffix(n)}`).join(', ')}
-              </p>
+              {#if selectedNodes.length > 1 && newTarget.trim()}
+                <p class="text-xs text-gray-400 mt-2">
+                  Creates: {selectedNodes.map(n => `${newTarget.trim()}-${nodeSuffix(n)}`).join(', ')}
+                </p>
+              {/if}
+              {#if selectedNodes.length === 1}
+                <p class="text-xs text-gray-400 mt-1.5">
+                  <i class="fa-solid fa-thumbtack mr-1"></i>Pods will be pinned to {nodeSuffix(selectedNodes[0])}.
+                </p>
+              {/if}
             {/if}
           </div>
 
@@ -476,9 +493,9 @@
                 <label class="block text-xs text-gray-500 mb-1">Placement</label>
                 <select bind:value={infra.placement}
                   class="w-full border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-peach/50 bg-white">
-                  <option value={null}>None — scheduler decides</option>
-                  <option value="spread">Spread — anti-affinity (different nodes)</option>
-                  <option value="pack">Pack — affinity (same node)</option>
+                  <option value={null}>— no preference —</option>
+                  <option value="spread">Spread — one pod per node</option>
+                  <option value="pack">Pack — all pods on same node</option>
                 </select>
               </div>
             </div>
@@ -492,7 +509,7 @@
             {/if}
             <button
               on:click={deployNew}
-              disabled={loadingNodes || nodeList.length === 0 || selectedNodes.length === 0}
+              disabled={loadingNodes || nodeList.length === 0}
               class="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-semibold bg-peach text-white hover:bg-peach-dark transition-colors disabled:opacity-50"
             >
               <i class="fa-solid fa-rocket text-xs"></i>

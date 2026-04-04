@@ -100,7 +100,7 @@
   <DeployModal
     knownTargets={knownTargets}
     on:close={() => { showDeployModal = false; refreshLiveData(); }}
-    on:deployed={() => { showDeployModal = false; refreshLiveData(); }}
+    on:deployed={() => { refreshLiveData(); }}
   />
 {/if}
 
