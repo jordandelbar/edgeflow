@@ -637,7 +637,7 @@ impl Store for SqliteStore {
         // upgrades as a fallback when the pod has no MQTT connection.
         let row = sqlx::query(
             "SELECT deployment_id, target, run_id, model_name, model_version, created_at, state FROM deployments
-             WHERE target = ? AND state IN ('pending', 'upgrading') ORDER BY created_at DESC LIMIT 1"
+             WHERE target = ? AND state IN ('pending', 'deploying', 'upgrading') ORDER BY created_at DESC LIMIT 1"
         )
         .bind(target)
         .fetch_optional(&self.pool)

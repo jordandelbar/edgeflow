@@ -436,13 +436,22 @@ async fn register_target(
     let deployment_to_load = if pending.is_some() {
         pending
     } else {
-        // Look for the latest deployed deployment to reload after a restart.
+        // Look for the latest deployed (or deploying) deployment to reload.
+        // Deploying covers the race where multiple pods register concurrently:
+        // pod A advances state to Deploying, pods B and C register moments
+        // later and must also receive the load trigger instead of being left
+        // polling with nothing to find.
         state
             .store
             .get_latest_deployment(&req.target)
             .await
             .ok()
-            .filter(|d| d.state == DeploymentState::Deployed)
+            .filter(|d| {
+                matches!(
+                    d.state,
+                    DeploymentState::Deployed | DeploymentState::Deploying
+                )
+            })
     };
 
     if let Some(deployment) = deployment_to_load {
@@ -572,7 +581,7 @@ async fn update_target_resources(
     updated.pods = edgeflow_k8s::list_running_pods(&target)
         .await
         .unwrap_or_default();
-    updated.health = best_health(&updated.pods);
+    updated.health = worst_health(&updated.pods);
     updated.node = updated.pods.first().and_then(|p| p.node.clone());
     updated.infra = edgeflow_k8s::get_inference_pod_infra(&target).await;
     Ok(Json(
@@ -581,10 +590,10 @@ async fn update_target_resources(
 }
 
 /// Compute the best health across a set of pods.
-fn best_health(pods: &[TargetPod]) -> TargetHealth {
+fn worst_health(pods: &[TargetPod]) -> TargetHealth {
     pods.iter()
         .map(|p| &p.health)
-        .max_by_key(|h| match h {
+        .min_by_key(|h| match h {
             TargetHealth::Healthy => 3,
             TargetHealth::Stale => 2,
             TargetHealth::Unhealthy => 1,
@@ -604,7 +613,7 @@ async fn get_target(
     t.pods = edgeflow_k8s::list_running_pods(&target)
         .await
         .unwrap_or_default();
-    t.health = best_health(&t.pods);
+    t.health = worst_health(&t.pods);
     t.node = t.pods.first().and_then(|p| p.node.clone());
     t.infra = edgeflow_k8s::get_inference_pod_infra(&t.target).await;
     Ok(Json(serde_json::json!({ "target": t })))
@@ -637,7 +646,7 @@ async fn list_targets(State(state): State<AppState>) -> Result<Json<serde_json::
             .and_then(|m| m.get(&t.target))
             .cloned()
             .unwrap_or_default();
-        t.health = best_health(&t.pods);
+        t.health = worst_health(&t.pods);
         t.node = t.pods.first().and_then(|p| p.node.clone());
         t.infra = edgeflow_k8s::get_inference_pod_infra(&t.target).await;
     }
