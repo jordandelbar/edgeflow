@@ -88,10 +88,10 @@ pub fn start_embedded_broker(port: u16) -> Result<()> {
 id = 0
 
 [router]
-max_segment_size = 104857600
-max_segment_count = 10
-max_connections = 10000
-max_outgoing_packet_count = 200
+max_segment_size = 1048576
+max_segment_count = 2
+max_connections = 128
+max_outgoing_packet_count = 16
 max_schedule_iterations = 100
 topic_aliases = 0
 dynamic_filters = true
@@ -103,9 +103,9 @@ next_connection_delay_ms = 1
 
 [v4.1.connections]
 connection_timeout_ms = 5000
-max_payload_size = 65536
-max_inflight_count = 200
-max_inflight_size = 102400
+max_payload_size = 4096
+max_inflight_count = 16
+max_inflight_size = 4096
 dynamic_filters = false
 "#
     );

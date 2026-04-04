@@ -10,6 +10,12 @@ members = [
 ]
 resolver = "2"
 
+[profile.release]
+strip = true
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -24,5 +30,5 @@ thiserror = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 async-trait = "0.1"
-rumqttc = "0.24"
+rumqttc = { version = "0.24", default-features = false }
 rumqttd = "0.19"
