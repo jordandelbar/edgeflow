@@ -123,6 +123,9 @@ pub struct ServerConfig {
     pub mqtt_port: u16,
     /// Seconds before a deployment stuck in `deploying`/`upgrading` is marked failed. Default: `300`.
     pub deployment_timeout_secs: i64,
+    /// Prometheus base URL for the live-stats endpoint. Optional — if absent the
+    /// `/api/v1/targets/:target/stats` endpoint returns 404 and the UI hides stats.
+    pub prometheus_url: Option<String>,
 }
 
 impl ServerConfig {
@@ -141,6 +144,8 @@ impl ServerConfig {
             .and_then(|s| s.parse().ok())
             .unwrap_or(300i64);
 
+        let prometheus_url = std::env::var("PROMETHEUS_URL").ok();
+
         Ok(Self {
             data_dir,
             addr,
@@ -148,6 +153,7 @@ impl ServerConfig {
             mqtt_url,
             mqtt_port,
             deployment_timeout_secs,
+            prometheus_url,
         })
     }
 }

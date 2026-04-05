@@ -98,6 +98,10 @@ spec:
               value: Never
             - name: LOG_FORMAT
               value: json
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://otelcol:4317
+            - name: PROMETHEUS_URL
+              value: http://prometheus:9090
           volumeMounts:
             - name: data
               mountPath: /data

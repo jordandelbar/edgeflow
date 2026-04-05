@@ -37,6 +37,7 @@ async fn main() -> anyhow::Result<()> {
         artifact_root,
         http_client: reqwest::Client::new(),
         mqtt_publisher: None,
+        prometheus_url: cfg.prometheus_url.clone(),
     };
 
     // Background task: time out deployments stuck in deploying/upgrading.

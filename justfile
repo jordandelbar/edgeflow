@@ -25,6 +25,14 @@ build-ui:
 build-server:
     cargo build --release -p edgeflow-server
 
+# Apply the observability stack (OTel Collector, Prometheus, Tempo, Grafana)
+deploy-observability:
+    kubectl apply -f deploy/manifests/observability.yaml
+    kubectl rollout status deployment/otelcol --timeout=120s
+    kubectl rollout status deployment/prometheus --timeout=120s
+    kubectl rollout status deployment/tempo --timeout=120s
+    kubectl rollout status deployment/grafana --timeout=120s
+
 # Build the server image, import into k3d, and rollout restart
 deploy-server:
     docker build -f deploy/server.Dockerfile -t edgeflow-server:dev .
@@ -36,6 +44,7 @@ deploy-server:
 dev-server:
     EDGEFLOW_DATA_DIR={{data_dir}} EDGEFLOW_STATIC_DIR={{static_dir}} \
     OTEL_EXPORTER_OTLP_ENDPOINT={{otel_endpoint}} \
+    PROMETHEUS_URL=http://localhost:9090 \
     RUST_LOG=edgeflow_server=debug,tower_http=debug \
     cargo run -p edgeflow-server
 
@@ -52,6 +61,12 @@ dev-inference target:
 # Run the Svelte dev server
 dev-ui:
     cd apps/ui && npm run dev
+
+# Run a load test against a target
+# Example: just bench iris-inference
+# Example: just bench adult-inference 50 120s
+bench target users="10" duration="60s":
+    cd scripts/test-load && ./bench.sh {{target}} {{users}} {{duration}}
 
 # Run Rust unit tests
 test:

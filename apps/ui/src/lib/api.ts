@@ -243,6 +243,15 @@ export type ModelStatus = {
   loaded_at: string;
 };
 
+export type TargetStats = {
+  rps:          number | null;
+  p50_ms:       number | null;
+  p95_ms:       number | null;
+  p99_ms:       number | null;
+  memory_bytes: number | null;
+  cpu_ratio:    number | null;
+};
+
 export const targets = {
   list:    () => v1get<{ targets: Target[] }>('/targets'),
   get:     (target: string) => v1get<{ target: Target }>(`/targets/${target}`),
@@ -257,6 +266,8 @@ export const targets = {
     ),
   model:   (target: string) =>
     v1get<ModelStatus>(`/targets/${target}/model`),
+  stats:   (target: string) =>
+    v1get<TargetStats>(`/targets/${target}/stats`),
   health:  (target: string) =>
     v1get<{ status: string }>(`/targets/${target}/health`),
   playground: (target: string, data: number[]) =>

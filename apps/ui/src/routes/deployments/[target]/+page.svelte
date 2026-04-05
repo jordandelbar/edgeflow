@@ -275,53 +275,61 @@
           <div class="space-y-2">
             <div class="grid grid-cols-2 gap-2">
               <div>
-                <label class="block text-xs text-gray-500 mb-1">Sessions</label>
-                <input type="number" min="1" bind:value={resourceDraft.sessions} placeholder="1"
-                  class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-sage/50 bg-white" />
+                <label class="block text-xs text-gray-500 mb-1">Sessions
+                  <input type="number" min="1" bind:value={resourceDraft.sessions} placeholder="1"
+                    class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-sage/50 bg-white" />
+                </label>
               </div>
               <div>
-                <label class="block text-xs text-gray-500 mb-1">Max concurrent</label>
-                <input type="number" min="1" bind:value={resourceDraft.max_concurrent} placeholder="= sessions"
-                  class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-sage/50 bg-white" />
+                <label class="block text-xs text-gray-500 mb-1">Max concurrent
+                  <input type="number" min="1" bind:value={resourceDraft.max_concurrent} placeholder="= sessions"
+                    class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-sage/50 bg-white" />
+                </label>
               </div>
               <div>
-                <label class="block text-xs text-gray-500 mb-1">CPU request</label>
-                <input type="text" bind:value={infraDraft.cpu_request} placeholder="100m"
-                  class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-sage/50 bg-white" />
+                <label class="block text-xs text-gray-500 mb-1">CPU request
+                  <input type="text" bind:value={infraDraft.cpu_request} placeholder="100m"
+                    class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-sage/50 bg-white" />
+                </label>
               </div>
               <div>
-                <label class="block text-xs text-gray-500 mb-1">Memory request</label>
-                <input type="text" bind:value={infraDraft.memory_request} placeholder="256Mi"
-                  class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-sage/50 bg-white" />
+                <label class="block text-xs text-gray-500 mb-1">Memory request
+                  <input type="text" bind:value={infraDraft.memory_request} placeholder="256Mi"
+                    class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-sage/50 bg-white" />
+                </label>
               </div>
               <div>
-                <label class="block text-xs text-gray-500 mb-1">Memory limit</label>
-                <input type="text" bind:value={infraDraft.memory_limit} placeholder="512Mi"
-                  class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-sage/50 bg-white" />
+                <label class="block text-xs text-gray-500 mb-1">Memory limit
+                  <input type="text" bind:value={infraDraft.memory_limit} placeholder="512Mi"
+                    class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-sage/50 bg-white" />
+                </label>
               </div>
               <div>
-                <label class="block text-xs text-gray-500 mb-1">Replicas</label>
-                <input type="number" min="1" bind:value={infraDraft.replicas} placeholder="1"
-                  class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-sage/50 bg-white" />
+                <label class="block text-xs text-gray-500 mb-1">Replicas
+                  <input type="number" min="1" bind:value={infraDraft.replicas} placeholder="1"
+                    class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-sage/50 bg-white" />
+                </label>
               </div>
               <div class="col-span-2">
-                <label class="block text-xs text-gray-500 mb-1">Placement</label>
-                <select bind:value={infraDraft.placement}
-                  class="w-full border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-sage/50 bg-white">
-                  <option value={null}>None — scheduler decides</option>
-                  <option value="spread">Spread — anti-affinity (different nodes)</option>
-                  <option value="pack">Pack — affinity (same node)</option>
-                </select>
+                <label class="block text-xs text-gray-500 mb-1">Placement
+                  <select bind:value={infraDraft.placement}
+                    class="w-full border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-sage/50 bg-white">
+                    <option value={null}>None — scheduler decides</option>
+                    <option value="spread">Spread — anti-affinity (different nodes)</option>
+                    <option value="pack">Pack — affinity (same node)</option>
+                  </select>
+                </label>
               </div>
               <div class="col-span-2">
-                <label class="block text-xs text-gray-500 mb-1">Node pin</label>
-                <select bind:value={pinnedNode}
-                  class="w-full border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-sage/50 bg-white">
-                  <option value="">Any node</option>
-                  {#each availableNodes as n (n)}
-                    <option value={n}>{n}</option>
-                  {/each}
-                </select>
+                <label class="block text-xs text-gray-500 mb-1">Node pin
+                  <select bind:value={pinnedNode}
+                    class="w-full border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-sage/50 bg-white">
+                    <option value="">Any node</option>
+                    {#each availableNodes as n (n)}
+                      <option value={n}>{n}</option>
+                    {/each}
+                  </select>
+                </label>
                 <p class="text-xs text-gray-400 mt-0.5">Sets <code>kubernetes.io/hostname</code> — pin pods to a specific node (e.g. one with a GPU).</p>
               </div>
             </div>

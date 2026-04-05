@@ -38,6 +38,20 @@ fn read_memory_rss_bytes() -> Option<u64> {
     None
 }
 
+/// Returns utime + stime from /proc/self/stat (Linux jiffies, 100/s).
+fn read_cpu_jiffies() -> Option<u64> {
+    let stat = std::fs::read_to_string("/proc/self/stat").ok()?;
+    let fields: Vec<&str> = stat.split_whitespace().collect();
+    let utime: u64 = fields.get(13)?.parse().ok()?;
+    let stime: u64 = fields.get(14)?.parse().ok()?;
+    Some(utime + stime)
+}
+
+struct CpuSnapshot {
+    jiffies: u64,
+    at: std::time::Instant,
+}
+
 fn json_error(status: StatusCode, msg: &str) -> Response<Full<Bytes>> {
     let body = format!(
         "{{\"error\":{}}}",
@@ -63,8 +77,9 @@ pub struct Metrics {
     requests_active: UpDownCounter<i64>,
     duration: Histogram<f64>,
     target_kv: KeyValue,
-    // Kept alive so the observable callback continues to fire.
+    // Kept alive so observable callbacks continue to fire.
     _memory_rss: ObservableGauge<u64>,
+    _cpu_usage: ObservableGauge<f64>,
 }
 
 impl Metrics {
@@ -85,15 +100,57 @@ impl Metrics {
             .f64_histogram("inference_duration_seconds")
             .with_description("Inference request duration in seconds")
             .with_unit("s")
+            // Explicit buckets in seconds: 0.1ms → 10s, covering sub-ms iris
+            // through multi-second image models. Default OTel boundaries are
+            // designed for ms-scale integers and produce wildly wrong quantiles
+            // when recording fractional seconds.
+            .with_boundaries(vec![
+                0.0001, 0.0005, 0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5,
+                5.0, 10.0,
+            ])
             .build();
 
+        let target_for_rss = target.to_owned();
         let memory_rss = meter
             .u64_observable_gauge("inference_memory_rss_bytes")
             .with_description("Pod RSS memory usage in bytes")
             .with_unit("By")
-            .with_callback(|observer| {
+            .with_callback(move |observer| {
                 if let Some(rss) = read_memory_rss_bytes() {
-                    observer.observe(rss, &[]);
+                    observer.observe(rss, &[KeyValue::new("target", target_for_rss.clone())]);
+                }
+            })
+            .build();
+
+        // CPU usage: delta of /proc/self/stat jiffies between observations.
+        // Emits fraction of one CPU core (1.0 = 100% of one core).
+        let cpu_state: Arc<std::sync::Mutex<Option<CpuSnapshot>>> =
+            Arc::new(std::sync::Mutex::new(None));
+        let target_for_cpu = target.to_owned();
+        let cpu_usage = meter
+            .f64_observable_gauge("inference_cpu_usage_ratio")
+            .with_description("CPU usage as fraction of one core")
+            .with_callback(move |observer| {
+                let now = std::time::Instant::now();
+                let jiffies = read_cpu_jiffies();
+                let mut state = cpu_state.lock().unwrap();
+                if let Some(prev) = state.as_ref() {
+                    if let Some(j) = jiffies {
+                        let delta_j = j.saturating_sub(prev.jiffies) as f64;
+                        let delta_t = now.duration_since(prev.at).as_secs_f64();
+                        if delta_t > 0.0 {
+                            // Linux jiffies tick at 100/s; delta_j/100 = CPU seconds
+                            let ratio = (delta_j / 100.0) / delta_t;
+                            observer
+                                .observe(ratio, &[KeyValue::new("target", target_for_cpu.clone())]);
+                        }
+                    }
+                }
+                if let Some(j) = jiffies {
+                    *state = Some(CpuSnapshot {
+                        jiffies: j,
+                        at: now,
+                    });
                 }
             })
             .build();
@@ -104,6 +161,7 @@ impl Metrics {
             duration,
             target_kv: KeyValue::new("target", target.to_owned()),
             _memory_rss: memory_rss,
+            _cpu_usage: cpu_usage,
         }
     }
 }

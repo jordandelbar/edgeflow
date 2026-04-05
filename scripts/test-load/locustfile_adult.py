@@ -189,15 +189,20 @@ def _random_profile() -> bytes:
 def _resolve_pod_address(server: str, target: str) -> str:
     resp = requests.get(f"{server}/api/v1/targets", timeout=5)
     resp.raise_for_status()
-    for t in resp.json().get("targets", []):
+    targets = resp.json().get("targets", [])
+    for t in targets:
         if t["target"] == target:
-            addr = t["address"]
+            pods = t.get("pods", [])
+            if not pods:
+                raise SystemExit(f"[locust] target '{target}' has no registered pods")
+            addr = pods[0]["address"]
+            if not addr.startswith("http"):
+                addr = f"http://{addr}"
             print(f"[locust] target '{target}' → {addr}")
             return addr
     raise SystemExit(
         f"[locust] target '{target}' not registered on {server}.\n"
-        "  Available targets: "
-        + ", ".join(t["target"] for t in resp.json().get("targets", []))
+        "  Available targets: " + ", ".join(t["target"] for t in targets)
     )
 
 

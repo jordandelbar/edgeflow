@@ -1,14 +1,18 @@
 <script lang="ts">
-  import { targets, type Deployment, type ModelStatus, type TargetHealth } from '$lib/api';
+  import { targets, type Deployment, type ModelStatus, type TargetHealth, type TargetStats } from '$lib/api';
   import { liveData, refreshLiveData } from '$lib/stores';
   import { fmtDateTime } from '$lib/utils';
   import ErrorCard from '$lib/components/ErrorCard.svelte';
   import DeployModal from '$lib/components/DeployModal.svelte';
+  import TargetStatsView from '$lib/components/TargetStats.svelte';
 
   let byTarget: Record<string, Deployment[]> = {};
   let targetList: string[] = [];
   let targetHealth: Record<string, TargetHealth> = {};
   let modelStatus: Record<string, ModelStatus | null> = {};
+  let targetStats:   Record<string, TargetStats | null> = {};
+  let statsHistory:  Record<string, TargetStats[]> = {};
+  let statsLoading:  Record<string, boolean> = {};
   let confirming: Record<string, boolean> = {};
   let tearing: Record<string, boolean> = {};
 
@@ -42,10 +46,12 @@
       if (!(t in modelStatus)) modelStatus[t] = null;
       if (!(t in confirming))  confirming[t]  = false;
       if (!(t in tearing))     tearing[t]     = false;
+      if (!(t in statsLoading)) statsLoading[t] = true;
     }
-    modelStatus = modelStatus;
-    confirming  = confirming;
-    tearing     = tearing;
+    modelStatus  = modelStatus;
+    confirming   = confirming;
+    tearing      = tearing;
+    statsLoading = statsLoading;
 
     byTarget   = newByTarget;
     targetList = newTargetList;
@@ -54,6 +60,16 @@
       targets.model(t)
         .then(s => { modelStatus[t] = s; modelStatus = modelStatus; })
         .catch(() => { modelStatus[t] = null; modelStatus = modelStatus; });
+
+      targets.stats(t)
+        .then(s => {
+          targetStats[t] = s;
+          statsLoading[t] = false;
+          const prev = statsHistory[t] ?? [];
+          statsHistory[t] = [...prev, s].slice(-30);
+          targetStats = targetStats; statsLoading = statsLoading; statsHistory = statsHistory;
+        })
+        .catch(() => { targetStats[t] = null; statsLoading[t] = false; targetStats = targetStats; statsLoading = statsLoading; });
     });
   }
 
@@ -151,8 +167,11 @@
           {@const currentDep = status ? deps.find(d => d.deployment_id === status.deployment_id) : null}
           {@const hs = targetHealth[t] ?? 'unknown'}
           {@const podCount = $liveData.targets.find(x => x.target === t)?.pods?.length ?? 0}
+          {@const tgt = $liveData.targets.find(x => x.target === t)}
+          {@const stats = targetStats[t] ?? null}
+          {@const hasStats = stats !== null || statsLoading[t]}
 
-          <tr class="border-b border-gray-50 last:border-0 hover:bg-gray-50/50 transition-colors">
+          <tr class="hover:bg-gray-50/50 transition-colors" class:border-b={!hasStats} class:border-gray-50={!hasStats}>
             <!-- Health dot + optional replica count -->
             <td class="pl-4 pr-2 py-3">
               <div class="flex flex-col items-center gap-0.5">
@@ -224,6 +243,21 @@
               </div>
             </td>
           </tr>
+
+          <!-- Live stats row — only shown when Prometheus is configured -->
+          {#if hasStats}
+            <tr class="border-b border-gray-50 last:border-0">
+              <td></td>
+              <td colspan="4" class="px-4 pb-2.5">
+                <TargetStatsView
+                  {stats}
+                  history={statsHistory[t] ?? []}
+                  infra={tgt?.infra ?? null}
+                  loading={statsLoading[t]}
+                />
+              </td>
+            </tr>
+          {/if}
     {/each}
       </tbody>
     </table>

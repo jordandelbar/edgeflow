@@ -381,6 +381,11 @@ pub async fn create_inference_pod(
                                 value: Some(mqtt_url),
                                 ..Default::default()
                             },
+                            EnvVar {
+                                name: "OTEL_EXPORTER_OTLP_ENDPOINT".to_string(),
+                                value: std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok(),
+                                ..Default::default()
+                            },
                         ]),
                         resources: Some(ResourceRequirements {
                             requests: Some(

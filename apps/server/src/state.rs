@@ -10,4 +10,6 @@ pub struct AppState {
     pub http_client: reqwest::Client,
     /// Present when MQTT is available; used to fan-out upgrade commands.
     pub mqtt_publisher: Option<Arc<MqttPublisher>>,
+    /// Base URL of a Prometheus instance. When set, enables the live-stats endpoint.
+    pub prometheus_url: Option<String>,
 }

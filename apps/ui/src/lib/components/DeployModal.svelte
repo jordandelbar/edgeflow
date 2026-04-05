@@ -362,14 +362,16 @@
           {#if showExistingAdvanced}
             <div class="grid grid-cols-2 gap-2">
               <div>
-                <label class="block text-xs text-gray-500 mb-1">Sessions</label>
-                <input type="number" min="1" bind:value={existingResources.sessions} placeholder="1"
-                  class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-peach/50 bg-white" />
+                <label class="block text-xs text-gray-500 mb-1">Sessions
+                  <input type="number" min="1" bind:value={existingResources.sessions} placeholder="1"
+                    class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-peach/50 bg-white" />
+                </label>
               </div>
               <div>
-                <label class="block text-xs text-gray-500 mb-1">Max concurrent <span class="text-gray-400">(default: sessions)</span></label>
-                <input type="number" min="1" bind:value={existingResources.max_concurrent} placeholder="= sessions"
-                  class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-peach/50 bg-white" />
+                <label class="block text-xs text-gray-500 mb-1">Max concurrent <span class="text-gray-400">(default: sessions)</span>
+                  <input type="number" min="1" bind:value={existingResources.max_concurrent} placeholder="= sessions"
+                    class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-peach/50 bg-white" />
+                </label>
               </div>
             </div>
           {/if}
@@ -460,43 +462,50 @@
           {#if showAdvanced}
             <div class="grid grid-cols-2 gap-2 bg-gray-50 rounded-lg p-3">
               <div>
-                <label class="block text-xs text-gray-500 mb-1">Sessions</label>
-                <input type="number" min="1" bind:value={resources.sessions} placeholder="1"
-                  class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-peach/50 bg-white" />
+                <label class="block text-xs text-gray-500 mb-1">Sessions
+                  <input type="number" min="1" bind:value={resources.sessions} placeholder="1"
+                    class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-peach/50 bg-white" />
+                </label>
               </div>
               <div>
-                <label class="block text-xs text-gray-500 mb-1">Max concurrent <span class="text-gray-400">(default: sessions)</span></label>
-                <input type="number" min="1" bind:value={resources.max_concurrent} placeholder="= sessions"
-                  class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-peach/50 bg-white" />
+                <label class="block text-xs text-gray-500 mb-1">Max concurrent <span class="text-gray-400">(default: sessions)</span>
+                  <input type="number" min="1" bind:value={resources.max_concurrent} placeholder="= sessions"
+                    class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-peach/50 bg-white" />
+                </label>
               </div>
               <div>
-                <label class="block text-xs text-gray-500 mb-1">CPU request</label>
-                <input type="text" bind:value={infra.cpu_request} placeholder="100m"
-                  class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-peach/50 bg-white" />
+                <label class="block text-xs text-gray-500 mb-1">CPU request
+                  <input type="text" bind:value={infra.cpu_request} placeholder="100m"
+                    class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-peach/50 bg-white" />
+                </label>
               </div>
               <div>
-                <label class="block text-xs text-gray-500 mb-1">Memory request</label>
-                <input type="text" bind:value={infra.memory_request} placeholder="256Mi"
-                  class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-peach/50 bg-white" />
+                <label class="block text-xs text-gray-500 mb-1">Memory request
+                  <input type="text" bind:value={infra.memory_request} placeholder="256Mi"
+                    class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-peach/50 bg-white" />
+                </label>
               </div>
               <div>
-                <label class="block text-xs text-gray-500 mb-1">Memory limit</label>
-                <input type="text" bind:value={infra.memory_limit} placeholder="512Mi"
-                  class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-peach/50 bg-white" />
+                <label class="block text-xs text-gray-500 mb-1">Memory limit
+                  <input type="text" bind:value={infra.memory_limit} placeholder="512Mi"
+                    class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-peach/50 bg-white" />
+                </label>
               </div>
               <div>
-                <label class="block text-xs text-gray-500 mb-1">Replicas</label>
-                <input type="number" min="1" bind:value={infra.replicas} placeholder="1"
-                  class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-peach/50 bg-white" />
+                <label class="block text-xs text-gray-500 mb-1">Replicas
+                  <input type="number" min="1" bind:value={infra.replicas} placeholder="1"
+                    class="w-full border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-peach/50 bg-white" />
+                </label>
               </div>
               <div class="col-span-2">
-                <label class="block text-xs text-gray-500 mb-1">Placement</label>
-                <select bind:value={infra.placement}
-                  class="w-full border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-peach/50 bg-white">
-                  <option value={null}>— no preference —</option>
-                  <option value="spread">Spread — one pod per node</option>
-                  <option value="pack">Pack — all pods on same node</option>
-                </select>
+                <label class="block text-xs text-gray-500 mb-1">Placement
+                  <select bind:value={infra.placement}
+                    class="w-full border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-peach/50 bg-white">
+                    <option value={null}>— no preference —</option>
+                    <option value="spread">Spread — one pod per node</option>
+                    <option value="pack">Pack — all pods on same node</option>
+                  </select>
+                </label>
               </div>
             </div>
           {/if}

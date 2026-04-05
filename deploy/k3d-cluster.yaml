@@ -11,6 +11,10 @@ ports:
     nodeFilters: [loadbalancer]
   - port: 8081:30809
     nodeFilters: [loadbalancer]
+  - port: 3000:30300
+    nodeFilters: [loadbalancer]
+  - port: 9090:30909
+    nodeFilters: [loadbalancer]
 
 options:
   k3d:

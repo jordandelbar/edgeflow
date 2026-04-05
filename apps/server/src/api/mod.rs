@@ -4,6 +4,7 @@ mod experiments;
 mod metrics;
 mod model_registry;
 mod runs;
+mod stats;
 
 use crate::state::AppState;
 use axum::Router;
@@ -30,7 +31,9 @@ pub fn mlflow_artifacts_router() -> Router<AppState> {
 
 /// Native edgeflow API (/api/v1/*)
 pub fn v1_router() -> Router<AppState> {
-    Router::new().merge(deployments::router())
+    Router::new()
+        .merge(deployments::router())
+        .merge(stats::router())
 }
 
 /// Unified error type that maps to MLflow-style error JSON.

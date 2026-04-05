@@ -35,6 +35,12 @@ k3d image import edgeflow-server:dev edgeflow-inference:dev-ort edgeflow-inferen
 echo "==> deploying manifests..."
 kubectl apply -f deploy/manifests/
 
+echo "==> waiting for observability stack to be ready..."
+kubectl rollout status deployment/otelcol    --timeout=120s
+kubectl rollout status deployment/prometheus --timeout=120s
+kubectl rollout status deployment/tempo      --timeout=120s
+kubectl rollout status deployment/grafana    --timeout=120s
+
 echo "==> waiting for edgeflow-server to be ready..."
 kubectl rollout status deployment/edgeflow-server --timeout=120s
 
@@ -68,5 +74,10 @@ echo "==> deployment state:"
 curl -s "http://localhost:5000/api/v1/deployments/latest?target=iris-inference" | python3 -m json.tool
 
 echo ""
-echo "done. cluster is up at localhost:5000 (server) and localhost:8080 (inference)."
+echo "done."
+echo "  server:     http://localhost:5000"
+echo "  inference:  http://localhost:8080"
+echo "  grafana:    http://localhost:3000"
+echo "  prometheus: http://localhost:9090"
+echo ""
 echo "to tear down: k3d cluster delete edgeflow"
