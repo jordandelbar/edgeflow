@@ -4,63 +4,37 @@ mod deployment;
 mod mqtt;
 mod server;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use client::EdgeflowClient;
 use edgeflow_common::{backoff::retry_forever, shutdown_signal};
+use edgeflow_config::InferenceConfig;
+use edgeflow_telemetry;
 use server::{Metrics, ServerState};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use tokio::sync::Semaphore;
 #[tokio::main]
 async fn main() -> Result<()> {
-    edgeflow_common::logging::init_logging("edgeflow_inference=info");
+    edgeflow_telemetry::init("edgeflow-inference", "edgeflow_inference=info")?;
 
     let cancel = shutdown_signal();
 
-    let server_url = std::env::var("EDGEFLOW_SERVER")
-        .context("EDGEFLOW_SERVER env var required (e.g. http://edgeflow-server:5000)")?;
-    let target = std::env::var("EDGEFLOW_TARGET")
-        .context("EDGEFLOW_TARGET env var required (e.g. iris-inference)")?;
-    let infer_addr = std::env::var("EDGEFLOW_INFER_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".into());
+    let cfg = InferenceConfig::from_env()?;
 
-    let node_name = std::env::var("EDGEFLOW_NODE_NAME").ok();
-    // Pod identity: use the k8s pod name if available, fall back to the target name.
-    let pod_id = std::env::var("EDGEFLOW_POD_NAME").unwrap_or_else(|_| target.clone());
-
-    let pod_ip = std::env::var("EDGEFLOW_POD_IP").unwrap_or_else(|_| {
-        infer_addr
-            .split(':')
-            .next()
-            .unwrap_or("127.0.0.1")
-            .replace("0.0.0.0", "127.0.0.1")
-            .to_string()
-    });
-    let port = infer_addr.split(':').last().unwrap_or("8080");
-    let self_address = format!("http://{}:{}", pod_ip, port);
-
-    let sessions = std::env::var("EDGEFLOW_SESSIONS")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(1usize);
-    let max_concurrent = std::env::var("EDGEFLOW_MAX_CONCURRENT_INFER")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(sessions);
-
-    let client = Arc::new(EdgeflowClient::new(&server_url));
+    let client = Arc::new(EdgeflowClient::new(&cfg.server_url));
 
     let state = ServerState {
         active: Arc::new(RwLock::new(None)),
-        semaphore: Arc::new(Semaphore::new(max_concurrent)),
+        semaphore: Arc::new(Semaphore::new(cfg.max_concurrent)),
         metrics: Arc::new(Metrics::default()),
         client: client.clone(),
-        target: target.clone(),
-        sessions,
+        target: cfg.target.clone(),
+        sessions: cfg.sessions,
     };
 
     // Start the HTTP server in the background so we're ready before registering.
     let serve_state = state.clone();
-    let serve_addr = infer_addr.clone();
+    let serve_addr = cfg.infer_addr.clone();
     let serve_cancel = cancel.clone();
     tokio::spawn(async move {
         if let Err(e) = server::serve(serve_state, serve_addr, serve_cancel).await {
@@ -74,8 +48,8 @@ async fn main() -> Result<()> {
     // Connect to MQTT *before* registering so we are already subscribed when
     // the server publishes the pending deployment on registration.
     let mut mqtt_commands: Option<tokio::sync::mpsc::Receiver<deployment::DeployInstruction>> =
-        match std::env::var("EDGEFLOW_MQTT_URL").ok() {
-            Some(url) => match mqtt::MqttPodClient::new(&url, &target, &pod_id) {
+        match cfg.mqtt_url.as_deref() {
+            Some(url) => match mqtt::MqttPodClient::new(url, &cfg.target, &cfg.pod_id) {
                 Ok((_client, rx)) => Some(rx),
                 Err(e) => {
                     tracing::warn!("mqtt init failed: {e}");
@@ -89,13 +63,13 @@ async fn main() -> Result<()> {
     // register — the server will publish immediately on registration.
     tokio::time::sleep(Duration::from_millis(200)).await;
 
-    tracing::info!(target = %target, pod_id = %pod_id, address = %self_address, node = ?node_name, "registering with edgeflow-server");
+    tracing::info!(target = %cfg.target, pod_id = %cfg.pod_id, address = %cfg.self_address, node = ?cfg.node_name, "registering with edgeflow-server");
     retry_forever("register with edgeflow-server", || {
         let client = client.clone();
-        let target = target.clone();
-        let pod_id = pod_id.clone();
-        let self_address = self_address.clone();
-        let node = node_name.clone();
+        let target = cfg.target.clone();
+        let pod_id = cfg.pod_id.clone();
+        let self_address = cfg.self_address.clone();
+        let node = cfg.node_name.clone();
         async move {
             client
                 .register_pod(&pod_id, &target, &self_address, node.as_deref())
@@ -111,7 +85,7 @@ async fn main() -> Result<()> {
     // published before this pod existed.
     let mqtt_active = state.active.clone();
     let mqtt_client = client.clone();
-    let mqtt_target = target.clone();
+    let mqtt_target = cfg.target.clone();
     let mqtt_cancel = cancel.clone();
     tokio::spawn(async move {
         loop {

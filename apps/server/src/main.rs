@@ -5,11 +5,12 @@ mod target_client;
 
 use axum::Router;
 use edgeflow_common::shutdown_signal;
+use edgeflow_config::ServerConfig;
 use edgeflow_core::DeploymentState;
 use edgeflow_store::sqlite::SqliteStore;
 use edgeflow_store::Store;
+use edgeflow_telemetry;
 use state::AppState;
-use std::path::PathBuf;
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
 use tower_http::services::{ServeDir, ServeFile};
@@ -17,14 +18,14 @@ use tower_http::trace::TraceLayer;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    edgeflow_common::logging::init_logging("edgeflow_server=info,tower_http=warn");
+    edgeflow_telemetry::init("edgeflow-server", "edgeflow_server=info,tower_http=warn")?;
 
     let cancel = shutdown_signal();
 
-    let data_dir =
-        PathBuf::from(std::env::var("EDGEFLOW_DATA_DIR").unwrap_or_else(|_| "./data".into()));
-    let artifact_root = data_dir.join("artifacts");
-    let db_path = data_dir.join("edgeflow.db");
+    let cfg = ServerConfig::from_env()?;
+
+    let artifact_root = cfg.data_dir.join("artifacts");
+    let db_path = cfg.data_dir.join("edgeflow.db");
 
     std::fs::create_dir_all(&artifact_root)?;
 
@@ -41,13 +42,8 @@ async fn main() -> anyhow::Result<()> {
     // Background task: time out deployments stuck in deploying/upgrading.
     let timeout_state = state.clone();
     let timeout_cancel = cancel.clone();
+    let timeout_ms = cfg.deployment_timeout_secs * 1000;
     tokio::spawn(async move {
-        let timeout_ms = std::env::var("DEPLOYMENT_TIMEOUT_SECS")
-            .ok()
-            .and_then(|s| s.parse::<i64>().ok())
-            .unwrap_or(300)
-            * 1000;
-
         loop {
             tokio::select! {
                 _ = tokio::time::sleep(std::time::Duration::from_secs(60)) => {}
@@ -81,37 +77,29 @@ async fn main() -> anyhow::Result<()> {
     // ── MQTT ─────────────────────────────────────────────────────────────────
     // If EDGEFLOW_MQTT_URL is set, connect to that external broker.
     // Otherwise, start the embedded rumqttd broker and connect to it.
-    let mqtt_url = std::env::var("EDGEFLOW_MQTT_URL").ok();
-    let mqtt_port = std::env::var("EDGEFLOW_MQTT_PORT")
-        .ok()
-        .and_then(|s| s.parse::<u16>().ok())
-        .unwrap_or(1883);
-
-    if mqtt_url.is_none() {
-        mqtt::start_embedded_broker(mqtt_port)?;
+    if cfg.mqtt_url.is_none() {
+        mqtt::start_embedded_broker(cfg.mqtt_port)?;
         // Give the broker a moment to open its listener before we subscribe.
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     }
 
-    let mqtt_publisher = mqtt::MqttPublisher::new(mqtt_url.as_deref(), mqtt_port);
+    let mqtt_publisher = mqtt::MqttPublisher::new(cfg.mqtt_url.as_deref(), cfg.mqtt_port);
     state.mqtt_publisher = Some(mqtt_publisher);
-
-    let static_dir = std::env::var("EDGEFLOW_STATIC_DIR").unwrap_or_else(|_| "./static".into());
 
     let app = Router::new()
         .nest("/api/v1", api::v1_router())
         .nest("/api/2.0/mlflow", api::mlflow_router())
         .nest("/api/2.0/mlflow-artifacts", api::mlflow_artifacts_router())
         .fallback_service(
-            ServeDir::new(&static_dir).fallback(ServeFile::new(format!("{static_dir}/index.html"))),
+            ServeDir::new(&cfg.static_dir)
+                .fallback(ServeFile::new(format!("{}/index.html", cfg.static_dir))),
         )
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 
-    let addr = std::env::var("EDGEFLOW_ADDR").unwrap_or_else(|_| "0.0.0.0:5000".into());
-    let listener = tokio::net::TcpListener::bind(&addr).await?;
-    tracing::info!("listening on {addr}");
+    let listener = tokio::net::TcpListener::bind(&cfg.addr).await?;
+    tracing::info!("listening on {}", cfg.addr);
     axum::serve(listener, app)
         .with_graceful_shutdown(cancel.cancelled_owned())
         .await?;

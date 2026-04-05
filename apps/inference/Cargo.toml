@@ -22,6 +22,8 @@ tract-backend = ["dep:tract-onnx"]
 
 [dependencies]
 edgeflow-common = { path = "../../crates/common" }
+edgeflow-config    = { path = "../../crates/config" }
+edgeflow-telemetry = { path = "../../crates/telemetry" }
 anyhow = "1"
 bytes = "1"
 chrono = "0.4"
