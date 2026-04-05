@@ -1,5 +1,6 @@
-data_dir := "./data"
-static_dir := "./static"
+data_dir     := "./data"
+static_dir   := "./static"
+otel_endpoint := "http://localhost:4317"
 
 # Build everything
 build: build-transforms build-ui build-server
@@ -31,11 +32,22 @@ deploy-server:
     kubectl rollout restart deployment/edgeflow-server
     kubectl rollout status deployment/edgeflow-server --timeout=120s
 
-# Run the server in dev mode
+# Run the server in dev mode (with OTEL if the observability stack is up)
 dev-server:
     EDGEFLOW_DATA_DIR={{data_dir}} EDGEFLOW_STATIC_DIR={{static_dir}} \
+    OTEL_EXPORTER_OTLP_ENDPOINT={{otel_endpoint}} \
     RUST_LOG=edgeflow_server=debug,tower_http=debug \
     cargo run -p edgeflow-server
+
+# Run an inference pod locally against the dev server (requires EDGEFLOW_TARGET)
+# Example: just dev-inference iris-inference
+dev-inference target:
+    EDGEFLOW_SERVER=http://localhost:5000 \
+    EDGEFLOW_TARGET={{target}} \
+    EDGEFLOW_MQTT_URL=mqtt://localhost:1883 \
+    OTEL_EXPORTER_OTLP_ENDPOINT={{otel_endpoint}} \
+    RUST_LOG=edgeflow_inference=debug \
+    cargo run -p edgeflow-inference
 
 # Run the Svelte dev server
 dev-ui:

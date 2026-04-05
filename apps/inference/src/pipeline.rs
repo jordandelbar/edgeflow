@@ -69,7 +69,10 @@ impl Pipeline {
     pub fn infer(&mut self, raw_input: &[u8]) -> Result<Vec<u8>> {
         // Apply pre-transform (if any).
         let body = match &mut self.pre {
-            Some(t) => t.run(raw_input)?,
+            Some(t) => {
+                let _span = tracing::info_span!("wasm.preprocess").entered();
+                t.run(raw_input)?
+            }
             None => raw_input.to_vec(),
         };
 
@@ -78,27 +81,40 @@ impl Pipeline {
         // Single: decode returns a &[f32] view directly into `body` — no allocation.
         // Named:  json_to_tensor always allocates a Vec<f32> (field-by-field build).
         // Cow lets both arms share the same type without forcing an allocation for Single.
-        let (shape, data): (Vec<usize>, Cow<'_, [f32]>) = match self.input_mode {
-            InputMode::Single => {
-                let (shape, data) = tensor::decode(&body)?;
-                let n: usize = shape.iter().product();
-                anyhow::ensure!(data.len() == n, "tensor data length mismatch");
-                (shape, Cow::Borrowed(data))
-            }
-            InputMode::Named => {
-                let (shape, data) = inputs::json_to_tensor(&body, &self.specs)
-                    .context("failed to encode JSON input to tensor")?;
-                (shape, Cow::Owned(data))
+        let (shape, data): (Vec<usize>, Cow<'_, [f32]>) = {
+            let _span = tracing::info_span!("tensor.decode").entered();
+            match self.input_mode {
+                InputMode::Single => {
+                    let (shape, data) = tensor::decode(&body)?;
+                    let n: usize = shape.iter().product();
+                    anyhow::ensure!(data.len() == n, "tensor data length mismatch");
+                    (shape, Cow::Borrowed(data))
+                }
+                InputMode::Named => {
+                    let (shape, data) = inputs::json_to_tensor(&body, &self.specs)
+                        .context("failed to encode JSON input to tensor")?;
+                    (shape, Cow::Owned(data))
+                }
             }
         };
 
         // Run inference backend.
-        let (out_shape, out_data) = self.backend.infer(&shape, &data)?;
-        let output_tensor_bytes = tensor::encode(&out_shape, &out_data);
+        let (out_shape, out_data) = {
+            let _span = tracing::info_span!("backend.infer").entered();
+            self.backend.infer(&shape, &data)?
+        };
+
+        let output_tensor_bytes = {
+            let _span = tracing::info_span!("tensor.encode").entered();
+            tensor::encode(&out_shape, &out_data)
+        };
 
         // Apply post-transform (if any).
         match &mut self.post {
-            Some(t) => t.run(&output_tensor_bytes),
+            Some(t) => {
+                let _span = tracing::info_span!("wasm.postprocess").entered();
+                t.run(&output_tensor_bytes)
+            }
             None => Ok(output_tensor_bytes),
         }
     }

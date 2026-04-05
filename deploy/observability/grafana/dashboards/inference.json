@@ -1,0 +1,76 @@
+{
+  "uid": "edgeflow-inference",
+  "title": "edgeflow — inference",
+  "tags": ["edgeflow"],
+  "refresh": "10s",
+  "time": { "from": "now-15m", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Request rate (req/s)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (target) (rate(edgeflow_inference_requests_total[1m]))",
+          "legendFormat": "{{target}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Active requests",
+      "type": "stat",
+      "gridPos": { "x": 12, "y": 0, "w": 4, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(edgeflow_inference_requests_active)",
+          "legendFormat": "active"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Memory RSS (MB)",
+      "type": "stat",
+      "gridPos": { "x": 16, "y": 0, "w": 4, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "edgeflow_inference_memory_rss_bytes / 1024 / 1024",
+          "legendFormat": "rss"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "mbytes" }
+      }
+    },
+    {
+      "id": 4,
+      "title": "Inference duration",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 8, "w": 20, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le, target) (rate(edgeflow_inference_duration_seconds_bucket[1m])))",
+          "legendFormat": "p50 {{target}}"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, target) (rate(edgeflow_inference_duration_seconds_bucket[1m])))",
+          "legendFormat": "p95 {{target}}"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, target) (rate(edgeflow_inference_duration_seconds_bucket[1m])))",
+          "legendFormat": "p99 {{target}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "s" }
+      }
+    }
+  ],
+  "schemaVersion": 39
+}

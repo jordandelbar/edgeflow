@@ -1,4 +1,3 @@
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 
 use anyhow::Result;
@@ -9,12 +8,35 @@ use hyper::{
     body::Incoming, server::conn::http1, service::service_fn, Method, Request, Response, StatusCode,
 };
 use hyper_util::rt::TokioIo;
+use opentelemetry::metrics::{Counter, Histogram, ObservableGauge, UpDownCounter};
+use opentelemetry::KeyValue;
 use serde::Deserialize;
 use tokio::net::TcpListener;
 use tokio::sync::Semaphore;
 
 use crate::client::EdgeflowClient;
 use crate::deployment::{self, ActiveDeployment, DeployInstruction};
+
+fn backend_name() -> &'static str {
+    if cfg!(feature = "ort-backend") {
+        "ort"
+    } else if cfg!(feature = "tract-backend") {
+        "tract"
+    } else {
+        "unknown"
+    }
+}
+
+fn read_memory_rss_bytes() -> Option<u64> {
+    let content = std::fs::read_to_string("/proc/self/status").ok()?;
+    for line in content.lines() {
+        if let Some(rest) = line.strip_prefix("VmRSS:") {
+            let kb: u64 = rest.trim().trim_end_matches(" kB").trim().parse().ok()?;
+            return Some(kb * 1024);
+        }
+    }
+    None
+}
 
 fn json_error(status: StatusCode, msg: &str) -> Response<Full<Bytes>> {
     let body = format!(
@@ -35,12 +57,55 @@ fn json_ok(body: impl Into<Bytes>) -> Response<Full<Bytes>> {
         .unwrap()
 }
 
-#[derive(Default)]
+#[derive(Clone)]
 pub struct Metrics {
-    pub requests_total: AtomicU64,
-    pub requests_active: AtomicU64,
-    pub requests_rejected: AtomicU64,
-    pub inference_errors: AtomicU64,
+    requests_total: Counter<u64>,
+    requests_active: UpDownCounter<i64>,
+    duration: Histogram<f64>,
+    target_kv: KeyValue,
+    // Kept alive so the observable callback continues to fire.
+    _memory_rss: ObservableGauge<u64>,
+}
+
+impl Metrics {
+    pub fn new(target: &str) -> Self {
+        let meter = opentelemetry::global::meter("edgeflow-inference");
+
+        let requests_total = meter
+            .u64_counter("inference_requests_total")
+            .with_description("Total inference requests by status")
+            .build();
+
+        let requests_active = meter
+            .i64_up_down_counter("inference_requests_active")
+            .with_description("In-flight inference requests")
+            .build();
+
+        let duration = meter
+            .f64_histogram("inference_duration_seconds")
+            .with_description("Inference request duration in seconds")
+            .with_unit("s")
+            .build();
+
+        let memory_rss = meter
+            .u64_observable_gauge("inference_memory_rss_bytes")
+            .with_description("Pod RSS memory usage in bytes")
+            .with_unit("By")
+            .with_callback(|observer| {
+                if let Some(rss) = read_memory_rss_bytes() {
+                    observer.observe(rss, &[]);
+                }
+            })
+            .build();
+
+        Self {
+            requests_total,
+            requests_active,
+            duration,
+            target_kv: KeyValue::new("target", target.to_owned()),
+            _memory_rss: memory_rss,
+        }
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -118,10 +183,13 @@ async fn handle(
             let permit = match state.semaphore.clone().try_acquire_owned() {
                 Ok(p) => p,
                 Err(_) => {
-                    state
-                        .metrics
-                        .requests_rejected
-                        .fetch_add(1, Ordering::Relaxed);
+                    state.metrics.requests_total.add(
+                        1,
+                        &[
+                            state.metrics.target_kv.clone(),
+                            KeyValue::new("status", "rejected"),
+                        ],
+                    );
                     return Ok(json_error(
                         StatusCode::TOO_MANY_REQUESTS,
                         "too many concurrent requests",
@@ -129,11 +197,10 @@ async fn handle(
                 }
             };
 
-            state.metrics.requests_total.fetch_add(1, Ordering::Relaxed);
             state
                 .metrics
                 .requests_active
-                .fetch_add(1, Ordering::Relaxed);
+                .add(1, &[state.metrics.target_kv.clone()]);
 
             // Acquire read lock only long enough to clone the inner Arc.
             let active = state.active.read().unwrap().as_ref().map(Arc::clone);
@@ -142,7 +209,7 @@ async fn handle(
                 state
                     .metrics
                     .requests_active
-                    .fetch_sub(1, Ordering::Relaxed);
+                    .add(-1, &[state.metrics.target_kv.clone()]);
                 drop(permit);
                 return Ok(json_error(
                     StatusCode::SERVICE_UNAVAILABLE,
@@ -152,7 +219,16 @@ async fn handle(
 
             let body = req.collect().await?.to_bytes();
             let metrics = state.metrics.clone();
+            let start = std::time::Instant::now();
+            // Create the root span before spawning — move it into the blocking thread
+            // so child spans created in pipeline.infer() are correctly nested under it.
+            let infer_span = tracing::info_span!(
+                "infer",
+                target = %state.target,
+                backend = backend_name(),
+            );
             let result = tokio::task::spawn_blocking(move || {
+                let _enter = infer_span.enter();
                 let mut pipeline = active.pool.checkout();
                 let out = pipeline.infer(&body);
                 active.pool.checkin(pipeline);
@@ -162,12 +238,31 @@ async fn handle(
             .await
             .unwrap();
 
-            metrics.requests_active.fetch_sub(1, Ordering::Relaxed);
+            let duration = start.elapsed().as_secs_f64();
+            metrics
+                .requests_active
+                .add(-1, &[metrics.target_kv.clone()]);
+            metrics.duration.record(
+                duration,
+                &[
+                    metrics.target_kv.clone(),
+                    KeyValue::new("backend", backend_name()),
+                ],
+            );
 
             match result {
-                Ok(out) => Ok(Response::new(Full::new(Bytes::from(out)))),
+                Ok(out) => {
+                    metrics.requests_total.add(
+                        1,
+                        &[metrics.target_kv.clone(), KeyValue::new("status", "ok")],
+                    );
+                    Ok(Response::new(Full::new(Bytes::from(out))))
+                }
                 Err(e) => {
-                    metrics.inference_errors.fetch_add(1, Ordering::Relaxed);
+                    metrics.requests_total.add(
+                        1,
+                        &[metrics.target_kv.clone(), KeyValue::new("status", "error")],
+                    );
                     tracing::error!("inference error: {e:#}");
                     Ok(json_error(
                         StatusCode::INTERNAL_SERVER_ERROR,
@@ -226,18 +321,6 @@ async fn handle(
                     "no model loaded",
                 )),
             }
-        }
-
-        (&Method::GET, "/metrics") => {
-            let m = &state.metrics;
-            let json = serde_json::json!({
-                "requests_total":    m.requests_total.load(Ordering::Relaxed),
-                "requests_active":   m.requests_active.load(Ordering::Relaxed),
-                "requests_rejected": m.requests_rejected.load(Ordering::Relaxed),
-                "inference_errors":  m.inference_errors.load(Ordering::Relaxed),
-                "concurrency_limit": state.semaphore.available_permits() + m.requests_active.load(Ordering::Relaxed) as usize,
-            });
-            Ok(json_ok(serde_json::to_vec(&json).unwrap()))
         }
 
         (&Method::GET, "/schema") => {

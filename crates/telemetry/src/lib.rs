@@ -18,6 +18,7 @@ mod json_format;
 use opentelemetry::trace::TracerProvider as _;
 use opentelemetry_sdk::metrics::{PeriodicReader, SdkMeterProvider};
 use opentelemetry_sdk::trace::SdkTracerProvider;
+use std::time::Duration;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
 
 use edgeflow_config::Environment;
@@ -35,6 +36,10 @@ pub fn init(service_name: &str, default_filter: &str) -> anyhow::Result<()> {
     let has_otel = otel_provider.is_some();
 
     let otel_layer = otel_provider.map(|provider| {
+        // Register globally — this keeps the provider (and its batch exporter)
+        // alive for the process lifetime. Without this the provider is dropped
+        // at the end of the closure and the batch exporter shuts down immediately.
+        opentelemetry::global::set_tracer_provider(provider.clone());
         let tracer = provider.tracer(service_name.to_owned());
         tracing_opentelemetry::layer().with_tracer(tracer)
     });
@@ -88,7 +93,9 @@ fn build_meter_provider(service_name: &str) -> anyhow::Result<SdkMeterProvider> 
         .with_tonic()
         .build()?;
 
-    let reader = PeriodicReader::builder(exporter).build();
+    let reader = PeriodicReader::builder(exporter)
+        .with_interval(Duration::from_secs(10))
+        .build();
 
     let provider = SdkMeterProvider::builder()
         .with_reader(reader)

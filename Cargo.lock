@@ -1338,6 +1338,7 @@ dependencies = [
  "http-body-util",
  "hyper 1.8.1",
  "hyper-util",
+ "opentelemetry",
  "ort",
  "reqwest 0.13.2",
  "rumqttc",
