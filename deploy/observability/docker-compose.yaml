@@ -11,7 +11,7 @@ services:
   prometheus:
     image: prom/prometheus:v3.3.0
     volumes:
-      - ./prometheus/prometheus.yaml:/etc/prometheus/prometheus.yaml:ro
+      - ./prometheus/prometheus.yaml:/etc/prometheus/prometheus.yml:ro
     ports:
       - "9090:9090"
 
