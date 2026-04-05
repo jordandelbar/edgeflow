@@ -68,18 +68,20 @@ async fn get_target_stats(
     )
     .await;
 
+    // sum() across all pods — correct for multi-replica targets.
     let memory_bytes = query_scalar(
         &state.http_client,
         prom_url,
-        &format!("edgeflow_inference_memory_rss_bytes{{target=\"{target}\"}}"),
+        &format!("sum(edgeflow_inference_memory_rss_bytes{{target=\"{target}\"}})"),
     )
     .await
     .map(|v| v as u64);
 
+    // avg() per pod — shows how hard each replica is working, not the fleet total.
     let cpu_ratio = query_scalar(
         &state.http_client,
         prom_url,
-        &format!("edgeflow_inference_cpu_usage_ratio{{target=\"{target}\"}}"),
+        &format!("avg(edgeflow_inference_cpu_usage_ratio{{target=\"{target}\"}})"),
     )
     .await;
 

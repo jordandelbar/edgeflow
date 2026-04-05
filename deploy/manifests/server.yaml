@@ -93,7 +93,7 @@ spec:
             - name: EDGEFLOW_SERVER_URL
               value: http://edgeflow-server:5000
             - name: EDGEFLOW_INFERENCE_IMAGE
-              value: edgeflow-inference:dev-tract
+              value: edgeflow-inference:dev-ort
             - name: EDGEFLOW_IMAGE_PULL_POLICY
               value: Never
             - name: LOG_FORMAT

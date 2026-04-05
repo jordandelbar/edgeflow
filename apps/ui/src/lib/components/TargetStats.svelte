@@ -1,9 +1,10 @@
 <script lang="ts">
   import type { TargetStats, InfraSettings } from '$lib/api';
 
-  export let stats:    TargetStats | null;
-  export let history:  TargetStats[] = [];
-  export let infra:    InfraSettings | null = null;
+  export let stats:     TargetStats | null;
+  export let history:   TargetStats[] = [];
+  export let infra:     InfraSettings | null = null;
+  export let podCount:  number = 1;
   export let loading = false;
 
   const W = 80, H = 20;
@@ -70,7 +71,10 @@
 
   $: limitBytes    = infra?.memory_limit   ? parseK8sBytes(infra.memory_limit)   : null;
   $: requestBytes  = infra?.memory_request ? parseK8sBytes(infra.memory_request) : null;
-  $: provisionedBytes = limitBytes ?? requestBytes;
+  // Scale by pod count — memory_bytes is already summed across all pods.
+  $: provisionedBytes = (limitBytes ?? requestBytes) != null
+    ? (limitBytes ?? requestBytes)! * podCount
+    : null;
 
   $: memPct = (stats?.memory_bytes != null && provisionedBytes)
     ? Math.min(100, (stats.memory_bytes / provisionedBytes) * 100)

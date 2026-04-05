@@ -253,6 +253,7 @@
                   {stats}
                   history={statsHistory[t] ?? []}
                   infra={tgt?.infra ?? null}
+                  podCount={podCount}
                   loading={statsLoading[t]}
                 />
               </td>
