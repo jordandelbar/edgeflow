@@ -26,7 +26,7 @@ async fn main() -> Result<()> {
     let state = ServerState {
         active: Arc::new(RwLock::new(None)),
         semaphore: Arc::new(Semaphore::new(cfg.max_concurrent)),
-        metrics: Arc::new(Metrics::new(&cfg.target)),
+        metrics: Arc::new(Metrics::new(&cfg.target, &cfg.pod_id)),
         client: client.clone(),
         target: cfg.target.clone(),
         sessions: cfg.sessions,

@@ -77,13 +77,14 @@ pub struct Metrics {
     requests_active: UpDownCounter<i64>,
     duration: Histogram<f64>,
     target_kv: KeyValue,
+    pod_kv: KeyValue,
     // Kept alive so observable callbacks continue to fire.
     _memory_rss: ObservableGauge<u64>,
     _cpu_usage: ObservableGauge<f64>,
 }
 
 impl Metrics {
-    pub fn new(target: &str) -> Self {
+    pub fn new(target: &str, pod_id: &str) -> Self {
         let meter = opentelemetry::global::meter("edgeflow-inference");
 
         let requests_total = meter
@@ -111,13 +112,20 @@ impl Metrics {
             .build();
 
         let target_for_rss: Arc<str> = target.into();
+        let pod_for_rss: Arc<str> = pod_id.into();
         let memory_rss = meter
             .u64_observable_gauge("inference_memory_rss_bytes")
             .with_description("Pod RSS memory usage in bytes")
             .with_unit("By")
             .with_callback(move |observer| {
                 if let Some(rss) = read_memory_rss_bytes() {
-                    observer.observe(rss, &[KeyValue::new("target", target_for_rss.clone())]);
+                    observer.observe(
+                        rss,
+                        &[
+                            KeyValue::new("target", target_for_rss.clone()),
+                            KeyValue::new("pod", pod_for_rss.clone()),
+                        ],
+                    );
                 }
             })
             .build();
@@ -127,6 +135,7 @@ impl Metrics {
         let cpu_state: Arc<std::sync::Mutex<Option<CpuSnapshot>>> =
             Arc::new(std::sync::Mutex::new(None));
         let target_for_cpu: Arc<str> = target.into();
+        let pod_for_cpu: Arc<str> = pod_id.into();
         let cpu_usage = meter
             .f64_observable_gauge("inference_cpu_usage_ratio")
             .with_description("CPU usage as fraction of one core")
@@ -141,8 +150,13 @@ impl Metrics {
                         if delta_t > 0.0 {
                             // Linux jiffies tick at 100/s; delta_j/100 = CPU seconds
                             let ratio = (delta_j / 100.0) / delta_t;
-                            observer
-                                .observe(ratio, &[KeyValue::new("target", target_for_cpu.clone())]);
+                            observer.observe(
+                                ratio,
+                                &[
+                                    KeyValue::new("target", target_for_cpu.clone()),
+                                    KeyValue::new("pod", pod_for_cpu.clone()),
+                                ],
+                            );
                         }
                     }
                 }
@@ -160,6 +174,7 @@ impl Metrics {
             requests_active,
             duration,
             target_kv: KeyValue::new("target", target.to_owned()),
+            pod_kv: KeyValue::new("pod", pod_id.to_owned()),
             _memory_rss: memory_rss,
             _cpu_usage: cpu_usage,
         }
@@ -245,6 +260,7 @@ async fn handle(
                         1,
                         &[
                             state.metrics.target_kv.clone(),
+                            state.metrics.pod_kv.clone(),
                             KeyValue::new("status", "rejected"),
                         ],
                     );
@@ -255,19 +271,25 @@ async fn handle(
                 }
             };
 
-            state
-                .metrics
-                .requests_active
-                .add(1, &[state.metrics.target_kv.clone()]);
+            state.metrics.requests_active.add(
+                1,
+                &[
+                    state.metrics.target_kv.clone(),
+                    state.metrics.pod_kv.clone(),
+                ],
+            );
 
             // Acquire read lock only long enough to clone the inner Arc.
             let active = state.active.read().unwrap().as_ref().map(Arc::clone);
 
             let Some(active) = active else {
-                state
-                    .metrics
-                    .requests_active
-                    .add(-1, &[state.metrics.target_kv.clone()]);
+                state.metrics.requests_active.add(
+                    -1,
+                    &[
+                        state.metrics.target_kv.clone(),
+                        state.metrics.pod_kv.clone(),
+                    ],
+                );
                 drop(permit);
                 return Ok(json_error(
                     StatusCode::SERVICE_UNAVAILABLE,
@@ -299,11 +321,12 @@ async fn handle(
             let duration = start.elapsed().as_secs_f64();
             metrics
                 .requests_active
-                .add(-1, &[metrics.target_kv.clone()]);
+                .add(-1, &[metrics.target_kv.clone(), metrics.pod_kv.clone()]);
             metrics.duration.record(
                 duration,
                 &[
                     metrics.target_kv.clone(),
+                    metrics.pod_kv.clone(),
                     KeyValue::new("backend", backend_name()),
                 ],
             );
@@ -312,14 +335,22 @@ async fn handle(
                 Ok(out) => {
                     metrics.requests_total.add(
                         1,
-                        &[metrics.target_kv.clone(), KeyValue::new("status", "ok")],
+                        &[
+                            metrics.target_kv.clone(),
+                            metrics.pod_kv.clone(),
+                            KeyValue::new("status", "ok"),
+                        ],
                     );
                     Ok(Response::new(Full::new(Bytes::from(out))))
                 }
                 Err(e) => {
                     metrics.requests_total.add(
                         1,
-                        &[metrics.target_kv.clone(), KeyValue::new("status", "error")],
+                        &[
+                            metrics.target_kv.clone(),
+                            metrics.pod_kv.clone(),
+                            KeyValue::new("status", "error"),
+                        ],
                     );
                     tracing::error!("inference error: {e:#}");
                     Ok(json_error(
