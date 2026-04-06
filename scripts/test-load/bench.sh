@@ -31,6 +31,7 @@ case "$TARGET" in
   *adult*)
     LOCUSTFILE="locustfile_adult.py"
     PAYLOAD_FILE=""
+    INFER_HOST="http://127.0.0.1:8081"
     CONTENT_TYPE="application/json"
     ;;
   *yolo*|*image*)

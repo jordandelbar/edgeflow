@@ -60,8 +60,7 @@
   }
 
   function fmtRps(rps: number): string {
-    const s = rps >= 10 ? rps.toFixed(1) : rps.toFixed(2);
-    return s.replace(/\.?0+$/, '') + '/s';
+    return Math.round(rps) + '/s';
   }
 
   function fmtPct(ratio: number): string {

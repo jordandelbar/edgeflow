@@ -28,8 +28,8 @@ echo "==> labelling nodes..."
 kubectl label node k3d-edgeflow-server-0 edgeflow-role=server --overwrite
 kubectl label node k3d-edgeflow-agent-0 k3d-edgeflow-agent-1 k3d-edgeflow-agent-2 edgeflow-role=agent --overwrite
 
-echo "==> importing images into cluster..."
-k3d image import edgeflow-server:dev edgeflow-inference:dev-ort -c edgeflow
+echo "==> pushing images to local registry..."
+just push
 
 # ── deploy ────────────────────────────────────────────────────────────────────
 echo "==> deploying manifests..."
@@ -43,41 +43,3 @@ kubectl rollout status deployment/grafana    --timeout=120s
 
 echo "==> waiting for edgeflow-server to be ready..."
 kubectl rollout status deployment/edgeflow-server --timeout=120s
-
-# ── train & deploy ────────────────────────────────────────────────────────────
-# The inference pod is already starting and will register with the server.
-# Creating a deployment here triggers POST /upgrade on the registered pod.
-echo "==> running training script..."
-EDGEFLOW_SERVER=http://localhost:5000 \
-EDGEFLOW_TARGET=iris-inference \
-    uv run --project scripts python scripts/train_iris.py
-
-# ── wait for inference to become healthy ──────────────────────────────────────
-# The readiness probe on /health only passes after the model is loaded and the
-# deployment is confirmed HEALTHY — so rollout status = model is serving.
-echo "==> waiting for edgeflow-inference to be ready..."
-kubectl rollout status deployment/edgeflow-inference-iris-inference --timeout=300s
-
-# ── smoke test ────────────────────────────────────────────────────────────────
-# Brief pause: kubectl rollout completes when the readiness probe passes, but
-# k3d's NodePort routing takes a moment to propagate after that.
-sleep 3
-
-echo ""
-echo "==> smoke test (setosa sample: sepal=5.1x3.5 petal=1.4x0.2)..."
-python3 -c "import struct, sys; sys.stdout.buffer.write(struct.pack('<4f', 5.1, 3.5, 1.4, 0.2))" \
-    | curl -s -X POST http://localhost:8080/infer --data-binary @- \
-    | python3 -m json.tool
-
-echo ""
-echo "==> deployment state:"
-curl -s "http://localhost:5000/api/v1/deployments/latest?target=iris-inference" | python3 -m json.tool
-
-echo ""
-echo "done."
-echo "  server:     http://localhost:5000"
-echo "  inference:  http://localhost:8080"
-echo "  grafana:    http://localhost:3000"
-echo "  prometheus: http://localhost:9090"
-echo ""
-echo "to tear down: k3d cluster delete edgeflow"

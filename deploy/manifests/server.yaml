@@ -80,8 +80,8 @@ spec:
         edgeflow-role: server
       containers:
         - name: edgeflow-server
-          image: edgeflow-server:dev
-          imagePullPolicy: Never
+          image: localhost:5001/edgeflow-server:dev
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 5000
             - containerPort: 1883
@@ -93,9 +93,9 @@ spec:
             - name: EDGEFLOW_SERVER_URL
               value: http://edgeflow-server:5000
             - name: EDGEFLOW_INFERENCE_IMAGE
-              value: edgeflow-inference:dev-ort
+              value: localhost:5001/edgeflow-inference:dev-ort
             - name: EDGEFLOW_IMAGE_PULL_POLICY
-              value: Never
+              value: IfNotPresent
             - name: LOG_FORMAT
               value: json
             - name: OTEL_EXPORTER_OTLP_ENDPOINT

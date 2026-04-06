@@ -1,6 +1,44 @@
-data_dir     := "./data"
-static_dir   := "./static"
+data_dir      := "./data"
+static_dir    := "./static"
 otel_endpoint := "http://localhost:4317"
+registry      := "localhost:5001"
+
+pull:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    declare -A images=(
+        ["otel/opentelemetry-collector-contrib:0.145.0"]="{{ registry }}/otel-collector-contrib:0.145.0"
+        ["grafana/tempo:2.7.2"]="{{ registry }}/grafana/tempo:2.7.2"
+        ["grafana/loki:3.5.0"]="{{ registry }}/loki:3.5.0"
+        ["grafana/grafana:11.6.1"]="{{ registry }}/grafana:11.6.1"
+        ["prom/prometheus:v3.3.0"]="{{ registry }}/prometheus:v3.3.0"
+    )
+    for src in "${!images[@]}"; do
+        dst="${images[$src]}"
+        echo "Pulling $src..."
+        docker pull "$src"
+        echo "Tagging as $dst..."
+        docker tag "$src" "$dst"
+    done
+
+push:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # Vendor images
+    for img in \
+        {{ registry }}/otel-collector-contrib:0.145.0 \
+        {{ registry }}/prometheus:v3.3.0 \
+        {{ registry }}/grafana/tempo:2.7.2 \
+        {{ registry }}/grafana:11.6.1; do
+        echo "Pushing $img..."
+        docker push "$img"
+    done
+    # App images
+    for img in edgeflow-server:dev edgeflow-inference:dev-ort; do
+        echo "Tagging and pushing {{ registry }}/$img..."
+        docker tag "$img" "{{ registry }}/$img"
+        docker push "{{ registry }}/$img"
+    done
 
 # Build everything
 build: build-transforms build-ui build-server
@@ -33,10 +71,11 @@ deploy-observability:
     kubectl rollout status deployment/tempo --timeout=120s
     kubectl rollout status deployment/grafana --timeout=120s
 
-# Build the server image, import into k3d, and rollout restart
+# Build the server image, push to local registry, and rollout restart
 deploy-server:
     docker build -f deploy/server.Dockerfile -t edgeflow-server:dev .
-    k3d image import edgeflow-server:dev -c edgeflow
+    docker tag edgeflow-server:dev {{ registry }}/edgeflow-server:dev
+    docker push {{ registry }}/edgeflow-server:dev
     kubectl rollout restart deployment/edgeflow-server
     kubectl rollout status deployment/edgeflow-server --timeout=120s
 

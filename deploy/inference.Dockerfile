@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1
 ARG BACKEND=tract-backend
 
 FROM rust:1.94-trixie AS builder
