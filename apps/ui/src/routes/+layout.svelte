@@ -1,7 +1,8 @@
 <script lang="ts">
   import '../app.css';
+  import type { Snippet } from 'svelte';
 
-  export let data: { pathname: string };
+  let { data, children }: { data: { pathname: string }; children: Snippet } = $props();
 
   const nav = [
     { href: '/experiments', label: 'Experiments', icon: 'fa-solid fa-flask'  },
@@ -42,7 +43,7 @@
 
     <!-- Page content -->
     <main class="flex-1 overflow-y-auto p-6 bg-cream">
-      <slot />
+      {@render children()}
     </main>
 
   </div>

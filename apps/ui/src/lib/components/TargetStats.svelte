@@ -1,16 +1,22 @@
 <script lang="ts">
   import type { TargetStats, InfraSettings } from '$lib/api';
 
-  export let stats:     TargetStats | null;
-  export let history:   TargetStats[] = [];
-  export let infra:     InfraSettings | null = null;
-  export let podCount:  number = 1;
-  export let loading = false;
+  let {
+    stats,
+    history = [],
+    infra = null,
+    podCount = 1,
+    loading = false,
+  }: {
+    stats: TargetStats | null;
+    history?: TargetStats[];
+    infra?: InfraSettings | null;
+    podCount?: number;
+    loading?: boolean;
+  } = $props();
 
   const W = 80, H = 20;
 
-  // Build a smooth cubic-bezier SVG path. Both p50 and p99 share the same
-  // max so their relative positions are preserved.
   function sparkPaths(h: TargetStats[]): { p50: string; p99: string } {
     if (h.length < 2) return { p50: '', p99: '' };
     const p50vals = h.map(s => s.p50_ms ?? 0);
@@ -33,9 +39,6 @@
     return { p50: toPath(p50vals), p99: toPath(p99vals) };
   }
 
-  $: spark = sparkPaths(history);
-
-  // Parse k8s memory quantities (e.g. "256Mi", "1Gi", "512M") into bytes.
   function parseK8sBytes(s: string): number | null {
     const match = s.match(/^(\d+(?:\.\d+)?)\s*(Ki|Mi|Gi|Ti|K|M|G|T|)$/);
     if (!match) return null;
@@ -68,32 +71,29 @@
     return pct < 10 ? pct.toFixed(1) + '%' : Math.round(pct) + '%';
   }
 
-  $: limitBytes    = infra?.memory_limit   ? parseK8sBytes(infra.memory_limit)   : null;
-  $: requestBytes  = infra?.memory_request ? parseK8sBytes(infra.memory_request) : null;
-  // Scale by pod count — memory_bytes is already summed across all pods.
-  $: provisionedBytes = (limitBytes ?? requestBytes) != null
-    ? (limitBytes ?? requestBytes)! * podCount
-    : null;
-
-  $: memPct = (stats?.memory_bytes != null && provisionedBytes)
-    ? Math.min(100, (stats.memory_bytes / provisionedBytes) * 100)
-    : null;
-  $: memColour = memPct == null ? 'bg-gray-200'
-    : memPct > 85 ? 'bg-red-400'
-    : memPct > 65 ? 'bg-amber-400'
-    : 'bg-sage';
-
-  $: cpuPct = stats?.cpu_ratio != null ? Math.min(100, stats.cpu_ratio * 100) : null;
-  $: cpuColour = cpuPct == null ? 'bg-gray-200'
-    : cpuPct > 85 ? 'bg-red-400'
-    : cpuPct > 65 ? 'bg-amber-400'
-    : 'bg-sage';
-
-  $: latencyRows = stats ? ([
-    ['p50', stats.p50_ms],
-    ['p95', stats.p95_ms],
-    ['p99', stats.p99_ms],
-  ] as [string, number | null][]) : [];
+  let spark        = $derived(sparkPaths(history));
+  let limitBytes   = $derived(infra?.memory_limit   ? parseK8sBytes(infra.memory_limit)   : null);
+  let requestBytes = $derived(infra?.memory_request ? parseK8sBytes(infra.memory_request) : null);
+  let provisionedBytes = $derived(
+    (limitBytes ?? requestBytes) != null ? (limitBytes ?? requestBytes)! * podCount : null
+  );
+  let memPct    = $derived(
+    stats?.memory_bytes != null && provisionedBytes
+      ? Math.min(100, (stats.memory_bytes / provisionedBytes) * 100)
+      : null
+  );
+  let memColour = $derived(
+    memPct == null ? 'bg-gray-200' : memPct > 85 ? 'bg-red-400' : memPct > 65 ? 'bg-amber-400' : 'bg-sage'
+  );
+  let cpuPct    = $derived(stats?.cpu_ratio != null ? Math.min(100, stats.cpu_ratio * 100) : null);
+  let cpuColour = $derived(
+    cpuPct == null ? 'bg-gray-200' : cpuPct > 85 ? 'bg-red-400' : cpuPct > 65 ? 'bg-amber-400' : 'bg-sage'
+  );
+  let latencyRows = $derived(
+    stats
+      ? (['p50', 'p95', 'p99'] as const).map(k => [k, stats[`${k}_ms` as keyof TargetStats]] as [string, number | null])
+      : [] as [string, number | null][]
+  );
 </script>
 
 {#if loading}
@@ -119,7 +119,6 @@
 
         {#if history.length >= 3}
           <span class="inline-flex flex-col gap-0.5">
-            <!-- sparkline -->
             <span class="rounded overflow-hidden border border-gray-100 bg-gray-50 inline-block" style="line-height:0">
               <svg width={W} height={H} style="display:block">
                 {#if spark.p99}
@@ -132,7 +131,6 @@
                 {/if}
               </svg>
             </span>
-            <!-- legend -->
             <span class="inline-flex justify-between px-0.5" style="width:{W}px">
               <span class="inline-flex items-center gap-0.5">
                 <span class="inline-block w-2 h-0.5 rounded" style="background:#7aaa8a"></span>
@@ -146,7 +144,6 @@
           </span>
         {/if}
 
-        <!-- numeric labels -->
         {#each latencyRows as [label, val] (label)}
           {#if val != null}
             <span class="inline-flex items-center gap-0.5">

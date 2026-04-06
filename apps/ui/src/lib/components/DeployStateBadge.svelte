@@ -1,5 +1,5 @@
 <script lang="ts">
-  export let state: string;
+  let { state }: { state: string } = $props();
 
   const stateStyle: Record<string, string> = {
     pending:    'bg-gray-100 text-gray-500',

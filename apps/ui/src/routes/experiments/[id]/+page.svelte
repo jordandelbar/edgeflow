@@ -1,38 +1,34 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
   import { experiments, runs, type Experiment, type Run } from '$lib/api';
   import { fmtDateTime } from '$lib/utils';
   import ErrorCard from '$lib/components/ErrorCard.svelte';
   import BreadcrumbNav from '$lib/components/BreadcrumbNav.svelte';
   import StatusBadge from '$lib/components/StatusBadge.svelte';
 
-  export let data: { id: string };
+  let { data }: { data: { id: string } } = $props();
 
-  let experiment: Experiment | null = null;
-  let runList: Run[] = [];
-  let error = '';
-  let interval: ReturnType<typeof setInterval>;
+  let experiment = $state<Experiment | null>(null);
+  let runList    = $state<Run[]>([]);
+  let error      = $state('');
 
-  async function load() {
+  $effect(() => {
     const id = data.id;
-    try {
-      const [expRes, runsRes] = await Promise.all([
-        experiments.get(id),
-        runs.search([id]),
-      ]);
-      experiment = expRes.experiment;
-      runList = (runsRes.runs ?? []).sort((a, b) => b.info.start_time - a.info.start_time);
-    } catch (e) {
-      error = String(e);
+    async function load() {
+      try {
+        const [expRes, runsRes] = await Promise.all([
+          experiments.get(id),
+          runs.search([id]),
+        ]);
+        experiment = expRes.experiment;
+        runList = (runsRes.runs ?? []).sort((a, b) => b.info.start_time - a.info.start_time);
+      } catch (e) {
+        error = String(e);
+      }
     }
-  }
-
-  onMount(() => {
     load();
-    interval = setInterval(load, 10000);
+    const timer = setInterval(load, 10000);
+    return () => clearInterval(timer);
   });
-
-  onDestroy(() => clearInterval(interval));
 
   function duration(run: Run): string {
     if (!run.info.end_time) return '—';
@@ -40,7 +36,7 @@
     return s < 60 ? `${s.toFixed(1)}s` : `${(s / 60).toFixed(1)}m`;
   }
 
-  $: metricKeys = [...new Set(runList.flatMap(r => r.data.metrics.map(m => m.key)))];
+  let metricKeys = $derived([...new Set(runList.flatMap(r => r.data.metrics.map(m => m.key)))]);
 
   function metricValue(run: Run, key: string): string {
     const m = run.data.metrics.find(m => m.key === key);

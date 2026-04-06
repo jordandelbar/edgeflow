@@ -1,5 +1,5 @@
 <script lang="ts">
-  export let status: string;
+  let { status }: { status: string } = $props();
 
   const styles: Record<string, string> = {
     FINISHED: 'bg-sage-light/40 text-sage-dark',

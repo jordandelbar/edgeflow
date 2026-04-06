@@ -1,17 +1,46 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
   import { registeredModels, type RegisteredModel, type Deployment } from '$lib/api';
   import { liveData, refreshLiveData } from '$lib/stores';
   import ErrorCard from '$lib/components/ErrorCard.svelte';
   import DeployModal from '$lib/components/DeployModal.svelte';
 
-  let items: RegisteredModel[] = [];
-  let deployModalModel: RegisteredModel | null = null;
-  let deletingModel: Record<string, boolean> = {};
-  let error = '';
-  let interval: ReturnType<typeof setInterval>;
+  let items             = $state<RegisteredModel[]>([]);
+  let deployModalModel  = $state<RegisteredModel | null>(null);
+  let deletingModel     = $state<Record<string, boolean>>({});
+  let error             = $state('');
 
-  $: knownTargets = (() => {
+  $effect(() => {
+    loadModels();
+    const timer = setInterval(loadModels, 10000);
+    return () => clearInterval(timer);
+  });
+
+  async function loadModels() {
+    try {
+      items = (await registeredModels.list()).registered_models ?? [];
+    } catch (e) {
+      error = String(e);
+    }
+  }
+
+  async function deleteModel(name: string) {
+    deletingModel[name] = true;
+    try {
+      await registeredModels.delete(name);
+      items = items.filter(m => m.name !== name);
+    } finally {
+      deletingModel[name] = false;
+    }
+  }
+
+  function latestVersion(model: RegisteredModel) {
+    if (model.latest_versions.length === 0) return undefined;
+    return model.latest_versions.reduce((a, b) =>
+      parseInt(a.version) > parseInt(b.version) ? a : b
+    );
+  }
+
+  let knownTargets = $derived((() => {
     const targetMap: Record<string, typeof $liveData.targets[0]> = {};
     for (const t of $liveData.targets) targetMap[t.target] = t;
     const latestByTarget: Record<string, Deployment> = {};
@@ -25,9 +54,9 @@
       node: targetMap[name]?.node ?? null,
       sessions: targetMap[name]?.resources?.sessions ?? null,
     }));
-  })();
+  })());
 
-  $: deployedOn = (() => {
+  let deployedOn = $derived((() => {
     const result: Record<string, string[]> = {};
     const latestByTarget: Record<string, Deployment> = {};
     for (const d of $liveData.deployments) {
@@ -41,37 +70,7 @@
       }
     }
     return result;
-  })();
-
-  async function loadModels() {
-    try {
-      items = (await registeredModels.list()).registered_models ?? [];
-    } catch (e) {
-      error = String(e);
-    }
-  }
-
-  onMount(() => { loadModels(); interval = setInterval(loadModels, 10000); });
-  onDestroy(() => clearInterval(interval));
-
-  async function deleteModel(name: string) {
-    deletingModel[name] = true;
-    deletingModel = deletingModel;
-    try {
-      await registeredModels.delete(name);
-      items = items.filter(m => m.name !== name);
-    } finally {
-      deletingModel[name] = false;
-      deletingModel = deletingModel;
-    }
-  }
-
-  function latestVersion(model: RegisteredModel) {
-    if (model.latest_versions.length === 0) return undefined;
-    return model.latest_versions.reduce((a, b) =>
-      parseInt(a.version) > parseInt(b.version) ? a : b
-    );
-  }
+  })());
 
   function deployedTargets(model: RegisteredModel): string[] {
     const targets: string[] = [];
@@ -83,18 +82,14 @@
     }
     return targets;
   }
-
-  function onDeployed(_e: CustomEvent<{ run_id: string; targets: string[] }>) {
-    refreshLiveData();
-  }
 </script>
 
 {#if deployModalModel}
   <DeployModal
     registeredModel={deployModalModel}
     {knownTargets}
-    on:close={() => { deployModalModel = null; }}
-    on:deployed={onDeployed}
+    onclose={() => { deployModalModel = null; }}
+    ondeployed={() => { refreshLiveData(); }}
   />
 {/if}
 
@@ -123,7 +118,6 @@
           {@const mv = latestVersion(model)}
           <tr class="border-b border-gray-50 last:border-0 hover:bg-gray-50/50 transition-colors">
 
-            <!-- Model name → detail page -->
             <td class="px-5 py-3.5">
               <a href="/models/{encodeURIComponent(model.name)}"
                 class="font-medium text-gray-800 hover:text-peach-dark transition-colors">
@@ -131,12 +125,10 @@
               </a>
             </td>
 
-            <!-- Version count -->
             <td class="px-5 py-3.5 hidden sm:table-cell text-xs text-gray-500">
               {model.latest_versions.length}
             </td>
 
-            <!-- Latest version + stage -->
             <td class="px-5 py-3.5 hidden md:table-cell">
               {#if mv}
                 <span class="font-mono text-xs text-gray-600">v{mv.version}</span>
@@ -146,7 +138,6 @@
               {/if}
             </td>
 
-            <!-- Deployed on (across all versions) -->
             <td class="px-5 py-3.5">
               <div class="flex flex-wrap gap-1">
                 {#each deployedTargets(model) as target (target)}
@@ -157,11 +148,10 @@
               </div>
             </td>
 
-            <!-- Actions -->
             <td class="px-5 py-3.5">
               <div class="flex items-center justify-end gap-1">
                 <button
-                  on:click={() => { deployModalModel = model; }}
+                  onclick={() => { deployModalModel = model; }}
                   disabled={model.latest_versions.length === 0}
                   title="Deploy a version"
                   class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-peach-dark hover:bg-peach-light/20 transition-colors disabled:opacity-30"
@@ -169,7 +159,7 @@
                   <i class="fa-solid fa-rocket text-xs"></i>Deploy
                 </button>
                 <button
-                  on:click={() => deleteModel(model.name)}
+                  onclick={() => deleteModel(model.name)}
                   disabled={deletingModel[model.name]}
                   title="Delete registered model"
                   class="p-1.5 rounded-lg text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors disabled:opacity-50"

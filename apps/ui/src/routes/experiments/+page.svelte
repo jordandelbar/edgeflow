@@ -1,19 +1,15 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { experiments, type Experiment } from '$lib/api';
   import { fmtDate } from '$lib/utils';
   import ErrorCard from '$lib/components/ErrorCard.svelte';
 
-  let items: Experiment[] = [];
-  let error = '';
+  let items: Experiment[] = $state([]);
+  let error = $state('');
 
-  onMount(async () => {
-    try {
-      const res = await experiments.list();
-      items = (res.experiments ?? []).sort((a, b) => b.creation_time - a.creation_time);
-    } catch (e) {
-      error = String(e);
-    }
+  $effect(() => {
+    experiments.list()
+      .then(res => { items = (res.experiments ?? []).sort((a, b) => b.creation_time - a.creation_time); })
+      .catch(e => { error = String(e); });
   });
 </script>
 

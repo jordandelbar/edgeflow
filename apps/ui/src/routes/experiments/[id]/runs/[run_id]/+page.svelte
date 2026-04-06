@@ -6,22 +6,21 @@
   import BreadcrumbNav from '$lib/components/BreadcrumbNav.svelte';
   import StatusBadge from '$lib/components/StatusBadge.svelte';
 
-  export let data: { run_id: string };
+  let { data }: { data: { run_id: string } } = $props();
 
-  let run: Run | null = null;
-  let experimentName = '';
-  let metricKeys: string[] = [];
-  let selectedMetric = '';
-  let metricHistory: Metric[] = [];
-  let fileList: FileInfo[] = [];
-  let error = '';
+  let run            = $state<Run | null>(null);
+  let experimentName = $state('');
+  let metricKeys     = $state<string[]>([]);
+  let selectedMetric = $state('');
+  let metricHistory  = $state<Metric[]>([]);
+  let fileList       = $state<FileInfo[]>([]);
+  let error          = $state('');
 
-  // Model registration state
-  let registeredVersions: ModelVersion[] = [];
-  let registering = false;
-  let registerForm = false;
-  let registerName = '';
-  let registerError = '';
+  let registeredVersions = $state<ModelVersion[]>([]);
+  let registering        = $state(false);
+  let registerForm       = $state(false);
+  let registerName       = $state('');
+  let registerError      = $state('');
 
   onMount(async () => {
     const run_id = data.run_id;
@@ -58,7 +57,6 @@
     registering = true;
     registerError = '';
     try {
-      // Create registered model (idempotent — ignore already-exists error)
       try { await registeredModels.create(registerName.trim()); } catch { /* exists */ }
       const res = await registeredModels.createVersion(registerName.trim(), run.info.run_id);
       registeredVersions = [...registeredVersions, res.model_version];
@@ -93,7 +91,6 @@
     </div>
 
     <div class="flex flex-col items-end gap-2">
-      <!-- Existing model version badges -->
       {#each registeredVersions as mv (mv.version)}
         <a
           href="/models"
@@ -105,7 +102,6 @@
         </a>
       {/each}
 
-      <!-- Register as model -->
       {#if run.info.status === 'FINISHED'}
         {#if registerForm}
           <div class="flex items-center gap-2">
@@ -116,7 +112,7 @@
               class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-peach/50 focus:border-peach w-48"
             />
             <button
-              on:click={registerAsModel}
+              onclick={registerAsModel}
               disabled={registering}
               class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold bg-peach text-white hover:bg-peach-dark transition-colors disabled:opacity-50"
             >
@@ -128,7 +124,7 @@
               Register
             </button>
             <button
-              on:click={() => { registerForm = false; registerError = ''; }}
+              onclick={() => { registerForm = false; registerError = ''; }}
               class="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 transition-colors"
             >
               <i class="fa-solid fa-xmark text-sm"></i>
@@ -139,7 +135,7 @@
           {/if}
         {:else}
           <button
-            on:click={() => { registerForm = true; }}
+            onclick={() => { registerForm = true; }}
             class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold bg-peach text-white hover:bg-peach-dark transition-colors"
           >
             <i class="fa-solid fa-tag text-xs"></i>
@@ -184,7 +180,7 @@
         {#if metricKeys.length > 1}
           <select
             bind:value={selectedMetric}
-            on:change={loadMetricHistory}
+            onchange={loadMetricHistory}
             class="text-xs border border-gray-200 rounded-md px-2 py-1 text-gray-600 bg-white"
           >
             {#each metricKeys as key (key)}<option value={key}>{key}</option>{/each}

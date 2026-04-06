@@ -1,21 +1,28 @@
 <script lang="ts">
-  import { createEventDispatcher, onDestroy } from 'svelte';
   import { deployments, nodes, registeredModels, type RegisteredModel, type ModelVersion, type Deployment, type ResourceSettings, type InfraSettings } from '$lib/api';
   import DeployStateBadge from './DeployStateBadge.svelte';
 
-  // Provide either a specific version (skips version picker) or a whole model.
-  // When both are null, a model picker is shown first.
-  export let modelVersion: ModelVersion | null = null;
-  export let registeredModel: RegisteredModel | null = null;
-  export let knownTargets: { name: string; state: string; model_name: string | null; model_version: string | null; node: string | null; sessions: number | null }[];
+  type KnownTarget = { name: string; state: string; model_name: string | null; model_version: string | null; node: string | null; sessions: number | null };
 
-  // Resolved once the user picks (or was given) a version.
-  let resolvedVersion: ModelVersion | null = modelVersion;
+  let {
+    modelVersion = null,
+    registeredModel = null,
+    knownTargets,
+    onclose,
+    ondeployed,
+  }: {
+    modelVersion?: ModelVersion | null;
+    registeredModel?: RegisteredModel | null;
+    knownTargets: KnownTarget[];
+    onclose: () => void;
+    ondeployed: (_data: { run_id: string; targets: string[] }) => void;
+  } = $props();
 
-  // Model picker state — active when both modelVersion and registeredModel are null.
-  let modelList: RegisteredModel[] = [];
-  let loadingModels = false;
-  let pickedModel: RegisteredModel | null = registeredModel;
+  let resolvedVersion = $state<ModelVersion | null>(modelVersion);
+
+  let modelList     = $state<RegisteredModel[]>([]);
+  let loadingModels = $state(false);
+  let pickedModel   = $state<RegisteredModel | null>(registeredModel);
 
   if (!registeredModel && !modelVersion) {
     loadingModels = true;
@@ -35,41 +42,32 @@
       ?? { colour: 'bg-gray-50 text-gray-500', label: stage };
   }
 
-  const dispatch = createEventDispatcher<{
-    close: void;
-    deployed: { run_id: string; targets: string[] };
-  }>();
-
-  const DEFAULT_RESOURCES: ResourceSettings = {
-    sessions:       1,
-    max_concurrent: null,
-  };
-
+  const DEFAULT_RESOURCES: ResourceSettings = { sessions: 1, max_concurrent: null };
   const DEFAULT_INFRA: InfraSettings = {
-    cpu_request:    '100m',
-    memory_request: '256Mi',
-    memory_limit:   '512Mi',
-    replicas:       null,
-    placement:      null,
-    node_selector:  null,
+    cpu_request: '100m', memory_request: '256Mi', memory_limit: '512Mi',
+    replicas: null, placement: null, node_selector: null,
   };
 
   type ActiveDep = { target: string; dep: Deployment };
 
-  let addingNew = false;
-  let newTarget = '';
-  let selectedNodes: string[] = [];
-  let showAdvanced = false;
-  let resources: ResourceSettings = { ...DEFAULT_RESOURCES };
-  let infra: InfraSettings = { ...DEFAULT_INFRA };
-  let err = '';
-  let activeDeps: ActiveDep[] = [];
-  let polling = false;
+  let addingNew    = $state(false);
+  let newTarget    = $state('');
+  let selectedNodes = $state<string[]>([]);
+  let showAdvanced = $state(false);
+  let resources    = $state<ResourceSettings>({ ...DEFAULT_RESOURCES });
+  let infra        = $state<InfraSettings>({ ...DEFAULT_INFRA });
+  let err          = $state('');
+  let activeDeps   = $state<ActiveDep[]>([]);
+  let polling      = $state(false);
 
-  let nodeList: string[] = [];
-  let loadingNodes = false;
+  let nodeList     = $state<string[]>([]);
+  let loadingNodes = $state(false);
 
-  let activeIntervals: ReturnType<typeof setInterval>[] = [];
+  let activeIntervals = $state<ReturnType<typeof setInterval>[]>([]);
+
+  $effect(() => {
+    return () => { activeIntervals.forEach(clearInterval); };
+  });
 
   function nodeSuffix(node: string): string {
     return node.split('-').slice(-2).join('-');
@@ -83,7 +81,7 @@
 
   async function openNewTarget() {
     addingNew = true;
-    selectedNodes = []; // default: any agent, no pin
+    selectedNodes = [];
     if (nodeList.length === 0 && !loadingNodes) {
       loadingNodes = true;
       try {
@@ -99,10 +97,7 @@
       try {
         const res = await deployments.getById(dep_id);
         const idx = activeDeps.findIndex(d => d.target === target);
-        if (idx !== -1) {
-          activeDeps[idx].dep = res.deployment;
-          activeDeps = activeDeps;
-        }
+        if (idx !== -1) activeDeps[idx].dep = res.deployment;
         if (['deployed', 'failed', 'superseded'].includes(res.deployment.state)) {
           clearInterval(iv);
           activeIntervals = activeIntervals.filter(i => i !== iv);
@@ -111,7 +106,7 @@
           );
           if (allSettled) {
             polling = false;
-            dispatch('deployed', {
+            ondeployed({
               run_id: resolvedVersion?.run_id ?? '',
               targets: activeDeps.filter(d => d.dep.state === 'deployed').map(d => d.target),
             });
@@ -125,9 +120,9 @@
     activeIntervals.push(iv);
   }
 
-  let existingTarget: string | null = null;
-  let existingResources: Pick<ResourceSettings, 'sessions' | 'max_concurrent'> = { sessions: 1, max_concurrent: null };
-  let showExistingAdvanced = false;
+  let existingTarget    = $state<string | null>(null);
+  let existingResources = $state<Pick<ResourceSettings, 'sessions' | 'max_concurrent'>>({ sessions: 1, max_concurrent: null });
+  let showExistingAdvanced = $state(false);
 
   function openExistingDeploy(target: string) {
     const t = knownTargets.find(x => x.name === target);
@@ -163,8 +158,6 @@
     activeDeps = [];
 
     const base = newTarget.trim();
-    // selectedNodes = [] means "any agent" — create one unpinned target.
-    // selectedNodes with entries creates one target per node (heterogeneous hardware).
     const pairs = selectedNodes.length === 0
       ? [{ node: null as string | null, target: base }]
       : selectedNodes.map(node => ({
@@ -193,17 +186,15 @@
 
   function close() {
     activeIntervals.forEach(clearInterval);
-    dispatch('close');
+    onclose();
   }
-
-  onDestroy(() => { activeIntervals.forEach(clearInterval); });
 </script>
 
-<!-- Backdrop — locked during polling to prevent accidental dismissal -->
+<!-- Backdrop -->
 <div
   class="fixed inset-0 z-40 bg-black/30"
-  on:click={() => { if (!polling) close(); }}
-  on:keydown={(e) => e.key === 'Escape' && !polling && close()}
+  onclick={() => { if (!polling) close(); }}
+  onkeydown={(e) => e.key === 'Escape' && !polling && close()}
   role="button"
   tabindex="-1"
   aria-label="Close"
@@ -232,7 +223,7 @@
         <p class="text-xs text-gray-400 mt-0.5">Choose a model to deploy</p>
       {/if}
     </div>
-    <button on:click={close} disabled={polling} class="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+    <button onclick={close} disabled={polling} class="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
       <i class="fa-solid fa-xmark"></i>
     </button>
   </div>
@@ -241,7 +232,7 @@
   <div class="px-5 py-4 space-y-3">
 
     {#if !pickedModel && !resolvedVersion}
-      <!-- ── Step 0: model picker (only when no model was pre-selected) ─ -->
+      <!-- ── Step 0: model picker ────────────────────────────────────── -->
       <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Choose model</p>
       {#if loadingModels}
         <p class="text-xs text-gray-400 italic"><i class="fa-solid fa-spinner fa-spin mr-1"></i>Loading models…</p>
@@ -251,7 +242,7 @@
         <div class="space-y-1.5">
           {#each modelList as m (m.name)}
             <button
-              on:click={() => { pickedModel = m; }}
+              onclick={() => { pickedModel = m; }}
               class="w-full flex items-center justify-between px-3 py-2.5 rounded-lg border border-gray-200 hover:border-peach hover:bg-peach-light/5 transition-colors text-left"
             >
               <span class="text-sm font-medium text-gray-800">{m.name}</span>
@@ -262,9 +253,9 @@
       {/if}
 
     {:else if pickedModel && !resolvedVersion}
-      <!-- ── Step 1: version picker ─────────────────────────────────── -->
+      <!-- ── Step 1: version picker ──────────────────────────────────── -->
       {#if !registeredModel}
-        <button on:click={() => { pickedModel = null; }} class="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition-colors">
+        <button onclick={() => { pickedModel = null; }} class="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition-colors">
           <i class="fa-solid fa-chevron-left text-xs"></i>Back
         </button>
       {/if}
@@ -273,7 +264,7 @@
         {#each (pickedModel.latest_versions ?? []) as mv (mv.version)}
           {@const badge = stageBadge(mv.current_stage)}
           <button
-            on:click={() => { resolvedVersion = mv; }}
+            onclick={() => { resolvedVersion = mv; }}
             class="w-full flex items-center justify-between px-3 py-2.5 rounded-lg border border-gray-200 hover:border-peach hover:bg-peach-light/5 transition-colors text-left"
           >
             <div class="flex items-center gap-2.5">
@@ -290,7 +281,7 @@
       </div>
 
     {:else if resolvedVersion && activeDeps.length > 0}
-      <!-- ── Deployment results (polling / settled) ────────────────── -->
+      <!-- ── Deployment results ──────────────────────────────────────── -->
       <div class="space-y-2">
         {#each activeDeps as { target, dep } (target)}
           <div class="flex items-center gap-2 text-sm">
@@ -305,7 +296,7 @@
             <i class="fa-solid fa-spinner fa-spin mr-1"></i>polling…
           </span>
         {/if}
-        <button on:click={close} class="text-xs text-gray-400 hover:text-gray-600 transition-colors">
+        <button onclick={close} class="text-xs text-gray-400 hover:text-gray-600 transition-colors">
           <i class="fa-solid fa-xmark mr-1"></i>{polling ? 'Cancel' : 'Close'}
         </button>
       </div>
@@ -313,7 +304,7 @@
     {:else if resolvedVersion}
       <!-- ── Step 2: target picker ───────────────────────────────────── -->
       {#if !modelVersion}
-        <button on:click={() => { resolvedVersion = null; }} class="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition-colors">
+        <button onclick={() => { resolvedVersion = null; }} class="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition-colors">
           <i class="fa-solid fa-chevron-left text-xs"></i>Back
         </button>
       {/if}
@@ -322,7 +313,7 @@
       <div class="flex flex-wrap gap-2">
         {#each knownTargets as t (t.name)}
           <button
-            on:click={() => openExistingDeploy(t.name)}
+            onclick={() => openExistingDeploy(t.name)}
             class="flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors
               {existingTarget === t.name ? 'border-peach text-peach-dark bg-peach-light/10' : 'hover:border-peach hover:text-peach-dark border-gray-200 text-gray-700'}"
           >
@@ -336,7 +327,7 @@
 
         {#if !addingNew}
           <button
-            on:click={openNewTarget}
+            onclick={openNewTarget}
             class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed border-gray-300 text-sm text-gray-400 hover:border-peach hover:text-peach-dark transition-colors"
           >
             <i class="fa-solid fa-plus text-xs"></i>New target
@@ -351,7 +342,7 @@
               <i class="fa-solid fa-server mr-1 text-gray-400"></i>{existingTarget}
             </p>
             <button
-              on:click={() => { showExistingAdvanced = !showExistingAdvanced; }}
+              onclick={() => { showExistingAdvanced = !showExistingAdvanced; }}
               class="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition-colors"
             >
               <i class="fa-solid fa-chevron-{showExistingAdvanced ? 'up' : 'down'} text-xs"></i>
@@ -378,11 +369,11 @@
 
           <div class="flex justify-end gap-2 pt-1">
             <button
-              on:click={() => { existingTarget = null; }}
+              onclick={() => { existingTarget = null; }}
               class="px-3 py-1.5 rounded-lg text-xs text-gray-400 hover:bg-gray-100 transition-colors"
             >Cancel</button>
             <button
-              on:click={confirmDeployToExisting}
+              onclick={confirmDeployToExisting}
               class="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold bg-peach text-white hover:bg-peach-dark transition-colors"
             >
               <i class="fa-solid fa-rocket text-xs"></i>Deploy
@@ -402,7 +393,7 @@
               class="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-peach/50 focus:border-peach"
             />
             <button
-              on:click={() => { addingNew = false; }}
+              onclick={() => { addingNew = false; }}
               class="px-2 py-1.5 rounded-lg text-gray-400 hover:bg-gray-100 transition-colors"
             >
               <i class="fa-solid fa-xmark text-sm"></i>
@@ -417,9 +408,8 @@
               <p class="text-xs text-red-400"><i class="fa-solid fa-circle-xmark mr-1"></i>No nodes discovered — is the cluster reachable?</p>
             {:else}
               <div class="flex flex-wrap gap-2">
-                <!-- "Any agent" = no hostname pin; spread works across all matching nodes -->
                 <button
-                  on:click={() => { selectedNodes = []; }}
+                  onclick={() => { selectedNodes = []; }}
                   class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors
                     {selectedNodes.length === 0 ? 'border-sage bg-sage-light/30 text-sage-dark' : 'border-gray-200 text-gray-500 hover:border-gray-300'}"
                 >
@@ -429,7 +419,7 @@
                 {#each nodeList as n (n)}
                   {@const selected = selectedNodes.includes(n)}
                   <button
-                    on:click={() => toggleNode(n)}
+                    onclick={() => toggleNode(n)}
                     class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors
                       {selected ? 'border-peach bg-peach-light/20 text-peach-dark' : 'border-gray-200 text-gray-500 hover:border-gray-300'}"
                   >
@@ -452,7 +442,7 @@
           </div>
 
           <button
-            on:click={() => { showAdvanced = !showAdvanced; }}
+            onclick={() => { showAdvanced = !showAdvanced; }}
             class="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition-colors"
           >
             <i class="fa-solid fa-chevron-{showAdvanced ? 'up' : 'down'} text-xs"></i>
@@ -517,7 +507,7 @@
               <span></span>
             {/if}
             <button
-              on:click={deployNew}
+              onclick={deployNew}
               disabled={loadingNodes || nodeList.length === 0}
               class="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-semibold bg-peach text-white hover:bg-peach-dark transition-colors disabled:opacity-50"
             >

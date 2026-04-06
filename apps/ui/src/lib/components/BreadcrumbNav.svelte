@@ -1,5 +1,5 @@
 <script lang="ts">
-  export let items: Array<{ label: string; href?: string }>;
+  let { items }: { items: Array<{ label: string; href?: string }> } = $props();
 </script>
 
 <div class="flex items-center gap-2 text-sm text-gray-400 mb-5 flex-wrap">

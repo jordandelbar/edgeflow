@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { targets, type Deployment, type ModelStatus, type TargetHealth, type TargetStats } from '$lib/api';
   import { liveData, refreshLiveData } from '$lib/stores';
   import { fmtDateTime } from '$lib/utils';
@@ -6,23 +7,23 @@
   import DeployModal from '$lib/components/DeployModal.svelte';
   import TargetStatsView from '$lib/components/TargetStats.svelte';
 
-  let byTarget: Record<string, Deployment[]> = {};
-  let targetList: string[] = [];
-  let targetHealth: Record<string, TargetHealth> = {};
-  let modelStatus: Record<string, ModelStatus | null> = {};
-  let targetStats:   Record<string, TargetStats | null> = {};
-  let statsHistory:  Record<string, TargetStats[]> = {};
-  let statsLoading:  Record<string, boolean> = {};
-  let confirming: Record<string, boolean> = {};
-  let tearing: Record<string, boolean> = {};
+  let byTarget:     Record<string, Deployment[]>      = $state({});
+  let targetList:   string[]                          = $state([]);
+  let targetHealth: Record<string, TargetHealth>      = $state({});
+  let modelStatus:  Record<string, ModelStatus | null> = $state({});
+  let targetStats:  Record<string, TargetStats | null> = $state({});
+  let statsHistory: Record<string, TargetStats[]>     = $state({});
+  let statsLoading: Record<string, boolean>           = $state({});
+  let confirming:   Record<string, boolean>           = $state({});
+  let tearing:      Record<string, boolean>           = $state({});
+  let error   = $state('');
+  let loading = $state(true);
+  let showDeployModal = $state(false);
 
-  let error   = '';
-  let loading = true;
-
-  // "New deployment" modal state
-  let showDeployModal = false;
-
-  $: processLiveData($liveData);
+  $effect(() => {
+    const data = $liveData;
+    untrack(() => processLiveData(data));
+  });
 
   function processLiveData(data: typeof $liveData) {
     error   = data.error;
@@ -36,11 +37,9 @@
     }
     const newTargetList = Object.keys(newByTarget);
 
-    const newTargetHealth: Record<string, TargetHealth> = { ...targetHealth };
     for (const tg of data.targets) {
-      newTargetHealth[tg.target] = tg.health;
+      targetHealth[tg.target] = tg.health;
     }
-    targetHealth = newTargetHealth;
 
     for (const t of newTargetList) {
       if (!(t in modelStatus)) modelStatus[t] = null;
@@ -48,18 +47,14 @@
       if (!(t in tearing))     tearing[t]     = false;
       if (!(t in statsLoading)) statsLoading[t] = true;
     }
-    modelStatus  = modelStatus;
-    confirming   = confirming;
-    tearing      = tearing;
-    statsLoading = statsLoading;
 
     byTarget   = newByTarget;
     targetList = newTargetList;
 
     newTargetList.forEach(t => {
       targets.model(t)
-        .then(s => { modelStatus[t] = s; modelStatus = modelStatus; })
-        .catch(() => { modelStatus[t] = null; modelStatus = modelStatus; });
+        .then(s => { modelStatus[t] = s; })
+        .catch(() => { modelStatus[t] = null; });
 
       targets.stats(t)
         .then(s => {
@@ -67,29 +62,28 @@
           statsLoading[t] = false;
           const prev = statsHistory[t] ?? [];
           statsHistory[t] = [...prev, s].slice(-30);
-          targetStats = targetStats; statsLoading = statsLoading; statsHistory = statsHistory;
         })
-        .catch(() => { targetStats[t] = null; statsLoading[t] = false; targetStats = targetStats; statsLoading = statsLoading; });
+        .catch(() => { targetStats[t] = null; statsLoading[t] = false; });
     });
   }
 
-  $: sortedTargets = [...targetList].sort((a, b) => a.localeCompare(b));
+  let sortedTargets = $derived([...targetList].sort((a, b) => a.localeCompare(b)));
 
   async function teardown(t: string) {
-    tearing[t] = true; tearing = tearing;
+    tearing[t] = true;
     try {
       await targets.teardown(t);
-      delete byTarget[t]; byTarget = byTarget;
+      delete byTarget[t];
       targetList = targetList.filter(x => x !== t);
     } catch (e) {
       error = String(e);
     } finally {
-      tearing[t] = false; confirming[t] = false;
-      tearing = tearing; confirming = confirming;
+      tearing[t] = false;
+      confirming[t] = false;
     }
   }
 
-  $: knownTargets = (() => {
+  let knownTargets = $derived((() => {
     const latestByTarget: Record<string, Deployment> = {};
     for (const d of $liveData.deployments) {
       if (!latestByTarget[d.target]) latestByTarget[d.target] = d;
@@ -102,7 +96,7 @@
       node: $liveData.targets.find(t => t.target === name)?.node ?? null,
       sessions: $liveData.targets.find(t => t.target === name)?.resources?.sessions ?? null,
     }));
-  })();
+  })());
 
   const healthDot: Record<TargetHealth, { colour: string; label: string }> = {
     healthy:   { colour: 'text-sage',      label: 'healthy'   },
@@ -115,8 +109,8 @@
 {#if showDeployModal}
   <DeployModal
     knownTargets={knownTargets}
-    on:close={() => { showDeployModal = false; refreshLiveData(); }}
-    on:deployed={() => { refreshLiveData(); }}
+    onclose={() => { showDeployModal = false; refreshLiveData(); }}
+    ondeployed={() => { refreshLiveData(); }}
   />
 {/if}
 
@@ -131,7 +125,7 @@
     <i class="fa-solid fa-rocket text-4xl mb-3 block opacity-30"></i>
     <p class="text-sm">No deployments yet.</p>
     <button
-      on:click={() => { showDeployModal = true; }}
+      onclick={() => { showDeployModal = true; }}
       class="mt-4 flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-peach text-white hover:bg-peach-dark transition-colors mx-auto"
     >
       <i class="fa-solid fa-plus text-xs"></i>New deployment
@@ -141,7 +135,7 @@
   <div class="flex items-center justify-between mb-4">
     <h1 class="text-sm font-semibold text-gray-500 uppercase tracking-wide">Deployments</h1>
     <button
-      on:click={() => { showDeployModal = true; }}
+      onclick={() => { showDeployModal = true; }}
       class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-peach text-white hover:bg-peach-dark transition-colors"
     >
       <i class="fa-solid fa-plus text-xs"></i>New deployment
@@ -172,7 +166,6 @@
           {@const hasStats = stats !== null || statsLoading[t]}
 
           <tr class="hover:bg-gray-50/50 transition-colors" class:border-b={!hasStats} class:border-gray-50={!hasStats}>
-            <!-- Health dot + optional replica count -->
             <td class="pl-4 pr-2 py-3">
               <div class="flex flex-col items-center gap-0.5">
                 <i class="fa-solid fa-circle text-xs {healthDot[hs].colour}" title={healthDot[hs].label}></i>
@@ -182,7 +175,6 @@
               </div>
             </td>
 
-            <!-- Target name → link to detail -->
             <td class="px-4 py-3 truncate">
               <a href="/deployments/{encodeURIComponent(t)}"
                  class="font-medium text-sm text-gray-800 hover:text-sage-dark transition-colors">
@@ -190,7 +182,6 @@
               </a>
             </td>
 
-            <!-- Loaded model -->
             <td class="px-4 py-3 hidden sm:table-cell truncate">
               {#if currentDep?.model_name}
                 <a href="/models/{encodeURIComponent(currentDep.model_name)}" class="text-xs text-sage-dark hover:underline">
@@ -205,7 +196,6 @@
               {/if}
             </td>
 
-            <!-- Since -->
             <td class="px-4 py-3 hidden md:table-cell text-xs text-gray-400">
               {#if status?.loaded_at}
                 {fmtDateTime(status.loaded_at)}
@@ -214,26 +204,25 @@
               {/if}
             </td>
 
-            <!-- Actions: only teardown -->
             <td class="px-4 py-3">
               <div class="flex items-center justify-end gap-1">
                 {#if confirming[t]}
                   <button
-                    on:click={() => teardown(t)}
+                    onclick={() => teardown(t)}
                     disabled={tearing[t]}
                     class="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold bg-red-500 text-white hover:bg-red-600 transition-colors disabled:opacity-50"
                   >
                     {#if tearing[t]}<i class="fa-solid fa-spinner fa-spin"></i>{:else}Confirm{/if}
                   </button>
                   <button
-                    on:click={() => { confirming[t] = false; confirming = confirming; }}
+                    onclick={() => { confirming[t] = false; }}
                     class="p-1.5 rounded-lg text-xs text-gray-400 hover:bg-gray-100 transition-colors"
                   >
                     <i class="fa-solid fa-xmark"></i>
                   </button>
                 {:else}
                   <button
-                    on:click={() => { confirming[t] = true; confirming = confirming; }}
+                    onclick={() => { confirming[t] = true; }}
                     title="Tear down target"
                     class="p-1.5 rounded-lg text-xs text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors"
                   >
@@ -244,7 +233,6 @@
             </td>
           </tr>
 
-          <!-- Live stats row — only shown when Prometheus is configured -->
           {#if hasStats}
             <tr class="border-b border-gray-50 last:border-0">
               <td></td>

@@ -6,17 +6,16 @@
   import DeployStateBadge from '$lib/components/DeployStateBadge.svelte';
   import ErrorCard from '$lib/components/ErrorCard.svelte';
 
-  export let data: { target: string };
+  let { data }: { data: { target: string } } = $props();
   const t = data.target;
 
-  let tgt: Target | null = null;
-  let deps: Deployment[] = [];
-  let modelStatus: ModelStatus | null = null;
-  let runExpId: Record<string, string> = {};
-  let error = '';
-  let loading = true;
+  let tgt         = $state<Target | null>(null);
+  let deps        = $state<Deployment[]>([]);
+  let modelStatus = $state<ModelStatus | null>(null);
+  let runExpId:    Record<string, string> = $state({});
+  let error   = $state('');
+  let loading = $state(true);
 
-  // Playground state
   type Playground = {
     inputs: number[];
     nFeatures: number | null;
@@ -25,22 +24,20 @@
     err: string;
     running: boolean;
   };
-  let pg: Playground = { inputs: [], nFeatures: null, featureNames: [], result: null, err: '', running: false };
+  let pg = $state<Playground>({ inputs: [], nFeatures: null, featureNames: [], result: null, err: '', running: false });
 
-  // Active panel
-  let panel: 'inspect' | 'test' | 'history' = 'inspect';
+  let panel: 'inspect' | 'test' | 'history' = $state('inspect');
 
-  $: processLiveData($liveData);
+  $effect(() => {
+    const live = $liveData;
+    error   = live.error;
+    loading = !live.loaded;
+    if (!live.loaded) return;
 
-  function processLiveData(data: typeof $liveData) {
-    error   = data.error;
-    loading = !data.loaded;
-    if (!data.loaded) return;
-
-    const match = data.targets.find(x => x.target === t);
+    const match = live.targets.find(x => x.target === t);
     if (match) tgt = match;
 
-    deps = data.deployments
+    deps = live.deployments
       .filter(d => d.target === t)
       .sort((a, b) => b.created_at - a.created_at);
 
@@ -49,12 +46,12 @@
         modelStatus = s;
         if (s?.run_id && !(s.run_id in runExpId)) {
           runs.get(s.run_id)
-            .then(r => { runExpId[s.run_id] = r.run.info.experiment_id; runExpId = runExpId; })
+            .then(r => { runExpId[s.run_id] = r.run.info.experiment_id; })
             .catch(() => {});
         }
       })
       .catch(() => { modelStatus = null; });
-  }
+  });
 
   async function openTest() {
     panel = 'test';
@@ -68,36 +65,39 @@
       const featuresParam = params.find(p => p.key === 'features')?.value ?? '';
       const featureNames = featuresParam ? featuresParam.split(',').map(s => s.trim()) : [];
       const n = isNaN(nf) ? 4 : nf;
-      pg = { ...pg, nFeatures: n, featureNames, inputs: Array(n).fill(0) };
+      pg.nFeatures = n;
+      pg.featureNames = featureNames;
+      pg.inputs = Array(n).fill(0);
     } catch {
-      pg = { ...pg, nFeatures: 4, inputs: Array(4).fill(0) };
+      pg.nFeatures = 4;
+      pg.inputs = Array(4).fill(0);
     }
   }
 
   async function runPlayground() {
-    pg = { ...pg, err: '', result: null, running: true };
+    pg.err = '';
+    pg.result = null;
+    pg.running = true;
     const n = pg.nFeatures ?? pg.inputs.length;
-    if (n === 0) { pg = { ...pg, err: 'No inputs configured.', running: false }; return; }
-    const data = pg.inputs.slice(0, n);
+    if (n === 0) { pg.err = 'No inputs configured.'; pg.running = false; return; }
+    const inputData = pg.inputs.slice(0, n);
     try {
-      const res = await targets.playground(t, data);
-      pg = { ...pg, result: res };
+      pg.result = await targets.playground(t, inputData);
     } catch (e) {
-      pg = { ...pg, err: String(e) };
+      pg.err = String(e);
     } finally {
-      pg = { ...pg, running: false };
+      pg.running = false;
     }
   }
 
-  // Resource editing
-  let editingResources = false;
-  let resourceDraft: ResourceSettings = { sessions: null, max_concurrent: null };
-  let infraDraft: InfraSettings = { cpu_request: null, memory_request: null, memory_limit: null, replicas: null, placement: null, node_selector: null };
-  let pinnedNode = '';
-  let availableNodes: string[] = [];
-  let resourceSaving = false;
-  let resourceError = '';
-  let resourceNotice = '';
+  let editingResources = $state(false);
+  let resourceDraft    = $state<ResourceSettings>({ sessions: null, max_concurrent: null });
+  let infraDraft       = $state<InfraSettings>({ cpu_request: null, memory_request: null, memory_limit: null, replicas: null, placement: null, node_selector: null });
+  let pinnedNode       = $state('');
+  let availableNodes   = $state<string[]>([]);
+  let resourceSaving   = $state(false);
+  let resourceError    = $state('');
+  let resourceNotice   = $state('');
 
   async function startEditResources() {
     const res = tgt?.resources;
@@ -154,10 +154,10 @@
     return pod.pod_id.replace(/^edgeflow-inference-/, '');
   }
 
-  $: hs = tgt?.health ?? 'unknown';
-  $: currentDep = modelStatus ? deps.find(d => d.deployment_id === modelStatus!.deployment_id) ?? deps[0] : deps[0];
-  $: inf = tgt?.infra;
-  $: res = tgt?.resources;
+  let hs         = $derived(tgt?.health ?? 'unknown');
+  let currentDep = $derived(modelStatus ? deps.find(d => d.deployment_id === modelStatus!.deployment_id) ?? deps[0] : deps[0]);
+  let inf        = $derived(tgt?.infra);
+  let res        = $derived(tgt?.resources);
 </script>
 
 <BreadcrumbNav items={[{ label: 'Deployments', href: '/deployments' }, { label: t }]} />
@@ -183,7 +183,7 @@
     <!-- Tab switcher -->
     <div class="flex items-center gap-1 bg-gray-100 rounded-xl p-1">
       <button
-        on:click={() => { panel = 'inspect'; }}
+        onclick={() => { panel = 'inspect'; }}
         class="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors
           {panel === 'inspect' ? 'bg-white shadow-sm text-gray-800' : 'text-gray-500 hover:text-gray-700'}"
       >
@@ -191,7 +191,7 @@
       </button>
       {#if hs !== 'unhealthy' && modelStatus?.run_id}
         <button
-          on:click={openTest}
+          onclick={openTest}
           class="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors
             {panel === 'test' ? 'bg-white shadow-sm text-gray-800' : 'text-gray-500 hover:text-gray-700'}"
         >
@@ -199,7 +199,7 @@
         </button>
       {/if}
       <button
-        on:click={() => { panel = 'history'; }}
+        onclick={() => { panel = 'history'; }}
         class="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors
           {panel === 'history' ? 'bg-white shadow-sm text-gray-800' : 'text-gray-500 hover:text-gray-700'}"
       >
@@ -262,7 +262,7 @@
           <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Resources</p>
           {#if !editingResources}
             <button
-              on:click={startEditResources}
+              onclick={startEditResources}
               class="text-xs text-gray-400 hover:text-sage-dark transition-colors"
               title="Edit resources"
             >
@@ -340,7 +340,7 @@
 
             <div class="flex items-center gap-2 pt-1">
               <button
-                on:click={saveResources}
+                onclick={saveResources}
                 disabled={resourceSaving}
                 class="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold bg-sage text-white hover:bg-sage-dark transition-colors disabled:opacity-50"
               >
@@ -352,7 +352,7 @@
                 Save
               </button>
               <button
-                on:click={() => { editingResources = false; }}
+                onclick={() => { editingResources = false; }}
                 class="text-xs text-gray-400 hover:text-gray-600 transition-colors"
               >
                 Cancel
@@ -471,14 +471,14 @@
                 type="number"
                 step="any"
                 bind:value={pg.inputs[i]}
-                on:keydown={(e) => e.key === 'Enter' && runPlayground()}
+                onkeydown={(e) => e.key === 'Enter' && runPlayground()}
                 class="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-peach/50 focus:border-peach bg-white"
               />
             </div>
           {/each}
           <div class="flex items-end pb-0.5">
             <button
-              on:click={runPlayground}
+              onclick={runPlayground}
               disabled={pg.running}
               class="flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-semibold bg-peach text-white hover:bg-peach-dark transition-colors disabled:opacity-50"
             >
