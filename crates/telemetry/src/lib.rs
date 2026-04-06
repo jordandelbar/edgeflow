@@ -3,8 +3,7 @@
 //! Call [`init`] once at service startup, before any other work. It sets up:
 //! - A `tracing` subscriber with `EnvFilter` (reads `RUST_LOG`, falls back to
 //!   `default_filter`)
-//! - JSON log format in production (`EDGEFLOW_ENV=production`), pretty-print
-//!   otherwise — both formats inject OTel `trace_id`/`span_id` when available
+//! - Log format controlled by `LOG_FORMAT=json|text` (defaults to `text`)
 //! - OTLP span exporter for traces (best-effort; degrades gracefully when the
 //!   collector is unreachable)
 //! - OTLP metrics exporter with a 10 s periodic reader
@@ -15,20 +14,18 @@
 
 mod json_format;
 
+use std::time::Duration;
+
 use opentelemetry::trace::TracerProvider as _;
 use opentelemetry_sdk::metrics::{PeriodicReader, SdkMeterProvider};
 use opentelemetry_sdk::trace::SdkTracerProvider;
-use std::time::Duration;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
-
-use edgeflow_config::Environment;
 
 /// Initialise tracing and metrics for the given service.
 ///
 /// `default_filter` is used when `RUST_LOG` is not set (e.g.
 /// `"edgeflow_inference=info"`).
 pub fn init(service_name: &str, default_filter: &str) -> anyhow::Result<()> {
-    let env = Environment::from_env();
     let env_filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_filter));
 
@@ -44,8 +41,9 @@ pub fn init(service_name: &str, default_filter: &str) -> anyhow::Result<()> {
         tracing_opentelemetry::layer().with_tracer(tracer)
     });
 
-    let fmt_layer = if env.is_production() {
+    let fmt_layer = if use_json_format() {
         tracing_subscriber::fmt::layer()
+            .fmt_fields(tracing_subscriber::fmt::format::JsonFields::new())
             .event_format(json_format::JsonWithTraceId)
             .boxed()
     } else {
@@ -69,6 +67,11 @@ pub fn init(service_name: &str, default_filter: &str) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+/// Returns `true` when `LOG_FORMAT=json` is set.
+fn use_json_format() -> bool {
+    std::env::var("LOG_FORMAT").as_deref() == Ok("json")
 }
 
 fn build_tracer_provider(service_name: &str) -> anyhow::Result<SdkTracerProvider> {
