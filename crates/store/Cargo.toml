@@ -6,7 +6,6 @@ edition = "2021"
 [dependencies]
 edgeflow-core = { path = "../core" }
 sqlx = { workspace = true }
-tokio = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }

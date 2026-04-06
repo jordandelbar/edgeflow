@@ -24,10 +24,14 @@ impl MqttPodClient {
         let client_id = format!("edgeflow-inference-{pod_id}");
 
         let mut options = MqttOptions::new(&client_id, &host, port);
-        options.set_keep_alive(Duration::from_secs(30));
+        options.set_keep_alive(Duration::from_secs(60));
+        options.set_clean_session(true);
 
-        let (client, mut eventloop) = AsyncClient::new(options, 16);
-        let (cmd_tx, cmd_rx) = mpsc::channel::<DeployInstruction>(16);
+        // Cap of 1: we only ever have one in-flight deploy command at a time.
+        let (client, mut eventloop) = AsyncClient::new(options, 1);
+        // Buffer of 1: load_and_swap is serial; a second command can't arrive
+        // before the first is consumed in practice (retained topic, one server).
+        let (cmd_tx, cmd_rx) = mpsc::channel::<DeployInstruction>(1);
 
         let cmd_topic = format!("edgeflow/targets/{target}/commands");
         let client_sub = client.clone();

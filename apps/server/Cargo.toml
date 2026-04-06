@@ -11,7 +11,7 @@ edgeflow-config    = { path = "../../crates/config" }
 edgeflow-telemetry = { path = "../../crates/telemetry" }
 edgeflow-k8s = { path = "../../crates/k8s" }
 axum = { workspace = true }
-tokio = { workspace = true }
+tokio = { version = "1", features = ["rt-multi-thread", "fs", "io-util", "net", "time", "macros"] }
 tower-http = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

@@ -9,5 +9,4 @@ kube = { version = "0.97", default-features = false, features = ["client", "rust
 k8s-openapi = { version = "0.23", features = ["v1_31"] }
 anyhow = { workspace = true }
 tracing = { workspace = true }
-tokio = { workspace = true }
 serde_json = { workspace = true }

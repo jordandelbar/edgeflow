@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-tokio = { workspace = true }
+tokio = { version = "1", features = ["rt", "signal", "time", "macros"] }
 tokio-util = { version = "0.7", features = ["rt"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }

@@ -63,7 +63,7 @@ pub fn load_and_swap(
     req: DeployInstruction,
     shared_active: Arc<RwLock<Option<Arc<ActiveDeployment>>>>,
     client: Arc<EdgeflowClient>,
-    target: String,
+    target: Arc<str>,
 ) {
     let sessions = req.sessions;
     let rt = tokio::runtime::Handle::current();
@@ -120,7 +120,7 @@ pub fn load_and_swap(
                 model_info: ModelInfo {
                     run_id: req.run_id,
                     deployment_id: req.deployment_id.clone(),
-                    target,
+                    target: target.to_string(),
                     loaded_at: chrono::Utc::now().to_rfc3339(),
                 },
                 schema,

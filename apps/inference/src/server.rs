@@ -110,7 +110,7 @@ impl Metrics {
             ])
             .build();
 
-        let target_for_rss = target.to_owned();
+        let target_for_rss: Arc<str> = target.into();
         let memory_rss = meter
             .u64_observable_gauge("inference_memory_rss_bytes")
             .with_description("Pod RSS memory usage in bytes")
@@ -126,7 +126,7 @@ impl Metrics {
         // Emits fraction of one CPU core (1.0 = 100% of one core).
         let cpu_state: Arc<std::sync::Mutex<Option<CpuSnapshot>>> =
             Arc::new(std::sync::Mutex::new(None));
-        let target_for_cpu = target.to_owned();
+        let target_for_cpu: Arc<str> = target.into();
         let cpu_usage = meter
             .f64_observable_gauge("inference_cpu_usage_ratio")
             .with_description("CPU usage as fraction of one core")
@@ -179,7 +179,7 @@ pub struct ServerState {
     pub semaphore: Arc<Semaphore>,
     pub metrics: Arc<Metrics>,
     pub client: Arc<EdgeflowClient>,
-    pub target: String,
+    pub target: Arc<str>,
     pub sessions: usize,
 }
 

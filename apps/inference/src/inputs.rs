@@ -164,7 +164,14 @@ pub fn json_to_tensor(body: &[u8], specs: &[InputSpec]) -> Result<(Vec<usize>, V
     let obj: serde_json::Map<String, serde_json::Value> =
         serde_json::from_slice(body).map_err(|e| anyhow!("invalid JSON body: {e}"))?;
 
-    let mut features: Vec<f32> = Vec::new();
+    let capacity: usize = specs
+        .iter()
+        .map(|s| match &s.encoding {
+            Some(Encoding::OneHot { categories }) => categories.len(),
+            _ => 1,
+        })
+        .sum();
+    let mut features: Vec<f32> = Vec::with_capacity(capacity);
 
     for spec in specs {
         let raw = obj

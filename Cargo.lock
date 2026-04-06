@@ -1360,7 +1360,6 @@ dependencies = [
  "k8s-openapi",
  "kube",
  "serde_json",
- "tokio",
  "tracing",
 ]
 
@@ -1400,7 +1399,6 @@ dependencies = [
  "serde_json",
  "sqlx",
  "thiserror 2.0.18",
- "tokio",
  "tracing",
  "uuid",
 ]
@@ -5238,7 +5236,6 @@ dependencies = [
  "bytes",
  "libc",
  "mio",
- "parking_lot",
  "pin-project-lite",
  "signal-hook-registry",
  "socket2 0.6.3",

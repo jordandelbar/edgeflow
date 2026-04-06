@@ -5,6 +5,7 @@
 //! for any required variable that is missing.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use anyhow::{Context, Result};
 
@@ -42,15 +43,15 @@ pub struct InferenceConfig {
     /// URL of the edgeflow-server (e.g. `http://edgeflow-server:5000`).
     pub server_url: String,
     /// Deployment target name this pod serves (e.g. `iris-inference`).
-    pub target: String,
+    pub target: Arc<str>,
     /// Address the HTTP inference server binds to. Default: `0.0.0.0:8080`.
     pub infer_addr: String,
     /// Advertised address used when registering with the server.
-    pub self_address: String,
+    pub self_address: Arc<str>,
     /// k8s node name, if available.
-    pub node_name: Option<String>,
+    pub node_name: Option<Arc<str>>,
     /// Pod identity used for registration. Falls back to `target`.
-    pub pod_id: String,
+    pub pod_id: Arc<str>,
     /// Number of model sessions to keep warm. Default: `1`.
     pub sessions: usize,
     /// Max concurrent inference requests. Default: `sessions`.
@@ -94,11 +95,11 @@ impl InferenceConfig {
 
         Ok(Self {
             server_url,
-            target,
+            target: target.into(),
             infer_addr,
-            self_address,
-            node_name,
-            pod_id,
+            self_address: self_address.into(),
+            node_name: node_name.map(Into::into),
+            pod_id: pod_id.into(),
             sessions,
             max_concurrent,
             mqtt_url,
