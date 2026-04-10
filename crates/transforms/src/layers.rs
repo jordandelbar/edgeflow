@@ -16,15 +16,15 @@ pub enum Layer {
         labels: Vec<String>,
     },
     RawTensorOutput,
-    /// Decode raw JPEG/PNG bytes, resize to (width × height), normalise to [0, 1],
+    /// Decode raw JPEG/PNG bytes, resize to (width × height), normalize to [0, 1],
     /// and reorder from HWC to CHW.  Output tensor shape: [1, 3, height, width].
     ImageToTensor {
         width: usize,
         height: usize,
     },
     /// Decode a YOLO-style detection tensor ([1, 4+classes, num_boxes]), apply
-    /// confidence thresholding and greedy IoU NMS, and serialise survivors to JSON.
-    /// Bounding box coordinates are normalised to [0, 1] by dividing by model_size.
+    /// confidence thresholding and greedy IoU NMS, and serialize survivors to JSON.
+    /// Bounding box coordinates are normalized to [0, 1] by dividing by model_size.
     DetectionOutput {
         labels: Vec<String>,
         conf_threshold: f32,
@@ -253,7 +253,7 @@ fn detection_output(
         }
     }
 
-    // Serialise surviving detections to a JSON array.
+    // Serialize surviving detections to a JSON array.
     let entries: Vec<String> = kept
         .iter()
         .map(|&i| {
@@ -276,7 +276,7 @@ mod tests {
 
     // ── helpers ────────────────────────────────────────────────────────────────
 
-    /// Encode a solid-colour image as PNG bytes.
+    /// Encode a solid-color image as PNG bytes.
     fn solid_png(width: u32, height: u32, r: u8, g: u8, b: u8) -> Vec<u8> {
         use image::codecs::png::PngEncoder;
         use image::{ExtendedColorType, ImageEncoder};

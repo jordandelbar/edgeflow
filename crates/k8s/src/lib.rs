@@ -66,7 +66,7 @@ fn placement_affinity(placement: &Placement, target: &str) -> Affinity {
     }
 }
 
-/// Sanitise a target name into a valid k8s resource name.
+/// Sanitize a target name into a valid k8s resource name.
 /// k8s names: lowercase alphanumeric + `-`, max 63 chars.
 fn k8s_name(target: &str) -> String {
     let sanitized: String = target

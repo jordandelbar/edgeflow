@@ -9,14 +9,8 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 
-// ---------------------------------------------------------------------------
 // Environment
-// ---------------------------------------------------------------------------
 
-/// Runtime environment of the service, read from `EDGEFLOW_ENV`.
-///
-/// Used by the telemetry crate to select the log format (JSON in production,
-/// pretty-print in development).
 pub enum Environment {
     Development,
     Production,
@@ -35,14 +29,11 @@ impl Environment {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Inference pod config
-// ---------------------------------------------------------------------------
-
 pub struct InferenceConfig {
-    /// URL of the edgeflow-server (e.g. `http://edgeflow-server:5000`).
+    /// URL of the edgeflow-server.
     pub server_url: String,
-    /// Deployment target name this pod serves (e.g. `iris-inference`).
+    /// Deployment target name this pod serves.
     pub target: Arc<str>,
     /// Address the HTTP inference server binds to. Default: `0.0.0.0:8080`.
     pub infer_addr: String,
@@ -107,12 +98,9 @@ impl InferenceConfig {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Server config
-// ---------------------------------------------------------------------------
-
 pub struct ServerConfig {
-    /// Root directory for persistent data. Default: `./data`.
+    /// Root directory for persistent data.
     pub data_dir: PathBuf,
     /// Address the HTTP server binds to. Default: `0.0.0.0:5000`.
     pub addr: String,
@@ -124,7 +112,7 @@ pub struct ServerConfig {
     pub mqtt_port: u16,
     /// Seconds before a deployment stuck in `deploying`/`upgrading` is marked failed. Default: `300`.
     pub deployment_timeout_secs: i64,
-    /// Prometheus base URL for the live-stats endpoint. Optional — if absent the
+    /// Prometheus base URL for the live-stats endpoint. Optional, if absent the
     /// `/api/v1/targets/:target/stats` endpoint returns 404 and the UI hides stats.
     pub prometheus_url: Option<String>,
 }

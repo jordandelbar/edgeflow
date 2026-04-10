@@ -21,7 +21,7 @@ use opentelemetry_sdk::metrics::{PeriodicReader, SdkMeterProvider};
 use opentelemetry_sdk::trace::SdkTracerProvider;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
 
-/// Initialise tracing and metrics for the given service.
+/// Initialize tracing and metrics for the given service.
 ///
 /// `default_filter` is used when `RUST_LOG` is not set (e.g.
 /// `"edgeflow_inference=info"`).
