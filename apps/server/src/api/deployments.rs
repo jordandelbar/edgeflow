@@ -8,7 +8,7 @@ use axum::{
     Json, Router,
 };
 use edgeflow_core::{DeploymentState, InfraSettings, ResourceSettings, TargetHealth, TargetPod};
-use edgeflow_store::Store;
+use edgeflow_store::prelude::*;
 use serde::Deserialize;
 
 pub fn router() -> Router<AppState> {

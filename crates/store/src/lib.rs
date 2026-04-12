@@ -3,10 +3,20 @@ pub mod sqlite;
 use anyhow::Result;
 use edgeflow_core::*;
 
-/// Unified store trait — implement this for any backend.
+/// Convenience prelude that bring every store sub-trait into scope at once.
+///
+/// ```ignore
+/// use edgeflow_store::prelude::*;
+/// ```
+pub mod prelude {
+    pub use super::{
+        ArtifactStore, DeploymentStore, ExperimentStore, MetricStore, ModelRegistryStore, RunStore,
+        Store, TargetStore,
+    };
+}
+
 #[async_trait::async_trait]
-pub trait Store: Send + Sync {
-    // Experiments
+pub trait ExperimentStore: Send + Sync {
     async fn create_experiment(
         &self,
         name: &str,
@@ -23,8 +33,10 @@ pub trait Store: Send + Sync {
     async fn restore_experiment(&self, experiment_id: &str) -> Result<()>;
     async fn update_experiment(&self, experiment_id: &str, new_name: &str) -> Result<()>;
     async fn set_experiment_tag(&self, experiment_id: &str, key: &str, value: &str) -> Result<()>;
+}
 
-    // Runs
+#[async_trait::async_trait]
+pub trait RunStore: Send + Sync {
     async fn create_run(
         &self,
         experiment_id: &str,
@@ -48,8 +60,10 @@ pub trait Store: Send + Sync {
         filter: Option<&str>,
         max_results: i64,
     ) -> Result<Vec<Run>>;
+}
 
-    // Metrics / Params / Tags
+#[async_trait::async_trait]
+pub trait MetricStore: Send + Sync {
     async fn log_metric(&self, run_id: &str, metric: Metric) -> Result<()>;
     async fn log_batch(
         &self,
@@ -61,12 +75,16 @@ pub trait Store: Send + Sync {
     async fn log_param(&self, run_id: &str, key: &str, value: &str) -> Result<()>;
     async fn set_tag(&self, run_id: &str, key: &str, value: &str) -> Result<()>;
     async fn get_metric_history(&self, run_id: &str, metric_key: &str) -> Result<Vec<Metric>>;
+}
 
-    // Artifacts
+#[async_trait::async_trait]
+pub trait ArtifactStore: Send + Sync {
     async fn list_artifacts(&self, run_id: &str, path: Option<&str>) -> Result<Vec<FileInfo>>;
     async fn artifact_root(&self, run_id: &str) -> Result<std::path::PathBuf>;
+}
 
-    // Deployments
+#[async_trait::async_trait]
+pub trait DeploymentStore: Send + Sync {
     async fn create_deployment(
         &self,
         run_id: &str,
@@ -89,8 +107,10 @@ pub trait Store: Send + Sync {
         states: &[&str],
         older_than_ms: i64,
     ) -> Result<Vec<Deployment>>;
+}
 
-    // Model Registry
+#[async_trait::async_trait]
+pub trait ModelRegistryStore: Send + Sync {
     async fn create_registered_model(
         &self,
         name: &str,
@@ -132,9 +152,10 @@ pub trait Store: Send + Sync {
     ) -> Result<ModelVersion>;
     async fn delete_model_version(&self, name: &str, version: i64) -> Result<()>;
     async fn search_model_versions(&self, filter: Option<&str>) -> Result<Vec<ModelVersion>>;
+}
 
-    // Targets
-    /// Ensure a target record exists (creates it if new). Used when a pod registers.
+#[async_trait::async_trait]
+pub trait TargetStore: Send + Sync {
     async fn ensure_target(&self, target: &str) -> Result<Target>;
     async fn set_target_model(&self, target: &str, run_id: &str, loaded_at: &str) -> Result<()>;
     async fn store_target_resources(
@@ -145,4 +166,28 @@ pub trait Store: Send + Sync {
     async fn get_target(&self, target: &str) -> Result<Option<Target>>;
     async fn list_targets(&self) -> Result<Vec<Target>>;
     async fn delete_target(&self, target: &str) -> Result<()>;
+}
+
+/// Convenience trait, most call sites can keep using `Store`.
+pub trait Store:
+    ExperimentStore
+    + RunStore
+    + MetricStore
+    + ArtifactStore
+    + DeploymentStore
+    + ModelRegistryStore
+    + TargetStore
+{
+}
+
+/// Blanket impl: anything that implements all sub-traits automatically implements Store.
+impl<T> Store for T where
+    T: ExperimentStore
+        + RunStore
+        + MetricStore
+        + ArtifactStore
+        + DeploymentStore
+        + ModelRegistryStore
+        + TargetStore
+{
 }

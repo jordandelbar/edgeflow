@@ -6,7 +6,7 @@ use axum::{
     Json, Router,
 };
 use edgeflow_core::ExperimentTag;
-use edgeflow_store::Store;
+use edgeflow_store::prelude::*;
 use serde::{Deserialize, Serialize};
 
 pub fn router() -> Router<AppState> {

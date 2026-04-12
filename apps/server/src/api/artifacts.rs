@@ -8,7 +8,7 @@ use axum::{
     routing::{get, put},
     Json, Router,
 };
-use edgeflow_store::Store;
+use edgeflow_store::prelude::*;
 use serde::Deserialize;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt as _;
