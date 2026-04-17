@@ -121,6 +121,61 @@ fn decode_tensor(buf: &[u8]) -> (Vec<usize>, Vec<f32>) {
     (shape, values)
 }
 
+fn encode_tensor_u8(shape: &[usize], data: &[u8]) -> Vec<u8> {
+    let expected = shape.iter().product::<usize>();
+    assert_eq!(
+        data.len(),
+        expected,
+        "encode_tensor_u8: shape says {} bytes but data is {} bytes",
+        expected,
+        data.len(),
+    );
+    let mut buf = Vec::with_capacity(4 + shape.len() * 4 + data.len());
+    buf.push(shape.len() as u8);
+    buf.push(6u8); // dtype = u8
+    buf.push(0u8); // padding
+    buf.push(0u8); // padding
+    for &dim in shape {
+        buf.extend_from_slice(&(dim as u32).to_le_bytes());
+    }
+    buf.extend_from_slice(data);
+    buf
+}
+
+fn decode_tensor_u8(buf: &[u8]) -> (Vec<usize>, &[u8]) {
+    assert!(
+        buf.len() >= 4,
+        "decode_tensor_u8: buffer too short for header"
+    );
+    let ndim = buf[0] as usize;
+    let dtype = buf[1];
+    assert_eq!(
+        dtype, 6,
+        "decode_tensor_u8: expected dtype u8 (6), got {dtype}"
+    );
+    let header_len = 4 + ndim * 4;
+    assert!(
+        buf.len() >= header_len,
+        "decode_tensor_u8: buffer too short for {ndim}-dim shape (need {header_len} bytes, got {})",
+        buf.len(),
+    );
+    let mut pos = 4;
+    let mut shape = Vec::with_capacity(ndim);
+    for _ in 0..ndim {
+        let dim = u32::from_le_bytes(buf[pos..pos + 4].try_into().unwrap()) as usize;
+        shape.push(dim);
+        pos += 4;
+    }
+    let expected_bytes = shape.iter().product::<usize>();
+    let data = &buf[pos..];
+    assert!(
+        data.len() >= expected_bytes,
+        "decode_tensor_u8: shape requires {expected_bytes} bytes of data but buffer has {}",
+        data.len(),
+    );
+    (shape, &data[..expected_bytes])
+}
+
 fn float_to_tensor(n_features: usize, raw: &[u8]) -> Vec<u8> {
     let data: Vec<f32> = raw
         .chunks_exact(4)
@@ -520,5 +575,90 @@ mod tests {
         // Box A: (0,0)-(2,1), Box B: (1,0)-(3,1) — 50% overlap
         let v = iou(0.0, 0.0, 2.0, 1.0, 1.0, 0.0, 3.0, 1.0);
         assert!((v - 1.0 / 3.0).abs() < 1e-6, "iou={v}");
+    }
+
+    // ── Codec ─────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn f32_round_trip() {
+        let shape = vec![2, 3];
+        let data = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let buf = encode_tensor(&shape, &data);
+        let (dec_shape, dec_data) = decode_tensor(&buf);
+        assert_eq!(dec_shape, shape);
+        assert_eq!(dec_data, data);
+    }
+
+    #[test]
+    fn u8_round_trip() {
+        let shape = vec![2, 4];
+        let data: Vec<u8> = vec![0, 127, 200, 255, 1, 2, 3, 4];
+        let buf = encode_tensor_u8(&shape, &data);
+        let (dec_shape, dec_data) = decode_tensor_u8(&buf);
+        assert_eq!(dec_shape, shape);
+        assert_eq!(dec_data, data);
+    }
+
+    #[test]
+    fn u8_single_pixel() {
+        let buf = encode_tensor_u8(&[1, 1, 3], &[128, 64, 32]);
+        let (shape, data) = decode_tensor_u8(&buf);
+        assert_eq!(shape, vec![1, 1, 3]);
+        assert_eq!(data, &[128, 64, 32]);
+    }
+
+    #[test]
+    #[should_panic(expected = "expected dtype f32 (1), got 6")]
+    fn decode_f32_rejects_u8() {
+        let buf = encode_tensor_u8(&[1, 3], &[1, 2, 3]);
+        decode_tensor(&buf);
+    }
+
+    #[test]
+    #[should_panic(expected = "expected dtype u8 (6), got 1")]
+    fn decode_u8_rejects_f32() {
+        let buf = encode_tensor(&[1, 2], &[1.0, 2.0]);
+        decode_tensor_u8(&buf);
+    }
+
+    #[test]
+    #[should_panic(expected = "buffer too short for header")]
+    fn decode_f32_empty_buffer() {
+        decode_tensor(&[]);
+    }
+
+    #[test]
+    #[should_panic(expected = "buffer too short for header")]
+    fn decode_u8_empty_buffer() {
+        decode_tensor_u8(&[]);
+    }
+
+    #[test]
+    #[should_panic(expected = "shape says")]
+    fn encode_f32_shape_mismatch() {
+        encode_tensor(&[2, 3], &[1.0]); // shape says 6 elements, data has 1
+    }
+
+    #[test]
+    #[should_panic(expected = "shape says")]
+    fn encode_u8_shape_mismatch() {
+        encode_tensor_u8(&[2, 3], &[1]); // shape says 6 bytes, data has 1
+    }
+
+    #[test]
+    #[should_panic(expected = "shape requires")]
+    fn decode_f32_truncated_data() {
+        // Valid header for [1, 4] f32 but only 8 bytes of data (need 16)
+        let mut buf = encode_tensor(&[1, 4], &[1.0, 2.0, 3.0, 4.0]);
+        buf.truncate(buf.len() - 8);
+        decode_tensor(&buf);
+    }
+
+    #[test]
+    #[should_panic(expected = "shape requires")]
+    fn decode_u8_truncated_data() {
+        let mut buf = encode_tensor_u8(&[1, 4], &[1, 2, 3, 4]);
+        buf.truncate(buf.len() - 2);
+        decode_tensor_u8(&buf);
     }
 }

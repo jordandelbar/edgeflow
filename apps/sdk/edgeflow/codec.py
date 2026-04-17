@@ -13,6 +13,7 @@ dtype codes:
   3 = i64   (int64,   8 bytes/element, signed)
   4 = f64   (float64, 8 bytes/element)
   5 = bool  (boolean, 1 byte/element)
+  6 = u8    (uint8,   1 byte/element)
 
 The fixed 4-byte header guarantees data starts at offset 4 + ndim*4,
 which is always 4-byte aligned (enabling zero-copy cast in the Rust host
@@ -23,15 +24,26 @@ CPython's standard C extension set and is included in the componentize-py
 WASM build (the entire CPython interpreter is compiled to wasm32-wasi, so
 standard-library C modules like _struct are available).  `int.from_bytes`
 is used for integers as it is built-in and equally fast.
+
+When numpy is available, `decode_tensor` returns an `ndarray` instead of a
+plain list. This avoids ~40 MB of Python object overhead for large tensors
+(e.g. 640x640x3 images). Falls back to the list path in environments where
+numpy is not installed (WASM).
 """
 
 import struct
+
+try:
+    import numpy as np
+except ImportError:
+    np = None
 
 DTYPE_F32 = 1
 DTYPE_I32 = 2
 DTYPE_I64 = 3
 DTYPE_F64 = 4
 DTYPE_BOOL = 5
+DTYPE_U8 = 6
 
 _DTYPE_ITEMSIZE = {
     DTYPE_F32: 4,
@@ -39,7 +51,21 @@ _DTYPE_ITEMSIZE = {
     DTYPE_I64: 8,
     DTYPE_F64: 8,
     DTYPE_BOOL: 1,
+    DTYPE_U8: 1,
 }
+
+_DTYPE_NUMPY = (
+    {
+        DTYPE_F32: "<f4",
+        DTYPE_I32: "<i4",
+        DTYPE_I64: "<i8",
+        DTYPE_F64: "<f8",
+        DTYPE_BOOL: "?",
+        DTYPE_U8: "u1",
+    }
+    if np is not None
+    else {}
+)
 
 
 def encode_tensor(shape: list, data: bytes, dtype: int = DTYPE_F32) -> bytes:
@@ -72,12 +98,14 @@ def encode_tensor(shape: list, data: bytes, dtype: int = DTYPE_F32) -> bytes:
 
 
 def decode_tensor(buf: bytes) -> tuple:
-    """Decode tensor wire format → (shape: list[int], values: list).
+    """Decode tensor wire format → (shape, values).
 
-    Dispatches by dtype code:
+    When numpy is available, returns (list[int], ndarray).
+    Otherwise returns (list[int], list) with element type matching dtype:
       f32/f64  → list[float]
       i32/i64  → list[int]
       bool     → list[bool]
+      u8       → list[int]
     """
     if len(buf) < 4:
         raise ValueError(
@@ -115,6 +143,10 @@ def decode_tensor(buf: bytes) -> tuple:
         )
     data = data[:expected]
 
+    if np is not None:
+        values = np.frombuffer(data, dtype=_DTYPE_NUMPY[dtype]).reshape(shape)
+        return shape, values
+
     if dtype == DTYPE_F32:
         n = expected // 4
         values = list(struct.unpack_from(f"<{n}f", data))
@@ -129,5 +161,7 @@ def decode_tensor(buf: bytes) -> tuple:
         values = list(struct.unpack_from(f"<{n}q", data))
     elif dtype == DTYPE_BOOL:
         values = [bool(b) for b in data]
+    elif dtype == DTYPE_U8:
+        values = list(data)
 
     return shape, values
