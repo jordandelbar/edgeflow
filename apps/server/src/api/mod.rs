@@ -58,6 +58,8 @@ impl IntoResponse for ApiError {
             (StatusCode::NOT_FOUND, "RESOURCE_DOES_NOT_EXIST")
         } else if msg.contains("already exists") || msg.contains("UNIQUE constraint") {
             (StatusCode::BAD_REQUEST, "RESOURCE_ALREADY_EXISTS")
+        } else if msg.contains("unsupported") {
+            (StatusCode::BAD_REQUEST, "INVALID_REQUEST")
         } else {
             tracing::error!(error = %self.0, "internal API error");
             (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR")

@@ -5,8 +5,9 @@ mod target_client;
 
 use axum::Router;
 use edgeflow_common::shutdown_signal;
-use edgeflow_config::ServerConfig;
+use edgeflow_config::{OrchestratorKind, ServerConfig};
 use edgeflow_core::DeploymentState;
+use edgeflow_orchestrator::{ComposeOrchestrator, K8sOrchestrator, Orchestrator};
 use edgeflow_store::prelude::*;
 use edgeflow_store::sqlite::SqliteStore;
 use edgeflow_telemetry;
@@ -30,6 +31,20 @@ async fn main() -> anyhow::Result<()> {
     std::fs::create_dir_all(&artifact_root)?;
 
     let store = SqliteStore::new(&db_path, artifact_root.clone()).await?;
+
+    let orchestrator: Arc<dyn Orchestrator> = match cfg.orchestrator {
+        OrchestratorKind::K8s => {
+            tracing::info!("orchestrator: k8s");
+            Arc::new(K8sOrchestrator::new())
+        }
+        OrchestratorKind::Compose => {
+            // from_env() guarantees this is Some when kind == Compose.
+            let address = cfg.compose_inference_url.clone().unwrap();
+            tracing::info!(address = %address, "orchestrator: compose");
+            Arc::new(ComposeOrchestrator::new(address))
+        }
+    };
+
     // AppState is built after MQTT setup so the publisher can be passed in.
     // Declare state as mutable so we can attach the publisher below.
     let mut state = AppState {
@@ -38,6 +53,7 @@ async fn main() -> anyhow::Result<()> {
         http_client: reqwest::Client::new(),
         mqtt_publisher: None,
         prometheus_url: cfg.prometheus_url.clone(),
+        orchestrator,
     };
 
     // Background task: time out deployments stuck in deploying/upgrading.

@@ -237,10 +237,11 @@ export const registeredModels = {
 // ── Deployments ────────────────────────────────────────────────────────────
 
 export type ModelStatus = {
-  run_id: string;
-  deployment_id: string;
   target: string;
-  loaded_at: string;
+  status: 'loaded' | 'pending';
+  run_id?: string;
+  deployment_id?: string;
+  loaded_at?: string;
 };
 
 export type TargetStats = {

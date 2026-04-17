@@ -1,0 +1,11 @@
+[package]
+name = "edgeflow-orchestrator"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+edgeflow-core = { path = "../core" }
+edgeflow-k8s  = { path = "../k8s" }
+async-trait   = { workspace = true }
+anyhow        = { workspace = true }
+tracing       = { workspace = true }

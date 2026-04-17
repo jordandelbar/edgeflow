@@ -49,6 +49,10 @@ pub struct InferenceConfig {
     pub max_concurrent: usize,
     /// External MQTT broker URL. If absent the server's embedded broker is used.
     pub mqtt_url: Option<String>,
+    /// When true, subscribe to `edgeflow/targets/+/commands` (wildcard) instead
+    /// of the target-specific topic. Used in compose mode so the pod picks up
+    /// upgrade commands for any target name the user deploys to.
+    pub dynamic_topic: bool,
 }
 
 impl InferenceConfig {
@@ -60,7 +64,9 @@ impl InferenceConfig {
         let infer_addr =
             std::env::var("EDGEFLOW_INFER_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".into());
 
-        let pod_id = std::env::var("EDGEFLOW_POD_NAME").unwrap_or_else(|_| target.clone());
+        let pod_id = std::env::var("EDGEFLOW_POD_NAME")
+            .or_else(|_| std::env::var("HOSTNAME"))
+            .unwrap_or_else(|_| target.clone());
 
         let pod_ip = std::env::var("EDGEFLOW_POD_IP").unwrap_or_else(|_| {
             infer_addr
@@ -83,6 +89,9 @@ impl InferenceConfig {
 
         let node_name = std::env::var("EDGEFLOW_NODE_NAME").ok();
         let mqtt_url = std::env::var("EDGEFLOW_MQTT_URL").ok();
+        let dynamic_topic = std::env::var("EDGEFLOW_POD_DYNAMIC_TOPIC")
+            .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
+            .unwrap_or(false);
 
         Ok(Self {
             server_url,
@@ -94,8 +103,16 @@ impl InferenceConfig {
             sessions,
             max_concurrent,
             mqtt_url,
+            dynamic_topic,
         })
     }
+}
+
+/// Which substrate runs inference pods. Defaults to `K8s`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OrchestratorKind {
+    K8s,
+    Compose,
 }
 
 // Server config
@@ -115,6 +132,12 @@ pub struct ServerConfig {
     /// Prometheus base URL for the live-stats endpoint. Optional, if absent the
     /// `/api/v1/targets/:target/stats` endpoint returns 404 and the UI hides stats.
     pub prometheus_url: Option<String>,
+    /// Selects the inference-pod runtime. Defaults to `K8s`. Set
+    /// `EDGEFLOW_ORCHESTRATOR=compose` for the docker-compose demo path.
+    pub orchestrator: OrchestratorKind,
+    /// URL the server uses to reach the compose inference container,
+    /// e.g. `http://inference:8080`. Required when `orchestrator == Compose`.
+    pub compose_inference_url: Option<String>,
 }
 
 impl ServerConfig {
@@ -135,6 +158,16 @@ impl ServerConfig {
 
         let prometheus_url = std::env::var("PROMETHEUS_URL").ok();
 
+        let orchestrator = match std::env::var("EDGEFLOW_ORCHESTRATOR").ok().as_deref() {
+            Some("compose") => OrchestratorKind::Compose,
+            _ => OrchestratorKind::K8s,
+        };
+        let compose_inference_url = std::env::var("EDGEFLOW_COMPOSE_INFERENCE_URL").ok();
+
+        if orchestrator == OrchestratorKind::Compose && compose_inference_url.is_none() {
+            anyhow::bail!("EDGEFLOW_ORCHESTRATOR=compose requires EDGEFLOW_COMPOSE_INFERENCE_URL");
+        }
+
         Ok(Self {
             data_dir,
             addr,
@@ -143,6 +176,8 @@ impl ServerConfig {
             mqtt_port,
             deployment_timeout_secs,
             prometheus_url,
+            orchestrator,
+            compose_inference_url,
         })
     }
 }

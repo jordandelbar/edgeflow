@@ -10,6 +10,11 @@ use crate::deployment::DeployInstruction;
 ///
 /// Subscribes to upgrade commands for its target and forwards them via a
 /// `mpsc::Receiver<DeployInstruction>` so `main` can drive `load_and_swap`.
+///
+/// When `dynamic_topic` is `true` the client subscribes to the wildcard
+/// `edgeflow/targets/+/commands` instead of a target-specific topic. This
+/// lets the compose demo pod pick up upgrade commands for any target without
+/// requiring the user to align env vars at startup.
 pub struct MqttPodClient {
     _client: AsyncClient,
 }
@@ -19,6 +24,7 @@ impl MqttPodClient {
         broker_url: &str,
         target: &str,
         pod_id: &str,
+        dynamic_topic: bool,
     ) -> Result<(Self, mpsc::Receiver<DeployInstruction>)> {
         let (host, port) = parse_broker_addr(broker_url);
         let client_id = format!("edgeflow-inference-{pod_id}");
@@ -33,7 +39,11 @@ impl MqttPodClient {
         // before the first is consumed in practice (retained topic, one server).
         let (cmd_tx, cmd_rx) = mpsc::channel::<DeployInstruction>(1);
 
-        let cmd_topic = format!("edgeflow/targets/{target}/commands");
+        let sub_topic = if dynamic_topic {
+            "edgeflow/targets/+/commands".to_string()
+        } else {
+            format!("edgeflow/targets/{target}/commands")
+        };
         let client_sub = client.clone();
 
         tokio::spawn(async move {
@@ -42,11 +52,14 @@ impl MqttPodClient {
                     Ok(Event::Incoming(Packet::ConnAck(_))) => {
                         // Re-subscribe after every (re)connect — clean session
                         // does not persist subscriptions across reconnects.
-                        if let Err(e) = client_sub.subscribe(&cmd_topic, QoS::AtLeastOnce).await {
+                        if let Err(e) = client_sub.subscribe(&sub_topic, QoS::AtLeastOnce).await {
                             tracing::warn!("mqtt: failed to subscribe to commands: {e}");
                         }
                     }
-                    Ok(Event::Incoming(Packet::Publish(p))) if p.topic == cmd_topic => {
+                    Ok(Event::Incoming(Packet::Publish(p)))
+                        if p.topic.starts_with("edgeflow/targets/")
+                            && p.topic.ends_with("/commands") =>
+                    {
                         match serde_json::from_slice::<serde_json::Value>(&p.payload) {
                             Ok(v) if v["command"].as_str() == Some("upgrade") => {
                                 let run_id = v["run_id"].as_str().unwrap_or_default().to_string();
@@ -78,7 +91,7 @@ impl MqttPodClient {
             }
         });
 
-        tracing::info!(broker = %host, port, "mqtt: pod client ready");
+        tracing::info!(broker = %host, port, dynamic_topic, "mqtt: pod client ready");
 
         Ok((Self { _client: client }, cmd_rx))
     }

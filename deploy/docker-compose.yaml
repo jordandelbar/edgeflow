@@ -1,0 +1,39 @@
+services:
+  server:
+    image: edgeflow-server:dev
+    build:
+      context: ..
+      dockerfile: deploy/server.Dockerfile
+    environment:
+      EDGEFLOW_ORCHESTRATOR: compose
+      EDGEFLOW_COMPOSE_INFERENCE_URL: http://inference:8080
+      EDGEFLOW_DATA_DIR: /data
+      RUST_LOG: edgeflow_server=info,tower_http=warn
+    ports:
+      - "5000:5000"
+    volumes:
+      - edgeflow-data:/data
+
+  inference:
+    image: edgeflow-inference:dev-tract
+    build:
+      context: ..
+      dockerfile: deploy/inference.Dockerfile
+      args:
+        BACKEND: tract-backend
+    environment:
+      EDGEFLOW_SERVER: http://server:5000
+      # Internal placeholder — never shown to the user. Metrics report under
+      # this label regardless of which target the user deploys to.
+      EDGEFLOW_TARGET: compose
+      # Wildcard MQTT subscribe: pick up commands for any target name.
+      EDGEFLOW_POD_DYNAMIC_TOPIC: "true"
+      EDGEFLOW_POD_IP: inference
+      EDGEFLOW_INFER_ADDR: 0.0.0.0:8080
+      EDGEFLOW_MQTT_URL: mqtt://server:1883
+      RUST_LOG: edgeflow_inference=info
+    depends_on:
+      - server
+
+volumes:
+  edgeflow-data:

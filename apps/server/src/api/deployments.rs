@@ -40,8 +40,10 @@ async fn require_target(state: &AppState, target: &str) -> Result<edgeflow_core:
         .ok_or_else(|| anyhow::anyhow!("target '{target}' not registered").into())
 }
 
-async fn first_pod_address(target: &str) -> Result<String, ApiError> {
-    edgeflow_k8s::list_running_pods(target)
+async fn first_pod_address(state: &AppState, target: &str) -> Result<String, ApiError> {
+    state
+        .orchestrator
+        .list_running_pods(target)
         .await
         .and_then(|pods| {
             pods.into_iter()
@@ -59,18 +61,26 @@ async fn target_model_status(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let rec = require_target(&state, &target).await?;
 
-    let run_id = rec
-        .current_run_id
-        .ok_or_else(|| anyhow::anyhow!("no model loaded on target '{target}'"))?;
+    // Pending path: target exists but no model has been confirmed loaded yet.
+    // Returning 200 + `status: "pending"` lets pollers (UI, SDK) distinguish
+    // "target missing" (404) from "target there, still warming up" without
+    // treating every pre-load poll as an internal error.
+    let Some(run_id) = rec.current_run_id else {
+        return Ok(Json(serde_json::json!({
+            "target": target,
+            "status": "pending",
+        })));
+    };
     let loaded_at = rec.model_loaded_at.unwrap_or_default();
 
     // Fetch the latest deployment id for this target for reference.
     let dep = state.store.get_latest_deployment(&target).await?;
 
     Ok(Json(serde_json::json!({
+        "target":        target,
+        "status":        "loaded",
         "run_id":        run_id,
         "deployment_id": dep.deployment_id,
-        "target":        target,
         "loaded_at":     loaded_at,
     })))
 }
@@ -82,7 +92,7 @@ async fn target_health(
     Path(target): Path<String>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_target(&state, &target).await?;
-    let addr = first_pod_address(&target).await?;
+    let addr = first_pod_address(&state, &target).await?;
     let json = TargetClient::new(&state.http_client, &addr)
         .health()
         .await?;
@@ -96,7 +106,7 @@ async fn target_schema(
     Path(target): Path<String>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_target(&state, &target).await?;
-    let addr = first_pod_address(&target).await?;
+    let addr = first_pod_address(&state, &target).await?;
     let json = TargetClient::new(&state.http_client, &addr)
         .schema()
         .await
@@ -117,7 +127,7 @@ async fn infer_playground(
     Json(req): Json<PlaygroundRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_target(&state, &target).await?;
-    let addr = first_pod_address(&target).await?;
+    let addr = first_pod_address(&state, &target).await?;
 
     // Send raw packed floats — same format as the Python client (struct.pack('<Nf', ...)).
     // The preprocess WASM (FloatBytesToTensor) expects this, not a tensor-encoded header.
@@ -252,18 +262,20 @@ async fn create_deployment(
     } else {
         // First deploy: pod doesn't exist yet. Persist edgeflow-owned settings,
         // then create the k8s Deployment (k8s owns cpu/memory/replicas/etc.).
-        let resolved_resources = edgeflow_k8s::resolve_resources(&req.resources);
+        let resolved_resources = edgeflow_orchestrator::resolve_resources(&req.resources);
         state
             .store
             .store_target_resources(&req.target, &resolved_resources)
             .await?;
-        edgeflow_k8s::create_inference_pod(
-            &req.target,
-            req.node.as_deref(),
-            &resolved_resources,
-            &req.infra,
-        )
-        .await;
+        state
+            .orchestrator
+            .create_inference_pod(
+                &req.target,
+                req.node.as_deref(),
+                &resolved_resources,
+                &req.infra,
+            )
+            .await?;
     }
 
     let deployment = state
@@ -490,17 +502,21 @@ async fn update_target_resources(
         } else {
             None
         };
-        pod_restarted =
-            edgeflow_k8s::patch_inference_pod_resources(&target, res_patch, infra_patch).await;
+        pod_restarted = state
+            .orchestrator
+            .patch_inference_pod_resources(&target, res_patch, infra_patch)
+            .await;
     }
 
     // Sessions live-reload: send an upgrade command to the running pod so it
     // rebuilds the ORT pool without a restart. Requires a live pod address.
     if sessions_changed {
-        let k8s_pods = edgeflow_k8s::list_running_pods(&target)
+        let pods = state
+            .orchestrator
+            .list_running_pods(&target)
             .await
             .unwrap_or_default();
-        if let Some(pod_addr) = k8s_pods
+        if let Some(pod_addr) = pods
             .into_iter()
             .find(|p| !p.address.is_empty())
             .map(|p| p.address)
@@ -517,12 +533,14 @@ async fn update_target_resources(
     }
 
     let mut updated = require_target(&state, &target).await?;
-    updated.pods = edgeflow_k8s::list_running_pods(&target)
+    updated.pods = state
+        .orchestrator
+        .list_running_pods(&target)
         .await
         .unwrap_or_default();
     updated.health = worst_health(&updated.pods);
     updated.node = updated.pods.first().and_then(|p| p.node.clone());
-    updated.infra = edgeflow_k8s::get_inference_pod_infra(&target).await;
+    updated.infra = state.orchestrator.get_inference_pod_infra(&target).await;
     Ok(Json(
         serde_json::json!({ "target": updated, "pod_restarted": pod_restarted }),
     ))
@@ -549,12 +567,14 @@ async fn get_target(
     Path(target): Path<String>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let mut t = require_target(&state, &target).await?;
-    t.pods = edgeflow_k8s::list_running_pods(&target)
+    t.pods = state
+        .orchestrator
+        .list_running_pods(&target)
         .await
         .unwrap_or_default();
     t.health = worst_health(&t.pods);
     t.node = t.pods.first().and_then(|p| p.node.clone());
-    t.infra = edgeflow_k8s::get_inference_pod_infra(&t.target).await;
+    t.infra = state.orchestrator.get_inference_pod_infra(&t.target).await;
     Ok(Json(serde_json::json!({ "target": t })))
 }
 
@@ -567,8 +587,8 @@ async fn teardown_target(
     // Supersede active deployments + remove target record.
     state.store.delete_target(&target).await?;
 
-    // Best-effort k8s cleanup — logs a warning if cluster is unreachable.
-    edgeflow_k8s::delete_inference_pod(&target).await;
+    // Best-effort orchestrator cleanup — logs a warning if the runtime is unreachable.
+    state.orchestrator.delete_inference_pod(&target).await;
 
     tracing::info!(target = %target, "target torn down");
     Ok(StatusCode::NO_CONTENT)
@@ -577,24 +597,29 @@ async fn teardown_target(
 // ── GET /targets ──────────────────────────────────────────────────────────────
 
 async fn list_targets(State(state): State<AppState>) -> Result<Json<serde_json::Value>, ApiError> {
-    let all_pods = edgeflow_k8s::list_all_running_pods().await;
+    let all_pods = state.orchestrator.list_all_running_pods().await;
     let mut targets = state.store.list_targets().await?;
     for t in &mut targets {
-        t.pods = all_pods
-            .as_ref()
-            .and_then(|m| m.get(&t.target))
-            .cloned()
-            .unwrap_or_default();
+        t.pods = match &all_pods {
+            // Batch path (k8s): use the pre-fetched map.
+            Some(m) => m.get(&t.target).cloned().unwrap_or_default(),
+            // Per-target fallback (compose): ask for each target individually.
+            None => state
+                .orchestrator
+                .list_running_pods(&t.target)
+                .await
+                .unwrap_or_default(),
+        };
         t.health = worst_health(&t.pods);
         t.node = t.pods.first().and_then(|p| p.node.clone());
-        t.infra = edgeflow_k8s::get_inference_pod_infra(&t.target).await;
+        t.infra = state.orchestrator.get_inference_pod_infra(&t.target).await;
     }
     Ok(Json(serde_json::json!({ "targets": targets })))
 }
 
 // ── GET /nodes ────────────────────────────────────────────────────────────────
 
-async fn list_nodes() -> Json<serde_json::Value> {
-    let nodes = edgeflow_k8s::list_nodes().await;
+async fn list_nodes(State(state): State<AppState>) -> Json<serde_json::Value> {
+    let nodes = state.orchestrator.list_nodes().await;
     Json(serde_json::json!({ "nodes": nodes }))
 }

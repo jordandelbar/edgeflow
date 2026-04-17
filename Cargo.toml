@@ -6,6 +6,7 @@ members = [
     "crates/store",
     "crates/common",
     "crates/k8s",
+    "crates/orchestrator",
     "apps/server",
     "apps/inference",
     "apps/cli",

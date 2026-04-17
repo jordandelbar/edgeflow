@@ -10,6 +10,7 @@ edgeflow-common = { path = "../../crates/common" }
 edgeflow-config    = { path = "../../crates/config" }
 edgeflow-telemetry = { path = "../../crates/telemetry" }
 edgeflow-k8s = { path = "../../crates/k8s" }
+edgeflow-orchestrator = { path = "../../crates/orchestrator" }
 axum = { workspace = true }
 tokio = { version = "1", features = ["rt-multi-thread", "fs", "io-util", "net", "time", "macros"] }
 tower-http = { workspace = true }

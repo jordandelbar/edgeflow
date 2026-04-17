@@ -49,13 +49,15 @@ async fn main() -> Result<()> {
     // the server publishes the pending deployment on registration.
     let mut mqtt_commands: Option<tokio::sync::mpsc::Receiver<deployment::DeployInstruction>> =
         match cfg.mqtt_url.as_deref() {
-            Some(url) => match mqtt::MqttPodClient::new(url, &cfg.target, &cfg.pod_id) {
-                Ok((_client, rx)) => Some(rx),
-                Err(e) => {
-                    tracing::warn!("mqtt init failed: {e}");
-                    None
+            Some(url) => {
+                match mqtt::MqttPodClient::new(url, &cfg.target, &cfg.pod_id, cfg.dynamic_topic) {
+                    Ok((_client, rx)) => Some(rx),
+                    Err(e) => {
+                        tracing::warn!("mqtt init failed: {e}");
+                        None
+                    }
                 }
-            },
+            }
             None => None,
         };
 
