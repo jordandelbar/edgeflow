@@ -22,4 +22,5 @@ features = ["python"]
 [dependency-groups]
 dev = [
     "pytest>=9.0.2",
+    "hypothesis>=6.0",
 ]
