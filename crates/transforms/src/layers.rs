@@ -64,6 +64,14 @@ fn run_layer(layer: &Layer, input: Vec<u8>) -> Vec<u8> {
 }
 
 fn encode_tensor(shape: &[usize], data: &[f32]) -> Vec<u8> {
+    let expected = shape.iter().product::<usize>() * 4;
+    assert_eq!(
+        data.len() * 4,
+        expected,
+        "encode_tensor: shape says {} bytes but data is {} bytes",
+        expected,
+        data.len() * 4,
+    );
     let mut buf = Vec::with_capacity(4 + shape.len() * 4 + data.len() * 4);
     buf.push(shape.len() as u8);
     buf.push(1u8); // dtype = f32
@@ -79,16 +87,34 @@ fn encode_tensor(shape: &[usize], data: &[f32]) -> Vec<u8> {
 }
 
 fn decode_tensor(buf: &[u8]) -> (Vec<usize>, Vec<f32>) {
+    assert!(buf.len() >= 4, "decode_tensor: buffer too short for header");
     let ndim = buf[0] as usize;
-    // buf[1] = dtype, buf[2..4] = padding
-    let mut pos = 4; // fixed header is always 4 bytes
+    let dtype = buf[1];
+    assert_eq!(
+        dtype, 1,
+        "decode_tensor: expected dtype f32 (1), got {dtype}"
+    );
+    let header_len = 4 + ndim * 4;
+    assert!(
+        buf.len() >= header_len,
+        "decode_tensor: buffer too short for {ndim}-dim shape (need {header_len} bytes, got {})",
+        buf.len(),
+    );
+    let mut pos = 4;
     let mut shape = Vec::with_capacity(ndim);
     for _ in 0..ndim {
         let dim = u32::from_le_bytes(buf[pos..pos + 4].try_into().unwrap()) as usize;
         shape.push(dim);
         pos += 4;
     }
-    let values = buf[pos..]
+    let expected_bytes = shape.iter().product::<usize>() * 4;
+    let data = &buf[pos..];
+    assert!(
+        data.len() >= expected_bytes,
+        "decode_tensor: shape requires {expected_bytes} bytes of data but buffer has {}",
+        data.len(),
+    );
+    let values = data[..expected_bytes]
         .chunks_exact(4)
         .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
         .collect();

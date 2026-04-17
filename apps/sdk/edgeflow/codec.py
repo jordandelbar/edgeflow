@@ -52,6 +52,17 @@ def encode_tensor(shape: list, data: bytes, dtype: int = DTYPE_F32) -> bytes:
 
     The data bytes are passed through unchanged — no re-encoding of values.
     """
+    if dtype not in _DTYPE_ITEMSIZE:
+        raise ValueError(f"unknown dtype code: {dtype}")
+    expected = 1
+    for dim in shape:
+        expected *= dim
+    expected *= _DTYPE_ITEMSIZE[dtype]
+    if len(data) != expected:
+        raise ValueError(
+            f"encode_tensor: shape {shape} with dtype {dtype} expects "
+            f"{expected} bytes of data, got {len(data)}"
+        )
     buf = len(shape).to_bytes(1, "little")  # ndim
     buf += dtype.to_bytes(1, "little")  # dtype code
     buf += b"\x00\x00"  # padding
@@ -68,9 +79,19 @@ def decode_tensor(buf: bytes) -> tuple:
       i32/i64  → list[int]
       bool     → list[bool]
     """
+    if len(buf) < 4:
+        raise ValueError(
+            f"decode_tensor: buffer too short for header (need 4 bytes, got {len(buf)})"
+        )
     ndim = buf[0]
     dtype = buf[1]
     # buf[2:4] = padding
+    header_len = 4 + ndim * 4
+    if len(buf) < header_len:
+        raise ValueError(
+            f"decode_tensor: buffer too short for {ndim}-dim shape "
+            f"(need {header_len} bytes, got {len(buf)})"
+        )
     pos = 4  # fixed header is always 4 bytes
     shape = []
     for _ in range(ndim):
@@ -81,18 +102,30 @@ def decode_tensor(buf: bytes) -> tuple:
     if dtype not in _DTYPE_ITEMSIZE:
         raise ValueError(f"unknown dtype code: {dtype}")
 
+    itemsize = _DTYPE_ITEMSIZE[dtype]
+    expected = 1
+    for dim in shape:
+        expected *= dim
+    expected *= itemsize
     data = buf[pos:]
+    if len(data) < expected:
+        raise ValueError(
+            f"decode_tensor: shape {shape} requires {expected} bytes of data "
+            f"but buffer has {len(data)}"
+        )
+    data = data[:expected]
+
     if dtype == DTYPE_F32:
-        n = len(data) // 4
+        n = expected // 4
         values = list(struct.unpack_from(f"<{n}f", data))
     elif dtype == DTYPE_F64:
-        n = len(data) // 8
+        n = expected // 8
         values = list(struct.unpack_from(f"<{n}d", data))
     elif dtype == DTYPE_I32:
-        n = len(data) // 4
+        n = expected // 4
         values = list(struct.unpack_from(f"<{n}i", data))
     elif dtype == DTYPE_I64:
-        n = len(data) // 8
+        n = expected // 8
         values = list(struct.unpack_from(f"<{n}q", data))
     elif dtype == DTYPE_BOOL:
         values = [bool(b) for b in data]
