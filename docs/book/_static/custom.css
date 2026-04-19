@@ -1,0 +1,59 @@
+/* Font overrides: Inter for body, JetBrains Mono for code. */
+
+:root {
+    --font-stack: "Inter", ui-sans-serif, system-ui, sans-serif,
+        "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol",
+        "Noto Color Emoji";
+    --font-stack--monospace: "JetBrains Mono", ui-monospace, SFMono-Regular,
+        "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+/* Discreet brand colors from the edgeflow UI palette.
+ * Sage-dark for links (AA-contrast green), peach as accent punctuation.
+ * Variables are set on `body` to match Furo's own declarations and win
+ * the cascade.
+ */
+
+body {
+    --color-brand-primary: #5F7A6E;
+    --color-brand-content: #5F7A6E;
+    --color-brand-visited: #5F7A6E;
+    --edgeflow-peach: #E8956A;
+    --edgeflow-peach-light: #FFB38C;
+}
+
+/* Dark mode: sage-light for links (matches UI inactive-nav pattern),
+ * peach stays as hover/accent (matches UI active-nav pattern).
+ */
+
+body[data-theme="dark"] {
+    --color-brand-primary: #B4C8BE;
+    --color-brand-content: #B4C8BE;
+    --color-brand-visited: #B4C8BE;
+}
+
+@media (prefers-color-scheme: dark) {
+    body:not([data-theme="light"]) {
+        --color-brand-primary: #B4C8BE;
+        --color-brand-content: #B4C8BE;
+        --color-brand-visited: #B4C8BE;
+    }
+}
+
+/* Link hover: peach accent (sparingly, matches UI emphasis). */
+a.reference:hover,
+.sidebar-tree a:hover,
+.toc-tree a:hover {
+    color: var(--edgeflow-peach);
+}
+
+body[data-theme="dark"] a.reference:hover,
+body[data-theme="dark"] .sidebar-tree a:hover,
+body[data-theme="dark"] .toc-tree a:hover {
+    color: var(--edgeflow-peach-light);
+}
+
+/* Sidebar brand title in peach. */
+.sidebar-brand-text {
+    color: var(--edgeflow-peach);
+}
