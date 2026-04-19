@@ -86,7 +86,7 @@ jobs:
         working-directory: apps/sdk
         run: |
           uv venv
-          uv run maturin develop --features python
+          uv run --with maturin maturin develop --features python
       - name: pytest
         working-directory: apps/sdk
         run: uv run pytest
