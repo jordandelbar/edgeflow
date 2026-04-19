@@ -29,7 +29,19 @@ function stubFetch() {
       return json({ deployments: [{ deployment_id: 'dep-1', run_id: 'run-abc', model_name: 'My Model', model_version: '1', target: 'prod', state: 'deployed', created_at: 0 }] });
     }
     if (url.includes('/targets')) {
-      return json({ targets: [{ target: 'prod', address: 'http://pod', pod_name: null, node: null, registered_at: 0, last_seen: null, health: 'unknown' }] });
+      return json({
+        targets: [{
+          target: 'prod',
+          registered_at: 0,
+          node: null,
+          health: 'unknown',
+          resources: null,
+          infra: null,
+          pods: [],
+          current_run_id: null,
+          model_loaded_at: null,
+        }],
+      });
     }
     return json({});
   }) as typeof fetch;

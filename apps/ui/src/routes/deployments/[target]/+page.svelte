@@ -45,8 +45,9 @@
       .then(s => {
         modelStatus = s;
         if (s?.run_id && !(s.run_id in runExpId)) {
-          runs.get(s.run_id)
-            .then(r => { runExpId[s.run_id] = r.run.info.experiment_id; })
+          const runId = s.run_id;
+          runs.get(runId)
+            .then(r => { runExpId[runId] = r.run.info.experiment_id; })
             .catch(() => {});
         }
       })
