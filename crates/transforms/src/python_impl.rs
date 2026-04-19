@@ -6,7 +6,7 @@ use crate::layers::{run_pipeline, PipelineConfig};
 ///
 /// Python layer classes serialise themselves to a JSON config; this class
 /// deserialises that config and runs the same Rust logic that executes
-/// inside the WASM component on the server — local results are guaranteed
+/// inside the WASM component on the server - local results are guaranteed
 /// to match server results.
 #[pyclass]
 pub struct NativePipeline {

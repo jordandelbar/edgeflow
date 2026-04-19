@@ -31,7 +31,7 @@
   });
 
   function duration(run: Run): string {
-    if (!run.info.end_time) return '—';
+    if (!run.info.end_time) return '-';
     const s = (run.info.end_time - run.info.start_time) / 1000;
     return s < 60 ? `${s.toFixed(1)}s` : `${(s / 60).toFixed(1)}m`;
   }
@@ -40,7 +40,7 @@
 
   function metricValue(run: Run, key: string): string {
     const m = run.data.metrics.find(m => m.key === key);
-    if (m == null) return '—';
+    if (m == null) return '-';
     return Number.isInteger(m.value) ? String(m.value) : m.value.toFixed(4);
   }
 </script>

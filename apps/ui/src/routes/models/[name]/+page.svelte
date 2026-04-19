@@ -219,7 +219,7 @@
                   <span class="font-mono text-xs text-gray-400">{mv.run_id.slice(0, 8)}</span>
                 {/await}
               {:else}
-                <span class="text-gray-300 text-xs">—</span>
+                <span class="text-gray-300 text-xs">-</span>
               {/if}
             </td>
 

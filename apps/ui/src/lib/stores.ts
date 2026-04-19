@@ -18,7 +18,7 @@ export const liveData = readable<LiveData>(
     async function load() {
       try {
         const [depsRes, tgtsRes] = await Promise.all([deployments.list(), targets.list()]);
-        // Preserve previous pod list when k8s returns empty — avoids flickering
+        // Preserve previous pod list when k8s returns empty - avoids flickering
         // pods away during transient k8s query failures or rolling restarts.
         const prevByTarget = new Map(prev.targets.map(t => [t.target, t]));
         const mergedTargets = (tgtsRes.targets ?? []).map(t => {
@@ -29,7 +29,7 @@ export const liveData = readable<LiveData>(
         prev = { deployments: depsRes.deployments ?? [], targets: mergedTargets, error: '', loaded: true };
         set(prev);
       } catch (e) {
-        // On error keep previous data visible — only surface the message.
+        // On error keep previous data visible - only surface the message.
         prev = { ...prev, error: String(e), loaded: true };
         set(prev);
       }

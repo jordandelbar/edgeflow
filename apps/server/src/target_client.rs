@@ -11,7 +11,7 @@ impl<'a> TargetClient<'a> {
         Self { http, address }
     }
 
-    /// `GET /health` — returns the pod's health JSON.
+    /// `GET /health` - returns the pod's health JSON.
     pub async fn health(&self) -> Result<serde_json::Value> {
         self.http
             .get(format!("{}/health", self.address))
@@ -24,7 +24,7 @@ impl<'a> TargetClient<'a> {
             .context("failed to parse health response")
     }
 
-    /// `GET /schema` — returns the model's schema JSON.
+    /// `GET /schema` - returns the model's schema JSON.
     pub async fn schema(&self) -> Result<serde_json::Value> {
         let resp = self
             .http
@@ -36,7 +36,7 @@ impl<'a> TargetClient<'a> {
         resp.json().await.context("failed to parse schema response")
     }
 
-    /// `POST /infer` — sends raw bytes and returns the response bytes.
+    /// `POST /infer` - sends raw bytes and returns the response bytes.
     pub async fn infer(&self, body: Vec<u8>) -> Result<Vec<u8>> {
         let resp = self
             .http
@@ -58,7 +58,7 @@ impl<'a> TargetClient<'a> {
             .to_vec())
     }
 
-    /// `POST /upgrade` — instructs the pod to load a new run.
+    /// `POST /upgrade` - instructs the pod to load a new run.
     ///
     /// Returns `true` if the pod accepted the request (2xx / 202), `false` if
     /// it responded with a non-success status.  Returns `Err` only if the pod

@@ -29,9 +29,9 @@ use serde::Deserialize;
 /// How the deployed model expects its HTTP input.
 #[derive(Debug, Clone, PartialEq)]
 pub enum InputMode {
-    /// Raw `n_features × f32 LE` bytes — backward-compatible wire protocol.
+    /// Raw `n_features × f32 LE` bytes - backward-compatible wire protocol.
     Single,
-    /// JSON object with named fields — used for mixed-type tabular models.
+    /// JSON object with named fields - used for mixed-type tabular models.
     Named,
 }
 
@@ -87,7 +87,7 @@ struct EncodingJson {
 /// Parse `schema.json` bytes and return the input mode plus field specs.
 ///
 /// Falls back to `(Single, [])` for missing schemas, unknown formats, or
-/// parse errors — preserving backward compatibility with float-bytes models.
+/// parse errors - preserving backward compatibility with float-bytes models.
 pub fn parse_schema(bytes: Option<&[u8]>) -> (InputMode, Vec<InputSpec>) {
     let bytes = match bytes {
         Some(b) if !b.is_empty() => b,
@@ -158,7 +158,7 @@ pub fn parse_schema(bytes: Option<&[u8]>) -> (InputMode, Vec<InputSpec>) {
 
 /// Convert a JSON request body to a flat `[1, n_features]` f32 tensor.
 ///
-/// Field order follows `specs` exactly — this must match the column order
+/// Field order follows `specs` exactly - this must match the column order
 /// expected by the deployed ONNX model.
 pub fn json_to_tensor(body: &[u8], specs: &[InputSpec]) -> Result<(Vec<usize>, Vec<f32>)> {
     let obj: serde_json::Map<String, serde_json::Value> =

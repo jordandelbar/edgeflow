@@ -86,7 +86,7 @@ impl Orchestrator for ComposeOrchestrator {
     }
 
     async fn list_all_running_pods(&self) -> Option<HashMap<String, Vec<TargetPod>>> {
-        // Compose doesn't know which targets exist — that's the store's job.
+        // Compose doesn't know which targets exist - that's the store's job.
         // Returning None tells the handler to fall back to per-target iteration.
         None
     }

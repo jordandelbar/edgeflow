@@ -1,5 +1,5 @@
 """
-Adult income inference load test — varied payloads.
+Adult income inference load test - varied payloads.
 
 Unlike the generic locustfile.py (which replays one static payload), this
 script generates a random realistic adult-income profile for every request.

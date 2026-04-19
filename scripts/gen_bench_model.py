@@ -2,8 +2,8 @@
 Generate a minimal ONNX fixture for inference benchmarks and tests.
 
 The model is a tiny linear classifier (Gemm + Softmax) with:
-  input  : float32 [N, 4]   — iris-like features
-  output : float32 [N, 3]   — softmax class probabilities
+  input  : float32 [N, 4]   - iris-like features
+  output : float32 [N, 3]   - softmax class probabilities
 
 Because the output is already float32 at index 0, it works directly with the
 ORT backend without any postprocess WASM.

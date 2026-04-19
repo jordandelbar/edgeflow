@@ -25,8 +25,8 @@ fn get(api: &Api, run_id: &str) -> Result<()> {
     let info = &r["info"];
     let data = &r["data"];
 
-    let name = info["run_name"].as_str().unwrap_or("—");
-    let status = info["status"].as_str().unwrap_or("—");
+    let name = info["run_name"].as_str().unwrap_or("-");
+    let status = info["status"].as_str().unwrap_or("-");
     let start = info["start_time"].as_i64().unwrap_or(0);
     let end = info["end_time"].as_i64();
 

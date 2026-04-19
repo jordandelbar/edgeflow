@@ -102,9 +102,9 @@ fn list(api: &Api, health_filter: Option<&str>) -> Result<()> {
 
     for t in &targets {
         table.add_row([
-            t["target"].as_str().unwrap_or("—"),
+            t["target"].as_str().unwrap_or("-"),
             t["health"].as_str().unwrap_or("unknown"),
-            t["node"].as_str().unwrap_or("—"),
+            t["node"].as_str().unwrap_or("-"),
         ]);
     }
 
@@ -116,21 +116,21 @@ fn inspect(api: &Api, target: &str) -> Result<()> {
     let res = api.get_target(target)?;
     let t = &res["target"];
 
-    println!("Target:       {}", t["target"].as_str().unwrap_or("—"));
+    println!("Target:       {}", t["target"].as_str().unwrap_or("-"));
     println!(
         "Health:       {}",
         t["health"].as_str().unwrap_or("unknown")
     );
-    println!("Node:         {}", t["node"].as_str().unwrap_or("—"));
+    println!("Node:         {}", t["node"].as_str().unwrap_or("-"));
 
     if let Some(pods) = t["pods"].as_array() {
         if pods.is_empty() {
-            println!("Pods:         —");
+            println!("Pods:         -");
         } else {
             for (i, pod) in pods.iter().enumerate() {
                 let prefix = if i == 0 { "Pods:" } else { "     " };
                 println!(
-                    "{:<14}{} ({}) — {}",
+                    "{:<14}{} ({}) - {}",
                     prefix,
                     pod["pod_id"].as_str().unwrap_or("?"),
                     pod["address"].as_str().unwrap_or("?"),
@@ -155,14 +155,14 @@ fn inspect(api: &Api, target: &str) -> Result<()> {
         r["sessions"]
             .as_i64()
             .map(|v| v.to_string())
-            .unwrap_or_else(|| "—".into())
+            .unwrap_or_else(|| "-".into())
     );
     println!(
         "  Max concurrent: {}",
         r["max_concurrent"]
             .as_i64()
             .map(|v| v.to_string())
-            .unwrap_or_else(|| "—".into())
+            .unwrap_or_else(|| "-".into())
     );
 
     let inf = &t["infra"];
@@ -171,22 +171,22 @@ fn inspect(api: &Api, target: &str) -> Result<()> {
         println!("Infrastructure (k8s):");
         println!(
             "  CPU request:    {}",
-            inf["cpu_request"].as_str().unwrap_or("—")
+            inf["cpu_request"].as_str().unwrap_or("-")
         );
         println!(
             "  Memory request: {}",
-            inf["memory_request"].as_str().unwrap_or("—")
+            inf["memory_request"].as_str().unwrap_or("-")
         );
         println!(
             "  Memory limit:   {}",
-            inf["memory_limit"].as_str().unwrap_or("—")
+            inf["memory_limit"].as_str().unwrap_or("-")
         );
         println!(
             "  Replicas:       {}",
             inf["replicas"]
                 .as_i64()
                 .map(|v| v.to_string())
-                .unwrap_or_else(|| "—".into())
+                .unwrap_or_else(|| "-".into())
         );
         if let Some(p) = inf["placement"].as_str() {
             let desc = match p {
@@ -239,35 +239,35 @@ fn set_resources(
         r["sessions"]
             .as_i64()
             .map(|v| v.to_string())
-            .unwrap_or_else(|| "—".into())
+            .unwrap_or_else(|| "-".into())
     );
     println!(
         "  Max concurrent: {}",
         r["max_concurrent"]
             .as_i64()
             .map(|v| v.to_string())
-            .unwrap_or_else(|| "—".into())
+            .unwrap_or_else(|| "-".into())
     );
     if !inf.is_null() {
         println!("Infrastructure (from k8s):");
         println!(
             "  CPU request:    {}",
-            inf["cpu_request"].as_str().unwrap_or("—")
+            inf["cpu_request"].as_str().unwrap_or("-")
         );
         println!(
             "  Memory request: {}",
-            inf["memory_request"].as_str().unwrap_or("—")
+            inf["memory_request"].as_str().unwrap_or("-")
         );
         println!(
             "  Memory limit:   {}",
-            inf["memory_limit"].as_str().unwrap_or("—")
+            inf["memory_limit"].as_str().unwrap_or("-")
         );
         println!(
             "  Replicas:       {}",
             inf["replicas"]
                 .as_i64()
                 .map(|v| v.to_string())
-                .unwrap_or_else(|| "—".into())
+                .unwrap_or_else(|| "-".into())
         );
     }
 

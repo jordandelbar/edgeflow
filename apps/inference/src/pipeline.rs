@@ -78,7 +78,7 @@ impl Pipeline {
 
         // Parse the body into a flat f32 tensor according to input mode.
         //
-        // Single: decode returns a &[f32] view directly into `body` — no allocation.
+        // Single: decode returns a &[f32] view directly into `body` - no allocation.
         // Named:  json_to_tensor always allocates a Vec<f32> (field-by-field build).
         // Cow lets both arms share the same type without forcing an allocation for Single.
         let (shape, data): (Vec<usize>, Cow<'_, [f32]>) = {

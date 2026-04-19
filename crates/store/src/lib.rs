@@ -1,9 +1,54 @@
+//! Storage trait abstractions for
+//! [edgeflow](https://github.com/jordandelbar/edgeflow), plus a bundled
+//! SQLite backend.
+//!
+//! Every kind of domain data is fronted by its own trait
+//! ([`ExperimentStore`], [`RunStore`], [`MetricStore`], [`ArtifactStore`],
+//! [`DeploymentStore`], [`ModelRegistryStore`], [`TargetStore`]). The
+//! [`Store`] trait is a blanket-impl convenience bound for types that
+//! implement all of them - most call sites depend on `Store` and let the
+//! blanket impl compose the sub-traits.
+//!
+//! Implement your own backend (Postgres, S3, distributed) by providing
+//! impls for the sub-traits you need.
+//!
+//! # Features
+//!
+//! - `sqlite` *(default)* - bundles the concrete [`sqlite::SqliteStore`]
+//!   implementation backed by `sqlx`. Disable to depend only on the trait
+//!   definitions:
+//!
+//!   ```toml
+//!   [dependencies]
+//!   edgeflow-store = { version = "0.1", default-features = false }
+//!   ```
+//!
+//! # Example
+//!
+//! ```no_run
+//! use std::path::{Path, PathBuf};
+//! use edgeflow_store::prelude::*;
+//! use edgeflow_store::sqlite::SqliteStore;
+//!
+//! # async fn demo() -> anyhow::Result<()> {
+//! let store = SqliteStore::new(
+//!     Path::new("edgeflow.db"),
+//!     PathBuf::from("./artifacts"),
+//! )
+//! .await?;
+//!
+//! let exp = store.create_experiment("iris", None, vec![]).await?;
+//! println!("created experiment {}", exp.experiment_id);
+//! # Ok(())
+//! # }
+//! ```
+
 pub mod sqlite;
 
 use anyhow::Result;
 use edgeflow_core::*;
 
-/// Convenience prelude that bring every store sub-trait into scope at once.
+/// Convenience prelude that brings every store sub-trait into scope at once.
 ///
 /// ```ignore
 /// use edgeflow_store::prelude::*;

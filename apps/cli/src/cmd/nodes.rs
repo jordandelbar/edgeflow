@@ -50,7 +50,7 @@ fn list(api: &Api) -> Result<()> {
         let unhealthy_str = if unhealthy > 0 {
             format!("{unhealthy} ⚠")
         } else {
-            "—".into()
+            "-".into()
         };
 
         table.add_row([name, &node_targets.len().to_string(), &unhealthy_str]);

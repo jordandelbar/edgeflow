@@ -33,7 +33,7 @@ pub fn init(service_name: &str, default_filter: &str) -> anyhow::Result<()> {
     let has_otel = otel_provider.is_some();
 
     let otel_layer = otel_provider.map(|provider| {
-        // Register globally — this keeps the provider (and its batch exporter)
+        // Register globally - this keeps the provider (and its batch exporter)
         // alive for the process lifetime. Without this the provider is dropped
         // at the end of the closure and the batch exporter shuts down immediately.
         opentelemetry::global::set_tracer_provider(provider.clone());
@@ -61,9 +61,9 @@ pub fn init(service_name: &str, default_filter: &str) -> anyhow::Result<()> {
     }
 
     if has_otel {
-        tracing::info!("telemetry initialised — OTLP exporter active");
+        tracing::info!("telemetry initialised - OTLP exporter active");
     } else {
-        tracing::warn!("OTLP collector unreachable — stdout only");
+        tracing::warn!("OTLP collector unreachable - stdout only");
     }
 
     Ok(())

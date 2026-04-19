@@ -34,7 +34,7 @@ Decision
 --------
 
 The system is composed of **two components** with clearly separated responsibilities.
-A third component (device manager / lifecycle supervisor) was considered and rejected — see Alternatives Considered.
+A third component (device manager / lifecycle supervisor) was considered and rejected - see Alternatives Considered.
 
 1. edgeflow-server
 ~~~~~~~~~~~~~~~~~~
@@ -61,7 +61,7 @@ No separate broker process is required. For deployments that already operate a m
 .. code-block:: toml
 
     [mqtt]
-    broker = "embedded"          # default — runs rumqttd inside the server process
+    broker = "embedded"          # default - runs rumqttd inside the server process
     # broker = "mqtt://your-broker.example.com:1883"   # external alternative
 
 2. edgeflow-inference
@@ -92,10 +92,10 @@ In **managed mode** (when ``[server]`` is configured):
 
 .. code-block:: toml
 
-    # Standalone — pure inference server, no server communication
+    # Standalone - pure inference server, no server communication
     # (omit [server] block entirely)
 
-    # Managed — full lifecycle coordination
+    # Managed - full lifecycle coordination
     [server]
     url  = "http://edgeflow-server:5000"
     mqtt = "mqtt://edgeflow-server:1883"   # optional; falls back to HTTP poll if omitted
@@ -119,10 +119,10 @@ Communication Architecture
 
 The managed communication path is designed to evolve without breaking changes:
 
-1. **HTTP pull (v1, no extra infrastructure)** — inference polls server for pending deployments.
+1. **HTTP pull (v1, no extra infrastructure)** - inference polls server for pending deployments.
    Works through NAT and firewalls. Acceptable latency for model deployment (not control-plane timing-critical).
 
-2. **MQTT (v2, embedded broker)** — inference subscribes to its deployment topic.
+2. **MQTT (v2, embedded broker)** - inference subscribes to its deployment topic.
    Server publishes instructions immediately on deployment creation.
    Better for large fleets and real-time rollback instructions.
 
@@ -223,7 +223,7 @@ Consequences
 
 **Positive:**
 
-- Two-component design keeps the operational surface minimal — one server binary, one inference binary per device
+- Two-component design keeps the operational surface minimal - one server binary, one inference binary per device
 - ``edgeflow-inference`` can be adopted standalone, lowering the barrier to entry
 - Embedded MQTT broker means zero extra infrastructure for the common case
 - HTTP poll fallback means the system works through NAT and firewalls out of the box
@@ -234,7 +234,7 @@ Consequences
 
 **Negative / risks:**
 
-- ``edgeflow-inference`` now carries both inference logic and lifecycle coordination — these must be kept cleanly separated internally so standalone mode remains truly standalone
+- ``edgeflow-inference`` now carries both inference logic and lifecycle coordination - these must be kept cleanly separated internally so standalone mode remains truly standalone
 - ONNX-only model format excludes teams using TensorFlow SavedModel or TorchScript directly; acceptable tradeoff for PoC, revisit at v1
 - Maintaining MLflow API compatibility is ongoing work as MLflow evolves; treat the shim as frozen at the current API surface, do not track MLflow HEAD
 
@@ -245,8 +245,8 @@ Alternatives Considered
 
 **Separate ``edgeflow-device`` binary (device manager)**
 
-Rejected. The responsibilities originally assigned to a separate device manager —
-registration, heartbeats, artifact download, hot-swap, deployment confirmation —
+Rejected. The responsibilities originally assigned to a separate device manager -
+registration, heartbeats, artifact download, hot-swap, deployment confirmation -
 are already implemented in ``edgeflow-inference``.
 The only remaining concern (process restart on crash) is better handled by systemd or Docker restart policies
 than by a custom-written process supervisor.
@@ -259,7 +259,7 @@ Rejected. gRPC assumes stable connections. MQTT's QoS levels and persistent sess
 
 **REST polling instead of MQTT**
 
-Not fully rejected — HTTP poll is the v1 transport precisely because it requires no extra infrastructure
+Not fully rejected - HTTP poll is the v1 transport precisely because it requires no extra infrastructure
 and works through NAT. MQTT is the v2 transport that replaces polling once the embedded broker is in place.
 The two coexist: devices without MQTT connectivity continue to poll.
 

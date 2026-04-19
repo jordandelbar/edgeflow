@@ -44,7 +44,7 @@ def _extract_codec_imports(fn) -> str:
 
     This lets users write top-level imports in their transforms file
     (natural Python) rather than repeating them inside every function body.
-    Only edgeflow.codec imports are forwarded — third-party imports like
+    Only edgeflow.codec imports are forwarded - third-party imports like
     sklearn / numpy won't be available inside the WASM sandbox anyway.
     """
     module = inspect.getmodule(fn)

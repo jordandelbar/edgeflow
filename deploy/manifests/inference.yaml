@@ -1,4 +1,4 @@
-# Static infrastructure — applied once at cluster setup.
+# Static infrastructure - applied once at cluster setup.
 # Deployments are created dynamically by edgeflow-server when a deployment
 # is triggered for a target.  Only the Services live here.
 apiVersion: v1

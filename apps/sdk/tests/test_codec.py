@@ -1,5 +1,5 @@
 """
-Tests for edgeflow.codec — tensor wire format encode/decode.
+Tests for edgeflow.codec - tensor wire format encode/decode.
 
 Verifies round-trip correctness for every supported dtype, header layout,
 edge cases (empty tensor, 0-dim, subnormals, ±inf, NaN), and unknown-dtype

@@ -1,4 +1,4 @@
-"""Programmatic deploy/register API — used by both the CLI and training scripts."""
+"""Programmatic deploy/register API - used by both the CLI and training scripts."""
 
 import os
 import time
@@ -137,6 +137,6 @@ def deploy(
         return deployment
     if time.monotonic() >= deadline:
         raise RuntimeError(
-            f"deployment {deployment_id} timed out after {timeout}s — last state: {state}"
+            f"deployment {deployment_id} timed out after {timeout}s - last state: {state}"
         )
     raise RuntimeError(f"deployment {deployment_id} ended in state: {state}")

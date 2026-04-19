@@ -20,7 +20,7 @@ def log_model(
 ) -> None:
     """Log an ONNX model and transforms to the active mlflow run.
 
-    Standard path — Pipeline objects (recommended):
+    Standard path - Pipeline objects (recommended):
         Uses the pre-compiled Rust standard_pipeline.wasm (~150 KB).
         No extra tools required; no Rust compiler on the user's machine.
 
@@ -29,7 +29,7 @@ def log_model(
         pipeline does not already start with one.  In most cases you only
         need to supply postprocess.
 
-    Named-input path — mixed tabular models:
+    Named-input path - mixed tabular models:
         Pass ``column_transformer`` (a fitted sklearn ColumnTransformer) to
         enable JSON input mode.  Encoding tables are extracted from the
         fitted transformer and written to schema.json.  The inference server
@@ -37,7 +37,7 @@ def log_model(
         float tensor to the ONNX model.  The ONNX model must be exported
         post-encoding (i.e. the classifier only, not the full sklearn pipeline).
 
-    Legacy path — @preprocess / @postprocess decorators:
+    Legacy path - @preprocess / @postprocess decorators:
         Falls back to componentize-py (requires wit_dir). Produces ~40 MB
         WASM components and ~800 MB inference memory. Emits a UserWarning.
 
@@ -47,7 +47,7 @@ def log_model(
         model_bytes:         serialised ONNX model bytes (e.g. from clf_to_onnx()).
         preprocess:          Pipeline for input transforms, or None.
         postprocess:         Pipeline for output transforms, or None.
-        wit_dir:             path to WIT definitions — only required for legacy path.
+        wit_dir:             path to WIT definitions - only required for legacy path.
         column_transformer:  fitted sklearn ColumnTransformer.  When supplied,
                              Named-input mode is activated and FloatBytesToTensor
                              auto-injection is skipped.
@@ -58,7 +58,7 @@ def log_model(
 
     if column_transformer is None:
         # Single-tensor path: auto-inject FloatBytesToTensor from ONNX input shape.
-        # Skip injection when the first step is already ImageToTensor — image
+        # Skip injection when the first step is already ImageToTensor - image
         # models produce their own tensor inside the preprocess WASM.
         n = _read_onnx_n_features(model_bytes)
         if n is not None:
@@ -168,7 +168,7 @@ def _build_field_specs_from_transformer(column_transformer) -> list[dict]:
     """Extract per-field encoding specs from a fitted sklearn ColumnTransformer.
 
     Fields are emitted in the same order as ``column_transformer.transform()``
-    output — this order must match what the deployed ONNX model was trained on.
+    output - this order must match what the deployed ONNX model was trained on.
 
     Supported transformers:
         OrdinalEncoder  → ``{"type": "ordinal", "map": {category: index}}``

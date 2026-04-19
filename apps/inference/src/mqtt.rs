@@ -50,7 +50,7 @@ impl MqttPodClient {
             loop {
                 match eventloop.poll().await {
                     Ok(Event::Incoming(Packet::ConnAck(_))) => {
-                        // Re-subscribe after every (re)connect — clean session
+                        // Re-subscribe after every (re)connect - clean session
                         // does not persist subscriptions across reconnects.
                         if let Err(e) = client_sub.subscribe(&sub_topic, QoS::AtLeastOnce).await {
                             tracing::warn!("mqtt: failed to subscribe to commands: {e}");
@@ -72,7 +72,7 @@ impl MqttPodClient {
                                     sessions,
                                 };
                                 if cmd_tx.send(instr).await.is_err() {
-                                    // Receiver dropped — main loop is gone, stop.
+                                    // Receiver dropped - main loop is gone, stop.
                                     return;
                                 }
                             }

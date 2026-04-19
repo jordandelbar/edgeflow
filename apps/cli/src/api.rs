@@ -96,7 +96,7 @@ impl Api {
         )
     }
 
-    /// Resolve an experiment by name or ID — tries name first.
+    /// Resolve an experiment by name or ID - tries name first.
     pub fn resolve_experiment(&self, name_or_id: &str) -> Result<Value> {
         self.get_experiment_by_name(name_or_id)
             .or_else(|_| self.get_experiment(name_or_id))

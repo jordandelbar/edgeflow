@@ -7,7 +7,7 @@ Flow:
   3. Push model + standard transforms to edgeflow
   4. Trigger deployment
 
-Input protocol: 16 raw bytes — 4 × f32 LE (sepal_len, sepal_w, petal_len, petal_w)
+Input protocol: 16 raw bytes - 4 × f32 LE (sepal_len, sepal_w, petal_len, petal_w)
 
   python3 -c "import struct, sys; sys.stdout.buffer.write(struct.pack('<4f', 5.1, 3.5, 1.4, 0.2))" \\
     | curl -s -X POST http://localhost:8080/infer --data-binary @-

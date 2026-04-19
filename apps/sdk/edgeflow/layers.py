@@ -4,7 +4,7 @@ Standard transform layers for the edgeflow inference pipeline.
 Each layer serialises to a JSON config understood by the Rust
 standard_pipeline.wasm component shipped in this package.  Calling
 Pipeline([...]).transform() locally runs the exact same Rust logic via
-the native PyO3 extension — server results are guaranteed to match.
+the native PyO3 extension - server results are guaranteed to match.
 """
 
 from __future__ import annotations
@@ -102,7 +102,7 @@ class ImageToTensor(Layer):
 class DetectionOutput(Layer):
     """Decode a YOLO-style detection tensor and apply NMS; returns a JSON array.
 
-    Expects input tensor shape [1, 4+num_classes, num_boxes] — the standard
+    Expects input tensor shape [1, 4+num_classes, num_boxes] - the standard
     YOLOv8 ONNX export format.  Bounding box coordinates in the output are
     normalised to [0, 1]; multiply by your display dimensions to get pixel coords.
 

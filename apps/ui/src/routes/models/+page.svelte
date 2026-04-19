@@ -134,7 +134,7 @@
                 <span class="font-mono text-xs text-gray-600">v{mv.version}</span>
                 <span class="ml-2 text-xs text-gray-400">{mv.current_stage}</span>
               {:else}
-                <span class="text-gray-300 text-xs">—</span>
+                <span class="text-gray-300 text-xs">-</span>
               {/if}
             </td>
 

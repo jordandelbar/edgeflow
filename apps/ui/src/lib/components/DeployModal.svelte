@@ -405,7 +405,7 @@
             {#if loadingNodes}
               <p class="text-xs text-gray-400 italic"><i class="fa-solid fa-spinner fa-spin mr-1"></i>Discovering nodes…</p>
             {:else if nodeList.length === 0}
-              <p class="text-xs text-red-400"><i class="fa-solid fa-circle-xmark mr-1"></i>No nodes discovered — is the cluster reachable?</p>
+              <p class="text-xs text-red-400"><i class="fa-solid fa-circle-xmark mr-1"></i>No nodes discovered - is the cluster reachable?</p>
             {:else}
               <div class="flex flex-wrap gap-2">
                 <button
@@ -491,9 +491,9 @@
                 <label class="block text-xs text-gray-500 mb-1">Placement
                   <select bind:value={infra.placement}
                     class="w-full border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-peach/50 bg-white">
-                    <option value={null}>— no preference —</option>
-                    <option value="spread">Spread — one pod per node</option>
-                    <option value="pack">Pack — all pods on same node</option>
+                    <option value={null}>- no preference -</option>
+                    <option value="spread">Spread - one pod per node</option>
+                    <option value="pack">Pack - all pods on same node</option>
                   </select>
                 </label>
               </div>

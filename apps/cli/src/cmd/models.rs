@@ -75,7 +75,7 @@ fn list(api: &Api) -> Result<()> {
     table.set_header(["Name", "Versions", "Latest", "Stage", "Updated"]);
 
     for m in &models {
-        let name = m["name"].as_str().unwrap_or("—");
+        let name = m["name"].as_str().unwrap_or("-");
         let versions = m["latest_versions"].as_array().cloned().unwrap_or_default();
         let count = versions.len();
         let latest = versions.iter().max_by_key(|v| {
@@ -92,7 +92,7 @@ fn list(api: &Api) -> Result<()> {
                     v["current_stage"].as_str().unwrap_or("None").to_string(),
                 )
             })
-            .unwrap_or_else(|| ("—".into(), "—".into()));
+            .unwrap_or_else(|| ("-".into(), "-".into()));
 
         table.add_row([
             name,
@@ -126,12 +126,12 @@ fn versions(api: &Api, name: &str) -> Result<()> {
     table.set_header(["Version", "Stage", "Run ID", "Status", "Created"]);
 
     for v in &versions {
-        let run_id = v["run_id"].as_str().unwrap_or("—");
+        let run_id = v["run_id"].as_str().unwrap_or("-");
         table.add_row([
             &format!("v{}", v["version"].as_str().unwrap_or("?")),
             v["current_stage"].as_str().unwrap_or("None"),
             &trunc(run_id, 12),
-            v["status"].as_str().unwrap_or("—"),
+            v["status"].as_str().unwrap_or("-"),
             &fmt_ts(v["creation_time"].as_i64().unwrap_or(0)),
         ]);
     }

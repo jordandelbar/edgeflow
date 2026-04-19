@@ -52,7 +52,7 @@ where
         map.insert("fields".into(), Value::Object(visitor.0));
         map.insert("target".into(), Value::from(meta.target()));
 
-        // Span stack — walk leaf-to-root then reverse so output is root-to-leaf.
+        // Span stack - walk leaf-to-root then reverse so output is root-to-leaf.
         let mut spans = Vec::new();
         ctx.visit_spans(|span_ref| {
             let mut span_obj = Map::new();

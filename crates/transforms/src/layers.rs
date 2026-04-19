@@ -442,7 +442,7 @@ mod tests {
 
     #[test]
     fn image_to_tensor_resize_changes_shape() {
-        // Input is 10×20; target is 4×4 — shape must reflect target, not source.
+        // Input is 10×20; target is 4×4 - shape must reflect target, not source.
         let png = solid_png(10, 20, 100, 150, 200);
         let out = image_to_tensor(4, 4, &png);
         let (shape, _) = decode_tensor(&out);
@@ -572,7 +572,7 @@ mod tests {
 
     #[test]
     fn iou_half_overlap() {
-        // Box A: (0,0)-(2,1), Box B: (1,0)-(3,1) — 50% overlap
+        // Box A: (0,0)-(2,1), Box B: (1,0)-(3,1) - 50% overlap
         let v = iou(0.0, 0.0, 2.0, 1.0, 1.0, 0.0, 3.0, 1.0);
         assert!((v - 1.0 / 3.0).abs() < 1e-6, "iou={v}");
     }

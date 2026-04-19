@@ -23,7 +23,7 @@ services:
         BACKEND: tract-backend
     environment:
       EDGEFLOW_SERVER: http://server:5000
-      # Internal placeholder — never shown to the user. Metrics report under
+      # Internal placeholder - never shown to the user. Metrics report under
       # this label regardless of which target the user deploys to.
       EDGEFLOW_TARGET: compose
       # Wildcard MQTT subscribe: pick up commands for any target name.

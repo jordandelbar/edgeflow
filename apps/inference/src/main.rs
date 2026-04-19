@@ -62,7 +62,7 @@ async fn main() -> Result<()> {
         };
 
     // Give the MQTT event loop a moment to connect and subscribe before we
-    // register — the server will publish immediately on registration.
+    // register - the server will publish immediately on registration.
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     tracing::info!(target = %cfg.target, pod_id = %cfg.pod_id, address = %cfg.self_address, node = ?cfg.node_name, "registering with edgeflow-server");

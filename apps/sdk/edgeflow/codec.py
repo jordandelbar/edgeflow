@@ -76,7 +76,7 @@ def encode_tensor(shape: list, data: bytes, dtype: int = DTYPE_F32) -> bytes:
         data:  raw little-endian bytes for the chosen dtype
         dtype: one of the DTYPE_* constants (default DTYPE_F32)
 
-    The data bytes are passed through unchanged — no re-encoding of values.
+    The data bytes are passed through unchanged - no re-encoding of values.
     """
     if dtype not in _DTYPE_ITEMSIZE:
         raise ValueError(f"unknown dtype code: {dtype}")

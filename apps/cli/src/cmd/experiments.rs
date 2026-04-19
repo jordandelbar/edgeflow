@@ -37,8 +37,8 @@ fn list(api: &Api) -> Result<()> {
 
     for e in &exps {
         table.add_row([
-            e["experiment_id"].as_str().unwrap_or("—"),
-            e["name"].as_str().unwrap_or("—"),
+            e["experiment_id"].as_str().unwrap_or("-"),
+            e["name"].as_str().unwrap_or("-"),
             &fmt_ts(e["creation_time"].as_i64().unwrap_or(0)),
         ]);
     }
@@ -70,9 +70,9 @@ fn runs(api: &Api, experiment: &str) -> Result<()> {
 
     for r in &runs {
         let info = &r["info"];
-        let run_id = info["run_id"].as_str().unwrap_or("—");
-        let run_name = info["run_name"].as_str().unwrap_or("—");
-        let status = info["status"].as_str().unwrap_or("—");
+        let run_id = info["run_id"].as_str().unwrap_or("-");
+        let run_name = info["run_name"].as_str().unwrap_or("-");
+        let status = info["status"].as_str().unwrap_or("-");
         let start = info["start_time"].as_i64().unwrap_or(0);
         let end = info["end_time"].as_i64();
         let duration = end

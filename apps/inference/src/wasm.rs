@@ -39,9 +39,9 @@ impl WasiView for State {
 }
 
 enum Inner {
-    /// Standard Rust pipeline — static bindgen, one memcpy per boundary crossing.
+    /// Standard Rust pipeline - static bindgen, one memcpy per boundary crossing.
     Standard(bindings::ConfigurableTransform),
-    /// Legacy componentize-py component — dynamic Val API (deprecated).
+    /// Legacy componentize-py component - dynamic Val API (deprecated).
     Legacy(Func),
 }
 

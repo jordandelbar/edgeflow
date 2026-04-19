@@ -2,7 +2,7 @@ package edgeflow:transforms@0.1.0;
 
 /// Single-function transform contract.
 /// Preprocess and postprocess modules both implement this world.
-/// Input and output are opaque byte slices — the caller and callee agree
+/// Input and output are opaque byte slices - the caller and callee agree
 /// on the format out of band (tensor wire format for pre→ort, raw bytes for →post).
 world transform {
   export transform: func(input: list<u8>) -> list<u8>;
@@ -11,7 +11,7 @@ world transform {
 /// Configurable transform contract for the standard Rust pipeline.
 /// init() is called once after instantiation with a JSON pipeline config;
 /// transform() is then called per request. The host checks for the init
-/// export at runtime — components implementing the plain `transform` world
+/// export at runtime - components implementing the plain `transform` world
 /// remain fully compatible.
 world configurable-transform {
   export init:      func(config: list<u8>);

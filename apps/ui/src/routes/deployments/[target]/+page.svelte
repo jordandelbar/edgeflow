@@ -133,7 +133,7 @@
                           || infraDraft.memory_request !== prevInf?.memory_request
                           || infraDraft.memory_limit   !== prevInf?.memory_limit
                           || resourceDraft.max_concurrent !== res.target.resources?.max_concurrent;
-        if (needsRestart) resourceNotice = 'Saved. CPU / memory / max_concurrent changes require a pod restart to take effect — k8s was not reachable.';
+        if (needsRestart) resourceNotice = 'Saved. CPU / memory / max_concurrent changes require a pod restart to take effect - k8s was not reachable.';
       }
       refreshLiveData();
     } catch (e) {
@@ -218,11 +218,11 @@
         <dl class="space-y-1.5">
           <div class="flex gap-2 text-xs">
             <dt class="text-gray-400 w-28 shrink-0">ID</dt>
-            <dd class="font-mono text-gray-700 truncate">{currentDep?.deployment_id ?? '—'}</dd>
+            <dd class="font-mono text-gray-700 truncate">{currentDep?.deployment_id ?? '-'}</dd>
           </div>
           <div class="flex gap-2 text-xs">
             <dt class="text-gray-400 w-28 shrink-0">State</dt>
-            <dd>{#if currentDep}<DeployStateBadge state={currentDep.state} />{:else}—{/if}</dd>
+            <dd>{#if currentDep}<DeployStateBadge state={currentDep.state} />{:else}-{/if}</dd>
           </div>
           {#if currentDep?.model_name}
             <div class="flex gap-2 text-xs">
@@ -314,9 +314,9 @@
                 <label class="block text-xs text-gray-500 mb-1">Placement
                   <select bind:value={infraDraft.placement}
                     class="w-full border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-sage/50 bg-white">
-                    <option value={null}>None — scheduler decides</option>
-                    <option value="spread">Spread — anti-affinity (different nodes)</option>
-                    <option value="pack">Pack — affinity (same node)</option>
+                    <option value={null}>None - scheduler decides</option>
+                    <option value="spread">Spread - anti-affinity (different nodes)</option>
+                    <option value="pack">Pack - affinity (same node)</option>
                   </select>
                 </label>
               </div>
@@ -330,7 +330,7 @@
                     {/each}
                   </select>
                 </label>
-                <p class="text-xs text-gray-400 mt-0.5">Sets <code>kubernetes.io/hostname</code> — pin pods to a specific node (e.g. one with a GPU).</p>
+                <p class="text-xs text-gray-400 mt-0.5">Sets <code>kubernetes.io/hostname</code> - pin pods to a specific node (e.g. one with a GPU).</p>
               </div>
             </div>
 
@@ -366,24 +366,24 @@
           <dl class="space-y-1.5">
             <div class="flex gap-2 text-xs">
               <dt class="text-gray-400 w-28 shrink-0">Sessions</dt>
-              <dd class="font-mono text-gray-700">{res?.sessions ?? '—'}</dd>
+              <dd class="font-mono text-gray-700">{res?.sessions ?? '-'}</dd>
             </div>
             <div class="flex gap-2 text-xs">
               <dt class="text-gray-400 w-28 shrink-0">Max concurrent</dt>
-              <dd class="font-mono text-gray-700">{res?.max_concurrent ?? '—'}</dd>
+              <dd class="font-mono text-gray-700">{res?.max_concurrent ?? '-'}</dd>
             </div>
             {#if inf}
               <div class="flex gap-2 text-xs">
                 <dt class="text-gray-400 w-28 shrink-0">CPU request</dt>
-                <dd class="font-mono text-gray-700">{inf.cpu_request ?? '—'}</dd>
+                <dd class="font-mono text-gray-700">{inf.cpu_request ?? '-'}</dd>
               </div>
               <div class="flex gap-2 text-xs">
                 <dt class="text-gray-400 w-28 shrink-0">Memory request</dt>
-                <dd class="font-mono text-gray-700">{inf.memory_request ?? '—'}</dd>
+                <dd class="font-mono text-gray-700">{inf.memory_request ?? '-'}</dd>
               </div>
               <div class="flex gap-2 text-xs">
                 <dt class="text-gray-400 w-28 shrink-0">Memory limit</dt>
-                <dd class="font-mono text-gray-700">{inf.memory_limit ?? '—'}</dd>
+                <dd class="font-mono text-gray-700">{inf.memory_limit ?? '-'}</dd>
               </div>
               {#if inf.replicas != null}
                 <div class="flex gap-2 text-xs">
@@ -453,7 +453,7 @@
   {:else if panel === 'test'}
     <div class="bg-white rounded-xl border border-gray-100 shadow-sm px-5 py-4">
       <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
-        <i class="fa-solid fa-triangle-exclamation text-peach mr-1"></i>Playground — not for production use
+        <i class="fa-solid fa-triangle-exclamation text-peach mr-1"></i>Playground - not for production use
       </p>
 
       {#if pg.nFeatures === null}

@@ -133,12 +133,12 @@ pub async fn create_inference_pod(
     let resolved_res = resolve_resources(resources);
     let sessions = resolved_res.sessions.unwrap();
     let max_concurrent = resolved_res.max_concurrent.unwrap();
-    // No CPU limit — throttling degrades inference latency more than an OOM would.
+    // No CPU limit - throttling degrades inference latency more than an OOM would.
 
     let Some(client) = client("create_inference_pod").await else {
         tracing::warn!(
             target = %target,
-            "k8s client unavailable — start the inference pod manually with \
+            "k8s client unavailable - start the inference pod manually with \
              EDGEFLOW_SERVER={server_url} EDGEFLOW_TARGET={target}"
         );
         return;
@@ -309,7 +309,7 @@ pub async fn create_inference_pod(
             tracing::info!(
                 target = %target,
                 name = %name,
-                "inference deployment already exists — waiting for pod to register"
+                "inference deployment already exists - waiting for pod to register"
             );
         }
         Err(e) => {
@@ -327,7 +327,7 @@ pub async fn create_inference_pod(
 ///
 /// `resources` carries edgeflow-owned fields (sessions, max_concurrent);
 /// `infra` carries k8s-owned fields (cpu/memory/replicas/spread/node_selector).
-/// Either can be `None` — only the provided parts are changed.
+/// Either can be `None` - only the provided parts are changed.
 ///
 /// Returns `true` if the update was accepted, `false` if the cluster is
 /// unreachable, the Deployment doesn't exist, or the update failed.
@@ -351,7 +351,7 @@ pub async fn patch_inference_pod_resources(
             tracing::warn!(
                 target = %target,
                 name = %name,
-                "inference deployment not found — cannot update resources (was it created via k8s?)"
+                "inference deployment not found - cannot update resources (was it created via k8s?)"
             );
             return false;
         }
@@ -458,7 +458,7 @@ pub async fn delete_inference_pod(target: &str) {
     let Some(client) = client("delete_inference_pod").await else {
         tracing::warn!(
             target = %target,
-            "k8s client unavailable — delete the inference pod manually"
+            "k8s client unavailable - delete the inference pod manually"
         );
         return;
     };

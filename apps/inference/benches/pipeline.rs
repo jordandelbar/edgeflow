@@ -1,9 +1,9 @@
 /// Criterion benchmarks for the inference hot path.
 ///
 /// Groups:
-///   tensor/{encode,decode}/<n>  — wire-format codec at three tensor sizes
-///   backend/{infer_small,infer_large} — raw ORT session.run() on pre-decoded data
-///   pipeline/{infer_small,infer_large} — full path: decode → backend → encode
+///   tensor/{encode,decode}/<n>  - wire-format codec at three tensor sizes
+///   backend/{infer_small,infer_large} - raw ORT session.run() on pre-decoded data
+///   pipeline/{infer_small,infer_large} - full path: decode → backend → encode
 ///
 /// Before running, generate the model fixtures:
 ///   uv run python scripts/gen_bench_model.py
@@ -16,7 +16,7 @@ use edgeflow_inference::{backend, pipeline, tensor};
 fn load_model(name: &str) -> Vec<u8> {
     let path = format!("{}/tests/fixtures/{name}", env!("CARGO_MANIFEST_DIR"));
     std::fs::read(&path).unwrap_or_else(|_| {
-        panic!("fixture {name} missing — run `uv run python scripts/gen_bench_model.py`")
+        panic!("fixture {name} missing - run `uv run python scripts/gen_bench_model.py`")
     })
 }
 
@@ -55,7 +55,7 @@ fn bench_tensor(c: &mut Criterion) {
 fn bench_backend(c: &mut Criterion) {
     let mut g = c.benchmark_group("backend");
 
-    // Small — iris model, [1, 4]
+    // Small - iris model, [1, 4]
     {
         let model = load_model("iris.onnx");
         let mut b = backend::build_backend();
@@ -67,7 +67,7 @@ fn bench_backend(c: &mut Criterion) {
         });
     }
 
-    // Large — large model, [1, 4096]
+    // Large - large model, [1, 4096]
     {
         let model = load_model("large.onnx");
         let mut b = backend::build_backend();
@@ -87,7 +87,7 @@ fn bench_backend(c: &mut Criterion) {
 fn bench_pipeline(c: &mut Criterion) {
     let mut g = c.benchmark_group("pipeline");
 
-    // Small — iris model, [1, 4] → [1, 3]
+    // Small - iris model, [1, 4] → [1, 3]
     {
         let model = load_model("iris.onnx");
         let mut p = pipeline::Pipeline::new(backend::build_backend(), &model, None, None, None)
@@ -98,7 +98,7 @@ fn bench_pipeline(c: &mut Criterion) {
         });
     }
 
-    // Large — large model, [1, 4096] → [1, 10]
+    // Large - large model, [1, 4096] → [1, 10]
     {
         let model = load_model("large.onnx");
         let mut p = pipeline::Pipeline::new(backend::build_backend(), &model, None, None, None)

@@ -16,7 +16,7 @@ In practice, this is a significant friction point. Real edge applications sit be
 
 - Input data arrives in sensor-native formats (raw image buffers, LiDAR point clouds, IMU readings) and must be normalized, resized, or windowed before the model can consume it
 - Model outputs are raw tensors (logit vectors, bounding box coordinates, regression values) that must be thresholded, decoded, or post-filtered before the application can act on them
-- These transforms are model-specific and tightly coupled to the training pipeline — they belong with the model artifact, not embedded in the application
+- These transforms are model-specific and tightly coupled to the training pipeline - they belong with the model artifact, not embedded in the application
 
 Today, users are forced to handle this in their application code (ROS nodes, robot software), duplicating logic across devices and making model updates fragile. Changing the model often requires updating application code across the fleet in lockstep.
 
@@ -32,8 +32,8 @@ The execution model
 
 Each model version in the registry may optionally carry two WASM artifacts:
 
-- ``preprocess.wasm`` — transforms raw application input into tensors ready for the ONNX model
-- ``postprocess.wasm`` — transforms raw ONNX output tensors into structured application-level results
+- ``preprocess.wasm`` - transforms raw application input into tensors ready for the ONNX model
+- ``postprocess.wasm`` - transforms raw ONNX output tensors into structured application-level results
 
 The inference call flow becomes:
 
@@ -46,11 +46,11 @@ Both modules are optional and independently versioned. A model version can have 
 Developer experience
 ~~~~~~~~~~~~~~~~~~~~
 
-The primary authoring interface is Python. Users write their transforms as decorated functions alongside their training script — the same functions they already use during training and evaluation:
+The primary authoring interface is Python. Users write their transforms as decorated functions alongside their training script - the same functions they already use during training and evaluation:
 
 .. code-block:: python
 
-    # transforms.py — lives next to the training script
+    # transforms.py - lives next to the training script
 
     from edgeflow.transforms import preprocess, postprocess
     import numpy as np
@@ -76,7 +76,7 @@ The CLI compiles these to WASM and uploads the full bundle atomically:
       --model model.onnx \
       --transforms transforms.py
 
-The user never interacts with ``.wasm`` files directly. For advanced users (Rust, Go, C), pre-compiled ``.wasm`` files can be passed instead of a Python source file — same CLI flag, the CLI detects the artifact type.
+The user never interacts with ``.wasm`` files directly. For advanced users (Rust, Go, C), pre-compiled ``.wasm`` files can be passed instead of a Python source file - same CLI flag, the CLI detects the artifact type.
 
 WASM module interface
 ~~~~~~~~~~~~~~~~~~~~~
@@ -98,7 +98,7 @@ Between the preprocess module and ``ort``, and between ``ort`` and the postproce
 
     [ ndim: u8 | shape: [u32; ndim] | dtype: u8 | data: [u8] ]
 
-This format is handled entirely by the SDK — transform authors work with numpy arrays on the Python side and typed slices on the Rust side. The format is intentionally minimal to avoid overhead on constrained hardware. Arrow or ONNX tensor proto may be evaluated in later iterations if batch inference becomes a requirement.
+This format is handled entirely by the SDK - transform authors work with numpy arrays on the Python side and typed slices on the Rust side. The format is intentionally minimal to avoid overhead on constrained hardware. Arrow or ONNX tensor proto may be evaluated in later iterations if batch inference becomes a requirement.
 
 Artifact delivery and hot-swap
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -132,15 +132,15 @@ The Python decorator interface is the stable user-facing contract. The WASM comp
 
 **Primary: componentize-py**
 
-Compiles Python source to a WASM component. Requires no Python runtime on the device. Produces self-contained ``.wasm`` artifacts. The main risk is maturity — componentize-py is actively developed but not yet battle-tested at production scale. Must be validated early with realistic transforms (JPEG decode, numpy normalization) before committing to this path.
+Compiles Python source to a WASM component. Requires no Python runtime on the device. Produces self-contained ``.wasm`` artifacts. The main risk is maturity - componentize-py is actively developed but not yet battle-tested at production scale. Must be validated early with realistic transforms (JPEG decode, numpy normalization) before committing to this path.
 
 **Fallback A: RustPython in WASM**
 
-RustPython is a Python interpreter written in pure Rust that compiles to WASM32. The CLI wraps the user's Python source in a RustPython-based WASM module. Same DevEx, different runtime. The constraint: RustPython does not support C extensions, so numpy and opencv are unavailable inside the transform. Applicable when transforms are pure Python (reshaping, thresholding, JSON encoding) — which covers most classical ML use cases.
+RustPython is a Python interpreter written in pure Rust that compiles to WASM32. The CLI wraps the user's Python source in a RustPython-based WASM module. Same DevEx, different runtime. The constraint: RustPython does not support C extensions, so numpy and opencv are unavailable inside the transform. Applicable when transforms are pure Python (reshaping, thresholding, JSON encoding) - which covers most classical ML use cases.
 
 **Fallback B: Native Python subprocess**
 
-If neither WASM compilation path is viable, the CLI serializes the Python function via cloudpickle and ships it as a native artifact. ``edgeflow-inference`` spawns a Python subprocess for transform calls. Loses sandboxing and requires Python on the device — unacceptable on the most constrained hardware but viable as a temporary path while WASM tooling matures. The DevEx (decorator interface, CLI push command) is identical.
+If neither WASM compilation path is viable, the CLI serializes the Python function via cloudpickle and ships it as a native artifact. ``edgeflow-inference`` spawns a Python subprocess for transform calls. Loses sandboxing and requires Python on the device - unacceptable on the most constrained hardware but viable as a temporary path while WASM tooling matures. The DevEx (decorator interface, CLI push command) is identical.
 
 The choice of backend is transparent to the user. The CLI selects the best available backend and records which backend was used in the artifact metadata stored in the registry.
 
@@ -151,19 +151,19 @@ Consequences
 
 **Positive:**
 
-- Pre/post processing logic ships with the model artifact — application code no longer needs to change when the model changes
-- The same Python functions used at training time run on the device — no logic duplication, no drift between training and inference transforms
+- Pre/post processing logic ships with the model artifact - application code no longer needs to change when the model changes
+- The same Python functions used at training time run on the device - no logic duplication, no drift between training and inference transforms
 - Modules are sandboxed: a broken transform returns an error, it does not crash ``edgeflow-inference``
-- Model updates are artifact swaps, not binary redeploys — smaller, faster, safer over constrained fleet networks
+- Model updates are artifact swaps, not binary redeploys - smaller, faster, safer over constrained fleet networks
 - Extends the lineage chain: the transform module version is part of the model version record
-- ``edgeflow-inference`` remains useful standalone — modules are optional, the ONNX-only path still works
+- ``edgeflow-inference`` remains useful standalone - modules are optional, the ONNX-only path still works
 
 **Negative / risks:**
 
-- Wasmtime adds binary weight to ``edgeflow-inference`` — must be validated on the most constrained target hardware before committing
-- The transform ABI is a new stable API surface — breaking changes force users to recompile all modules
+- Wasmtime adds binary weight to ``edgeflow-inference`` - must be validated on the most constrained target hardware before committing
+- The transform ABI is a new stable API surface - breaking changes force users to recompile all modules
 - Execution time limits require tuning: too tight breaks legitimate heavy transforms (image decoding), too loose opens resource exhaustion risk on the device
-- componentize-py maturity is an open risk — early prototype required to validate before the Python path is advertised as supported
+- componentize-py maturity is an open risk - early prototype required to validate before the Python path is advertised as supported
 - RustPython's lack of C extension support means numpy-heavy transforms fall back to the subprocess path on constrained devices
 
 --------
@@ -173,7 +173,7 @@ Alternatives Considered
 
 **Shared library plugins (.so / .dylib)**
 
-Rejected. Native plugins are not sandboxed — a crash or segfault takes down the inference process. Requires per-architecture compilation. WASM provides equivalent extensibility with isolation and a single portable artifact.
+Rejected. Native plugins are not sandboxed - a crash or segfault takes down the inference process. Requires per-architecture compilation. WASM provides equivalent extensibility with isolation and a single portable artifact.
 
 **PyO3 as compilation intermediary**
 
@@ -189,4 +189,4 @@ Rejected. Introduces a network hop on the critical inference path and significan
 
 **Running transforms inside the ONNX graph**
 
-Partially valid — ONNX supports preprocessing ops and some postprocessing. However, ONNX graph manipulation requires Python tooling, is opaque to non-ML engineers, and cannot express arbitrary logic (protocol buffer decoding, sensor-specific calibration). WASM complements ONNX rather than replacing it.
+Partially valid - ONNX supports preprocessing ops and some postprocessing. However, ONNX graph manipulation requires Python tooling, is opaque to non-ML engineers, and cannot express arbitrary logic (protocol buffer decoding, sensor-specific calibration). WASM complements ONNX rather than replacing it.

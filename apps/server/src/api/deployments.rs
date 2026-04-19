@@ -129,7 +129,7 @@ async fn infer_playground(
     require_target(&state, &target).await?;
     let addr = first_pod_address(&state, &target).await?;
 
-    // Send raw packed floats — same format as the Python client (struct.pack('<Nf', ...)).
+    // Send raw packed floats - same format as the Python client (struct.pack('<Nf', ...)).
     // The preprocess WASM (FloatBytesToTensor) expects this, not a tensor-encoded header.
     let body: Vec<u8> = req.data.iter().flat_map(|&v| v.to_le_bytes()).collect();
     let infer_result = TargetClient::new(&state.http_client, &addr)
@@ -226,7 +226,7 @@ async fn create_deployment(
 
         if let Some(ref publisher) = state.mqtt_publisher {
             // Mark Upgrading before publishing so pods can't confirm before
-            // the state transition — eliminates a race with the local broker.
+            // the state transition - eliminates a race with the local broker.
             state
                 .store
                 .update_deployment_state(&deployment.deployment_id, DeploymentState::Upgrading)
@@ -244,7 +244,7 @@ async fn create_deployment(
                 tracing::warn!(
                     deployment_id = %deployment.deployment_id,
                     error = %e,
-                    "mqtt upgrade publish failed — deployment stays upgrading"
+                    "mqtt upgrade publish failed - deployment stays upgrading"
                 );
             } else {
                 tracing::info!(
@@ -256,7 +256,7 @@ async fn create_deployment(
         } else {
             tracing::warn!(
                 deployment_id = %deployment.deployment_id,
-                "no mqtt publisher available — deployment stays pending"
+                "no mqtt publisher available - deployment stays pending"
             );
         }
     } else {
@@ -342,7 +342,7 @@ async fn confirm_deployment(
 
     // Idempotency guard: with multiple pods each sends its own confirm.
     // If already in a terminal state, return current state without modification.
-    // We intentionally allow Pending (pod confirmed before server updated state —
+    // We intentionally allow Pending (pod confirmed before server updated state -
     // race with local MQTT broker) as well as Deploying/Upgrading.
     if matches!(
         deployment.state,
@@ -357,7 +357,7 @@ async fn confirm_deployment(
                 .store
                 .update_deployment_state(&id, DeploymentState::Deployed)
                 .await?;
-            // Record which model is now live on this target — server becomes the SSOT
+            // Record which model is now live on this target - server becomes the SSOT
             // so model info survives even if the inference pod is later torn down.
             let loaded_at = chrono::Utc::now().to_rfc3339();
             state
@@ -454,7 +454,7 @@ struct UpdateResourcesRequest {
     /// Edgeflow-owned settings.
     #[serde(default)]
     resources: ResourceSettings,
-    /// k8s-owned infrastructure settings — applied directly to the k8s Deployment.
+    /// k8s-owned infrastructure settings - applied directly to the k8s Deployment.
     #[serde(default)]
     infra: InfraSettings,
 }
@@ -490,7 +490,7 @@ async fn update_target_resources(
     let mut pod_restarted = false;
 
     // k8s Deployment patch (replicas, cpu, memory, spread) operates on the Deployment
-    // object directly — no need for a running pod address.
+    // object directly - no need for a running pod address.
     if infra_changed || max_conc_changed {
         let res_patch = if max_conc_changed {
             Some(&req.resources)
@@ -587,7 +587,7 @@ async fn teardown_target(
     // Supersede active deployments + remove target record.
     state.store.delete_target(&target).await?;
 
-    // Best-effort orchestrator cleanup — logs a warning if the runtime is unreachable.
+    // Best-effort orchestrator cleanup - logs a warning if the runtime is unreachable.
     state.orchestrator.delete_inference_pod(&target).await;
 
     tracing::info!(target = %target, "target torn down");

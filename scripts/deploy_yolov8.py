@@ -3,7 +3,7 @@ YOLOv8 deployment script.
 
 Downloads a pretrained YOLOv8n checkpoint via ultralytics, exports it to ONNX,
 and registers it with edgeflow using the ImageToTensor + DetectionOutput pipeline.
-No training is performed — YOLO is used as-is from the COCO pretrained weights.
+No training is performed - YOLO is used as-is from the COCO pretrained weights.
 
 The inference server accepts raw JPEG or PNG bytes and returns a JSON array of
 detected objects with normalised bounding boxes:
@@ -22,7 +22,7 @@ detected objects with normalised bounding boxes:
 Bounding box coordinates are normalised to [0, 1].  Multiply by your display
 dimensions (width, height, width, height) to get pixel coordinates.
 
-Model:   YOLOv8n (nano) — ~6 MB, 80 COCO classes
+Model:   YOLOv8n (nano) - ~6 MB, 80 COCO classes
 ONNX output shape: [1, 84, 8400]  (4 bbox coords + 80 class scores, 8400 anchors)
 """
 

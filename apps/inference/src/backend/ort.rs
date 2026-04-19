@@ -28,7 +28,7 @@ impl InferenceBackend for OrtBackend {
         let session = self.session.as_mut().context("model not loaded")?;
 
         let ort_shape: Vec<i64> = shape.iter().map(|&d| d as i64).collect();
-        // TensorRef borrows `data` directly — no copy of the input floats.
+        // TensorRef borrows `data` directly - no copy of the input floats.
         let tensor = TensorRef::<f32>::from_array_view((ort_shape.as_slice(), data))
             .context("failed to build ORT input tensor")?;
 

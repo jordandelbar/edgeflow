@@ -20,7 +20,7 @@ pub fn router() -> Router<AppState> {
         .route("/artifacts/get-artifact", get(get_artifact))
 }
 
-/// Router for /api/2.0/mlflow-artifacts — handles artifact proxy uploads/downloads.
+/// Router for /api/2.0/mlflow-artifacts - handles artifact proxy uploads/downloads.
 pub fn mlflow_artifacts_router() -> Router<AppState> {
     Router::new().route("/artifacts/{*path}", put(upload_artifact))
 }

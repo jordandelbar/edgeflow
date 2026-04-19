@@ -4,7 +4,7 @@ services:
     volumes:
       - ./otelcol/config.yaml:/etc/otelcol-contrib/config.yaml:ro
     ports:
-      - "4317:4317"   # OTLP gRPC — point OTEL_EXPORTER_OTLP_ENDPOINT here
+      - "4317:4317"   # OTLP gRPC - point OTEL_EXPORTER_OTLP_ENDPOINT here
     depends_on:
       - tempo
 

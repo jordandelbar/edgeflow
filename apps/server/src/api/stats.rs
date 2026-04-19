@@ -68,7 +68,7 @@ async fn get_target_stats(
     )
     .await;
 
-    // sum() across all pods — correct for multi-replica targets.
+    // sum() across all pods - correct for multi-replica targets.
     let memory_bytes = query_scalar(
         &state.http_client,
         prom_url,
@@ -77,7 +77,7 @@ async fn get_target_stats(
     .await
     .map(|v| v as u64);
 
-    // avg() per pod — shows how hard each replica is working, not the fleet total.
+    // avg() per pod - shows how hard each replica is working, not the fleet total.
     let cpu_ratio = query_scalar(
         &state.http_client,
         prom_url,

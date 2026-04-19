@@ -11,7 +11,7 @@ use chrono::DateTime;
 pub fn fmt_ts(ms: i64) -> String {
     DateTime::from_timestamp_millis(ms)
         .map(|dt| dt.format("%d %b %Y %H:%M").to_string())
-        .unwrap_or_else(|| "—".into())
+        .unwrap_or_else(|| "-".into())
 }
 
 /// Truncate a string to at most `n` characters.

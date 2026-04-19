@@ -78,7 +78,7 @@ async fn main() -> anyhow::Result<()> {
                             deployment_id = %d.deployment_id,
                             target = %d.target,
                             state = %d.state.as_str(),
-                            "deployment timed out — marking failed"
+                            "deployment timed out - marking failed"
                         );
                         let _ = timeout_state
                             .store

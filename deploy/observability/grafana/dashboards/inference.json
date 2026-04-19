@@ -1,6 +1,6 @@
 {
   "uid": "edgeflow-inference",
-  "title": "edgeflow — inference",
+  "title": "edgeflow - inference",
   "tags": ["edgeflow"],
   "refresh": "10s",
   "time": { "from": "now-15m", "to": "now" },

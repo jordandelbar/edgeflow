@@ -129,7 +129,7 @@ fn deploy(
 
     loop {
         if std::time::Instant::now() >= deadline {
-            anyhow::bail!("timed out after {timeout}s — last state: {last_state}");
+            anyhow::bail!("timed out after {timeout}s - last state: {last_state}");
         }
         std::thread::sleep(std::time::Duration::from_secs(2));
 

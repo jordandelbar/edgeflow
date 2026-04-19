@@ -1,12 +1,20 @@
 [package]
 name = "edgeflow-cli"
-version = "0.1.0"
-edition = "2021"
-description = "edgeflow command-line interface"
-license = "Apache-2.0"
-repository = "https://github.com/edgeflow-rs/edgeflow"
-keywords = ["ml", "inference", "edge", "onnx"]
-categories = ["command-line-utilities"]
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+description = "Command-line interface for the edgeflow inference platform"
+readme = "README.md"
+keywords = ["ml", "mlops", "inference", "edge", "cli"]
+categories = ["command-line-utilities", "science"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [[bin]]
 name = "edgeflow"

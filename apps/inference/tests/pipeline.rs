@@ -10,7 +10,7 @@ use edgeflow_inference::{backend, inputs, pipeline, tensor};
 fn load_model() -> Vec<u8> {
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/iris.onnx");
     std::fs::read(path)
-        .expect("model fixture missing — run `python scripts/gen_bench_model.py` first")
+        .expect("model fixture missing - run `python scripts/gen_bench_model.py` first")
 }
 
 // ── tensor wire format ───────────────────────────────────────────────────────
@@ -178,7 +178,7 @@ fn pipeline_rejects_wrong_input_size() {
     let model = load_model();
     let mut p =
         pipeline::Pipeline::new(backend::build_backend(), &model, None, None, None).unwrap();
-    // Send only 2 features instead of 4 — shape mismatch should error
+    // Send only 2 features instead of 4 - shape mismatch should error
     let input = tensor::encode(&[1, 2], &[5.1f32, 3.5]);
     assert!(p.infer(&input).is_err());
 }

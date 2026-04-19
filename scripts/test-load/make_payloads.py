@@ -5,10 +5,10 @@ Usage:
     python make_payloads.py
 
 Outputs (in ./payloads/):
-    iris.bin     — 16 bytes: 4 × f32 LE (typical iris sample)
-    adult.json   — JSON body for the adult-income named-input model
+    iris.bin     - 16 bytes: 4 × f32 LE (typical iris sample)
+    adult.json   - JSON body for the adult-income named-input model
 
-For yolov8 you need a real JPEG — copy any test image:
+For yolov8 you need a real JPEG - copy any test image:
     cp /path/to/image.jpg payloads/sample.jpg
 """
 

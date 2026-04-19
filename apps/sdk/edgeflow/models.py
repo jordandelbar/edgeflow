@@ -1,11 +1,11 @@
 """
 edgeflow model export helpers.
 
-clf_to_onnx          — unified export for sklearn, XGBoost, LightGBM, CatBoost
+clf_to_onnx          - unified export for sklearn, XGBoost, LightGBM, CatBoost
                        classifiers; detects framework from class module
-sklearn_to_onnx      — LogisticRegression, hand-rolled standard ops graph
+sklearn_to_onnx      - LogisticRegression, hand-rolled standard ops graph
                        (kept for reference; predates skl2onnx support)
-read_onnx_input_shape — read n_features from a float[N, k] ONNX input
+read_onnx_input_shape - read n_features from a float[N, k] ONNX input
 """
 
 from __future__ import annotations
@@ -249,7 +249,7 @@ def read_onnx_named_inputs(model_bytes: bytes) -> list[dict] | None:
     """Return ordered input specs for models with multiple or mixed-type inputs.
 
     Returns a list of ``{"name": str, "type": "float"|"string"}`` dicts when
-    the ONNX model has more than one input — i.e. a full sklearn pipeline
+    the ONNX model has more than one input - i.e. a full sklearn pipeline
     exported via skl2onnx with per-column tensors.
 
     Returns ``None`` for models with a single float32 tensor input so the
@@ -301,7 +301,7 @@ def read_onnx_input_shape(model_bytes: bytes) -> int | None:
     proto = onnx.ModelProto()
     proto.ParseFromString(model_bytes)
 
-    # Exclude initializers (weights/biases) — only real graph inputs matter.
+    # Exclude initializers (weights/biases) - only real graph inputs matter.
     initializer_names = {i.name for i in proto.graph.initializer}
     true_inputs = [i for i in proto.graph.input if i.name not in initializer_names]
 

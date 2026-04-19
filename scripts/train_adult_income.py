@@ -9,7 +9,7 @@ applies the encodings, and feeds the resulting float tensor to the ONNX model.
 Dataset: UCI Adult Income (fetch_openml, no Kaggle account required)
 Model:   XGBClassifier (default) | LGBMClassifier | CatBoostClassifier
          Set EDGEFLOW_MODEL_TYPE=xgboost|lightgbm|catboost (default: xgboost)
-Target:  binary — '>50K' income or not
+Target:  binary - '>50K' income or not
 
 Input protocol (Named mode): JSON body, e.g.
   curl -s -X POST http://localhost:8080/infer \\
@@ -116,7 +116,7 @@ numerical_cols = [col for col in X.columns if col not in categorical_cols]
 print(f"\ncategorical features ({len(categorical_cols)}): {categorical_cols}")
 print(f"numerical features  ({len(numerical_cols)}): {numerical_cols}")
 
-# OrdinalEncoder for all categoricals — no OHE expansion needed for tree models.
+# OrdinalEncoder for all categoricals - no OHE expansion needed for tree models.
 # unknown_value=-1 handles unseen categories at inference time gracefully.
 preprocessor = ColumnTransformer(
     [
@@ -177,7 +177,7 @@ with mlflow.start_run(
     # Export the classifier only (post-encoding, single float tensor input).
     # clf_to_onnx detects the framework and uses the appropriate export path.
     # The column_transformer is passed separately so edgeflow can write the
-    # encoding tables to schema.json — the server applies them at request time.
+    # encoding tables to schema.json - the server applies them at request time.
     edgeflow.log_model(
         model_bytes=clf_to_onnx(clf),
         postprocess=edgeflow.Pipeline(

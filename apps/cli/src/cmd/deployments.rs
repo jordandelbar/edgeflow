@@ -40,20 +40,20 @@ fn list(api: &Api, target: Option<&str>) -> Result<()> {
     table.set_header(["ID", "Target", "Model", "State", "Created"]);
 
     for d in &deps {
-        let dep_id = d["deployment_id"].as_str().unwrap_or("—");
+        let dep_id = d["deployment_id"].as_str().unwrap_or("-");
         let model = match (d["model_name"].as_str(), d["model_version"].as_str()) {
             (Some(n), Some(v)) => format!("{n} v{v}"),
             _ => d["run_id"]
                 .as_str()
                 .map(|id| id[..12.min(id.len())].to_string())
-                .unwrap_or_else(|| "—".into()),
+                .unwrap_or_else(|| "-".into()),
         };
 
         table.add_row([
             &dep_id[..8.min(dep_id.len())],
-            d["target"].as_str().unwrap_or("—"),
+            d["target"].as_str().unwrap_or("-"),
             &model,
-            d["state"].as_str().unwrap_or("—"),
+            d["state"].as_str().unwrap_or("-"),
             &fmt_ts(d["created_at"].as_i64().unwrap_or(0)),
         ]);
     }
@@ -71,13 +71,13 @@ fn status(api: &Api, target: &str) -> Result<()> {
         _ => d["run_id"]
             .as_str()
             .map(|id| id[..12.min(id.len())].to_string())
-            .unwrap_or_else(|| "—".into()),
+            .unwrap_or_else(|| "-".into()),
     };
 
     println!("Target:  {target}");
     println!("Model:   {model}");
-    println!("State:   {}", d["state"].as_str().unwrap_or("—"));
-    println!("ID:      {}", d["deployment_id"].as_str().unwrap_or("—"));
+    println!("State:   {}", d["state"].as_str().unwrap_or("-"));
+    println!("ID:      {}", d["deployment_id"].as_str().unwrap_or("-"));
     println!("Created: {}", fmt_ts(d["created_at"].as_i64().unwrap_or(0)));
 
     // Show resource specs from the target record.
@@ -88,29 +88,29 @@ fn status(api: &Api, target: &str) -> Result<()> {
             println!("Resources:");
             println!(
                 "  CPU request:    {}",
-                r["cpu_request"].as_str().unwrap_or("—")
+                r["cpu_request"].as_str().unwrap_or("-")
             );
             println!(
                 "  Memory request: {}",
-                r["memory_request"].as_str().unwrap_or("—")
+                r["memory_request"].as_str().unwrap_or("-")
             );
             println!(
                 "  Memory limit:   {}",
-                r["memory_limit"].as_str().unwrap_or("—")
+                r["memory_limit"].as_str().unwrap_or("-")
             );
             println!(
                 "  Sessions:       {}",
                 r["sessions"]
                     .as_i64()
                     .map(|v| v.to_string())
-                    .unwrap_or_else(|| "—".into())
+                    .unwrap_or_else(|| "-".into())
             );
             println!(
                 "  Max concurrent: {}",
                 r["max_concurrent"]
                     .as_i64()
                     .map(|v| v.to_string())
-                    .unwrap_or_else(|| "—".into())
+                    .unwrap_or_else(|| "-".into())
             );
         }
     }

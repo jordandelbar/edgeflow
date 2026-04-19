@@ -24,7 +24,7 @@ impl InferenceBackend for TractBackend {
             .context("failed to parse ONNX model")?;
 
         // Derive a concrete input shape from the ONNX graph.
-        // Dynamic dims (e.g. batch=None) are concretised to 1 — the
+        // Dynamic dims (e.g. batch=None) are concretised to 1 - the
         // inference pod always runs single-sample requests.
         let input_shape: Vec<usize> = {
             let fact = parsed.input_fact(0).context("model has no inputs")?;

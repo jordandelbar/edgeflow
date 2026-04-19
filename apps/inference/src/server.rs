@@ -252,7 +252,7 @@ async fn handle(
 ) -> Result<Response<Full<Bytes>>, hyper::Error> {
     match (req.method(), req.uri().path()) {
         (&Method::POST, "/infer") => {
-            // Reject immediately if at capacity — don't queue.
+            // Reject immediately if at capacity - don't queue.
             let permit = match state.semaphore.clone().try_acquire_owned() {
                 Ok(p) => p,
                 Err(_) => {
@@ -300,7 +300,7 @@ async fn handle(
             let body = req.collect().await?.to_bytes();
             let metrics = state.metrics.clone();
             let start = std::time::Instant::now();
-            // Create the root span before spawning — move it into the blocking thread
+            // Create the root span before spawning - move it into the blocking thread
             // so child spans created in pipeline.infer() are correctly nested under it.
             let infer_span = tracing::info_span!(
                 "infer",

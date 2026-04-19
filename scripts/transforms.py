@@ -1,7 +1,7 @@
 """
 Iris inference transforms.
 
-These functions live next to the training script — same file you'd use
+These functions live next to the training script - same file you'd use
 during training and evaluation. The decorators mark them for WASM
 compilation; the functions themselves are plain Python and can be called
 directly for local testing.

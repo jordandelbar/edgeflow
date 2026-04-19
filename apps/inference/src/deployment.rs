@@ -11,7 +11,7 @@ use crate::server::ModelInfo;
 pub struct DeployInstruction {
     pub run_id: String,
     pub deployment_id: String,
-    /// Number of ORT sessions to create — provided by the server so sessions
+    /// Number of ORT sessions to create - provided by the server so sessions
     /// can change on each hot-swap without requiring a pod restart.
     pub sessions: usize,
 }

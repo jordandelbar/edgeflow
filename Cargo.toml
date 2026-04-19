@@ -13,6 +13,15 @@ members = [
 ]
 resolver = "2"
 
+[workspace.package]
+version = "0.1.1"
+edition = "2021"
+authors = ["Jordan Delbar <jordandelbar@gmail.com>"]
+license = "Apache-2.0"
+repository = "https://github.com/jordandelbar/edgeflow"
+homepage = "https://github.com/jordandelbar/edgeflow"
+rust-version = "1.88"
+
 [profile.release]
 strip = true
 lto = "fat"

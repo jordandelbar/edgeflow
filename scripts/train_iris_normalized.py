@@ -2,7 +2,7 @@
 Iris LogisticRegression trained on z-scored features.
 
 The normalization is baked into the preprocess pipeline (FloatBytesToTensor →
-Normalize).  The caller still sends the same 16 raw bytes — the WASM transform
+Normalize).  The caller still sends the same 16 raw bytes - the WASM transform
 handles the z-score before the tensor reaches the model.
 
 This validates that preprocessing logic changes are absorbed by the artifact

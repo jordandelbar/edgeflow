@@ -79,7 +79,7 @@ pub struct InfraSettings {
     /// Pod placement strategy. `None` means no affinity rule (scheduler decides).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub placement: Option<Placement>,
-    /// k8s nodeSelector labels — scheduler picks any node matching all labels.
+    /// k8s nodeSelector labels - scheduler picks any node matching all labels.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub node_selector: Option<std::collections::BTreeMap<String, String>>,
 }

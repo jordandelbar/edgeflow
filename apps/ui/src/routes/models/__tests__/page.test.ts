@@ -43,11 +43,11 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('models page — interval cleanup', () => {
+describe('models page - interval cleanup', () => {
   it('clears all polling intervals when the component is destroyed', async () => {
     render(Page);
 
-    // Wait for onMount data load before installing the setInterval spy — the spy
+    // Wait for onMount data load before installing the setInterval spy - the spy
     // must not interfere with Svelte's own initialisation.
     await waitFor(() => screen.getByText('My Model'));
 
@@ -65,11 +65,11 @@ describe('models page — interval cleanup', () => {
     // Open the deploy modal.
     fireEvent.click(screen.getByText('Deploy'));
 
-    // The modal now shows a version picker first — select v1.
+    // The modal now shows a version picker first - select v1.
     await waitFor(() => screen.getByRole('button', { name: /v1/ }));
     fireEvent.click(screen.getByRole('button', { name: /v1/ }));
 
-    // Now the target picker is shown — click the existing 'prod' target.
+    // Now the target picker is shown - click the existing 'prod' target.
     await waitFor(() => screen.getByRole('button', { name: /prod/ }));
     fireEvent.click(screen.getByRole('button', { name: /prod/ }));
 
@@ -78,7 +78,7 @@ describe('models page — interval cleanup', () => {
 
     const idsBeforeDestroy = [...registeredIds];
 
-    // Destroy the component — onDestroy must call clearInterval for every active interval.
+    // Destroy the component - onDestroy must call clearInterval for every active interval.
     cleanup();
 
     for (const id of idsBeforeDestroy) {

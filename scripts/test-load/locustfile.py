@@ -2,7 +2,7 @@
 Edgeflow inference load test.
 
 The script resolves the pod address from the edgeflow server at startup,
-then drives POST /infer directly — no server proxy overhead.
+then drives POST /infer directly - no server proxy overhead.
 
 Environment variables
 ---------------------
@@ -99,7 +99,7 @@ class InferenceUser(FastHttpUser):
     # Locust's --host flag is ignored; we use the resolved pod address.
     host = _pod_address
 
-    # No artificial wait — we want to measure raw throughput ceiling.
+    # No artificial wait - we want to measure raw throughput ceiling.
     wait_time = between(0, 0)
 
     @task
@@ -113,11 +113,11 @@ class InferenceUser(FastHttpUser):
             if resp.status_code == 200:
                 resp.success()
             elif resp.status_code == 429:
-                # Backpressure from the semaphore — expected under saturation.
+                # Backpressure from the semaphore - expected under saturation.
                 # Mark success so it doesn't inflate the failure rate.
                 resp.success()
             elif resp.status_code == 503:
-                # Model not loaded yet — fail visibly.
+                # Model not loaded yet - fail visibly.
                 resp.failure("503 no model loaded")
             else:
                 resp.failure(

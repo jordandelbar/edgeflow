@@ -20,7 +20,7 @@ export default [
     plugins: { '@typescript-eslint': tsPlugin },
     rules: {
       ...tsPlugin.configs.recommended.rules,
-      // TypeScript handles undefined references — no-undef causes false positives
+      // TypeScript handles undefined references - no-undef causes false positives
       // for DOM types (RequestInfo, TimerHandler, etc.)
       'no-undef': 'off',
       '@typescript-eslint/no-explicit-any': 'warn',

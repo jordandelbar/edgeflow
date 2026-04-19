@@ -8,7 +8,7 @@ const config = {
     adapter: adapter({
       pages: 'build',
       assets: 'build',
-      fallback: 'index.html',  // SPA fallback — axum ServeDir will serve this for unknown routes
+      fallback: 'index.html',  // SPA fallback - axum ServeDir will serve this for unknown routes
     }),
   },
 };
