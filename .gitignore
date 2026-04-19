@@ -272,6 +272,10 @@ __marimo__/
 *.onnx
 *.pt
 
+# Exceptions: deterministic test fixtures committed so CI doesn't need python
+!apps/inference/tests/fixtures/iris.onnx
+!apps/inference/tests/fixtures/large.onnx
+
 # Binary files
 *.bin
 
