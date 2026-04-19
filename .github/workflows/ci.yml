@@ -63,8 +63,12 @@ jobs:
       - run: cargo check -p edgeflow-cli --locked
 
   test-python:
-    name: python sdk tests
+    name: python sdk tests (py${{ matrix.python }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -85,7 +89,7 @@ jobs:
       - name: maturin develop
         working-directory: apps/sdk
         run: |
-          uv venv
+          uv venv -p ${{ matrix.python }}
           uv run --with maturin maturin develop --features python
       - name: pytest
         working-directory: apps/sdk
