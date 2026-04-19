@@ -1,3 +1,4 @@
+#![allow(rustdoc::private_intra_doc_links)]
 //! k8s integration for edgeflow.
 //!
 //! This crate is the only place in edgeflow that imports `kube` /

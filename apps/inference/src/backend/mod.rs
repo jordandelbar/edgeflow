@@ -26,12 +26,12 @@ pub fn build_backend() -> Box<dyn InferenceBackend> {
     #[cfg(feature = "ort-backend")]
     {
         tracing::info!("using ORT backend");
-        return Box::new(ort::OrtBackend::new());
+        Box::new(ort::OrtBackend::new())
     }
     #[cfg(feature = "tract-backend")]
     {
         tracing::info!("using tract backend");
-        return Box::new(tract::TractBackend::new());
+        Box::new(tract::TractBackend::new())
     }
     #[cfg(not(any(feature = "ort-backend", feature = "tract-backend")))]
     compile_error!("at least one inference backend feature must be enabled");

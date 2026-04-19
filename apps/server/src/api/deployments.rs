@@ -416,12 +416,12 @@ async fn register_target(
     // it now. The pod subscribes to MQTT before calling this endpoint, so it
     // is guaranteed to be listening when we push.
     if let Some(ref publisher) = state.mqtt_publisher {
-        if let Ok(dep) = state
+        if let Ok(Some(dep)) = state
             .store
             .get_pending_deployment_for_target(&req.target)
             .await
         {
-            if let Some(dep) = dep {
+            {
                 let sessions = target.resources.sessions.unwrap_or(1) as usize;
                 if let Err(e) = publisher
                     .publish_upgrade(&req.target, &dep.run_id, &dep.deployment_id, sessions)

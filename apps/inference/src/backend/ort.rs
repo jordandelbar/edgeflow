@@ -14,6 +14,12 @@ impl OrtBackend {
     }
 }
 
+impl Default for OrtBackend {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InferenceBackend for OrtBackend {
     fn load(&mut self, model_bytes: &[u8]) -> Result<()> {
         let session = Session::builder()

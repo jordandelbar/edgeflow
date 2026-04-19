@@ -1,0 +1,129 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  fmt:
+    name: cargo fmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: main workspace
+        run: cargo fmt --check
+      - name: transforms workspace
+        working-directory: crates/transforms
+        run: cargo fmt --check
+
+  clippy:
+    name: cargo clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+          targets: wasm32-wasip2
+      - uses: Swatinem/rust-cache@v2
+      - name: main workspace
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: transforms workspace (wasm)
+        working-directory: crates/transforms
+        run: cargo clippy --target wasm32-wasip2 -- -D warnings
+
+  test-rust:
+    name: cargo test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --workspace --no-fail-fast
+
+  msrv:
+    name: MSRV (1.88) - cli
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check -p edgeflow-cli --locked
+
+  test-python:
+    name: python sdk tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip2
+      - uses: Swatinem/rust-cache@v2
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - name: build wasm transform
+        working-directory: crates/transforms
+        run: cargo build --target wasm32-wasip2 --release
+      - name: stage wasm into sdk
+        run: |
+          mkdir -p apps/sdk/edgeflow/wasm
+          cp crates/transforms/target/wasm32-wasip2/release/_lib.wasm \
+             apps/sdk/edgeflow/wasm/standard_pipeline.wasm
+      - name: maturin develop
+        working-directory: apps/sdk
+        run: |
+          uv venv
+          uv run maturin develop --features python
+      - name: pytest
+        working-directory: apps/sdk
+        run: uv run pytest
+
+  ui-build:
+    name: ui build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/ui/package-lock.json
+      - name: install
+        working-directory: apps/ui
+        run: npm ci
+      - name: build
+        working-directory: apps/ui
+        run: npm run build
+
+  commitlint:
+    name: commitlint
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: install commitlint
+        run: npm install --no-save @commitlint/cli @commitlint/config-conventional
+      - name: lint PR commits
+        run: |
+          npx commitlint \
+            --from ${{ github.event.pull_request.base.sha }} \
+            --to   ${{ github.event.pull_request.head.sha }} \
+            --verbose

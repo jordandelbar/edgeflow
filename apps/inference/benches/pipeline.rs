@@ -10,8 +10,9 @@
 ///
 /// Then:
 ///   cargo bench -p edgeflow-inference
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use edgeflow_inference::{backend, pipeline, tensor};
+use std::hint::black_box;
 
 fn load_model(name: &str) -> Vec<u8> {
     let path = format!("{}/tests/fixtures/{name}", env!("CARGO_MANIFEST_DIR"));

@@ -121,6 +121,7 @@ fn decode_tensor(buf: &[u8]) -> (Vec<usize>, Vec<f32>) {
     (shape, values)
 }
 
+#[allow(dead_code)]
 fn encode_tensor_u8(shape: &[usize], data: &[u8]) -> Vec<u8> {
     let expected = shape.iter().product::<usize>();
     assert_eq!(
@@ -142,6 +143,7 @@ fn encode_tensor_u8(shape: &[usize], data: &[u8]) -> Vec<u8> {
     buf
 }
 
+#[allow(dead_code)]
 fn decode_tensor_u8(buf: &[u8]) -> (Vec<usize>, &[u8]) {
     assert!(
         buf.len() >= 4,
@@ -284,8 +286,8 @@ fn detection_output(
     // Memory layout: data[pred_row * num_boxes + box_idx]
     let mut dets: Vec<Det> = Vec::new();
     for i in 0..num_boxes {
-        let xc = data[0 * num_boxes + i];
-        let yc = data[1 * num_boxes + i];
+        let xc = data[i];
+        let yc = data[num_boxes + i];
         let w = data[2 * num_boxes + i];
         let h = data[3 * num_boxes + i];
 

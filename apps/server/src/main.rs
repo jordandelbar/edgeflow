@@ -10,7 +10,6 @@ use edgeflow_core::DeploymentState;
 use edgeflow_orchestrator::{ComposeOrchestrator, K8sOrchestrator, Orchestrator};
 use edgeflow_store::prelude::*;
 use edgeflow_store::sqlite::SqliteStore;
-use edgeflow_telemetry;
 use state::AppState;
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;

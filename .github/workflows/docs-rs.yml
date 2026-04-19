@@ -1,0 +1,23 @@
+name: docs-rs
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: docs-rs-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  RUSTDOCFLAGS: -D warnings
+
+jobs:
+  rustdoc:
+    name: cargo doc
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo doc --workspace --no-deps

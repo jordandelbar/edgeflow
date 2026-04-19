@@ -75,7 +75,7 @@ impl InferenceConfig {
                 .unwrap_or("127.0.0.1")
                 .replace("0.0.0.0", "127.0.0.1")
         });
-        let port = infer_addr.split(':').last().unwrap_or("8080");
+        let port = infer_addr.split(':').next_back().unwrap_or("8080");
         let self_address = format!("http://{pod_ip}:{port}");
 
         let sessions = std::env::var("EDGEFLOW_SESSIONS")

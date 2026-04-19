@@ -8,7 +8,6 @@ use anyhow::Result;
 use client::EdgeflowClient;
 use edgeflow_common::{backoff::retry_forever, shutdown_signal};
 use edgeflow_config::InferenceConfig;
-use edgeflow_telemetry;
 use server::{Metrics, ServerState};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;

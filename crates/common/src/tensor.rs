@@ -7,7 +7,6 @@
 /// memory, this guarantees f32 alignment for zero-copy decode via bytemuck.
 ///
 /// dtype codes: 1 = f32
-
 pub const DTYPE_F32: u8 = 1;
 
 pub fn encode(shape: &[usize], data: &[f32]) -> Vec<u8> {

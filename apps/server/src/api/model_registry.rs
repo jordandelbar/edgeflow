@@ -103,6 +103,7 @@ async fn list_registered_models(
 }
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 struct SearchRegisteredModelsRequest {
     #[serde(default)]
     filter: Option<String>,
