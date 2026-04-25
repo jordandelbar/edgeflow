@@ -8,8 +8,8 @@ computer vision, and CV models share a few annoying properties:
   directly; you need to decode, resize, and re-layout the channels.
 - The output is dense (YOLOv8n returns ``[1, 84, 8400]``) and needs
   non-max suppression before it's useful.
-- The artifact is bigger - 6 MB of ONNX weights plus the COCO label
-  list.
+- The artifact is bigger - around 12 MB of ONNX weights plus the COCO
+  label list.
 
 This is where edgeflow's WASM pre/post transforms earn their keep.
 The model and its image plumbing ship as one artifact; the client
@@ -43,6 +43,19 @@ to ONNX with ``imgsz=640, opset=12, nms=False`` (NMS happens in the
 postprocess WASM), and registers it under the model name ``yolov8n``.
 It also attaches the COCO 80-class label list to ``DetectionOutput``
 so responses come back with human-readable labels, not class indices.
+
+The pre/post pipeline composition is the heart of the tutorial:
+
+.. literalinclude:: ../../../examples/05-k3d-yolo/deploy.py
+   :language: python
+   :start-after: # [docs:start:log-model]
+   :end-before: # [docs:end:log-model]
+   :dedent:
+
+``ImageToTensor`` decodes JPEG/PNG, resizes to 640x640, and switches
+to NCHW layout. ``DetectionOutput`` runs NMS, maps class indices to
+COCO labels, and emits the JSON response. Both run as WASM components
+inside the inference pod; no Python on the request path.
 
 Expected output:
 
@@ -87,8 +100,7 @@ What just happened?
 - ``DetectionOutput`` runs NMS (configurable IoU and confidence
   thresholds), maps class indices to COCO labels, and emits the JSON
   response.
-- End-to-end latency on CPU is around 60 ms per image (median, after
-  the bindgen'd component model rewrite that landed in priority 1).
+- End-to-end latency on CPU is around 60 ms per image (median).
 
 Performance numbers
 -------------------
@@ -101,9 +113,6 @@ batching, raw 1080p JPEG input:
 - Memory at rest: under 100 MB
 - Memory under load: depends on concurrency, typically 150-250 MB
 
-The TODO has a ``Request batching`` item that should improve
-throughput meaningfully on this kind of model.
-
 Going to k3d
 ------------
 
@@ -111,7 +120,7 @@ The same artifact runs unchanged on a k3d cluster. The control plane
 moves from docker compose to a k3d-managed deployment, and edgeflow
 creates ``Deployment`` + ``Service`` objects for the inference pod
 automatically when you call ``edgeflow.deploy``. See the
-``deploy/k3d-cluster.yaml`` config and the ``just k3d-up`` recipe.
+``deploy/k3d-cluster.yaml`` config and the ``just up`` recipe.
 A dedicated k3d tutorial is planned.
 
 Next steps

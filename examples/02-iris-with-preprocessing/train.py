@@ -10,12 +10,13 @@
 """
 Iris LogisticRegression trained on z-scored features.
 
-The normalization is baked into the preprocess pipeline (FloatBytesToTensor →
-Normalize).  The caller still sends the same 16 raw bytes - the WASM transform
-handles the z-score before the tensor reaches the model.
+The normalization is baked into the preprocess pipeline as a WASM Normalize
+step. The caller sends the same JSON array as tutorial 01 - the WASM
+transform handles the z-score server-side before the tensor reaches the
+model.
 
 This validates that preprocessing logic changes are absorbed by the artifact
-with no changes to the inference server.
+with no changes to the inference server or the wire format.
 """
 
 import os
@@ -23,12 +24,11 @@ import os
 import edgeflow
 import mlflow
 import numpy as np
+from edgeflow.models import sklearn_to_onnx
 from sklearn.datasets import load_iris
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
 from sklearn.model_selection import train_test_split
-
-from edgeflow.models import sklearn_to_onnx
 
 EDGEFLOW_SERVER = os.environ.get("EDGEFLOW_SERVER", "http://localhost:5000")
 EDGEFLOW_TARGET = os.environ.get("EDGEFLOW_TARGET", "iris-inference")
@@ -73,6 +73,7 @@ with mlflow.start_run(
         }
     )
     mlflow.log_metric("accuracy", accuracy)
+    # [docs:start:log-model]
     edgeflow.log_model(
         model_bytes=sklearn_to_onnx(clf),
         preprocess=edgeflow.Pipeline(
@@ -86,6 +87,7 @@ with mlflow.start_run(
             ]
         ),
     )
+    # [docs:end:log-model]
     run_id = run.info.run_id
 
 print(f"run_id: {run_id}")

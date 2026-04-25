@@ -1,0 +1,16 @@
+[project]
+name = "edgeflow-e2e"
+version = "0.0.0"
+description = "End-to-end tests that exercise tutorial examples against a live edgeflow stack."
+requires-python = ">=3.12"
+dependencies = [
+    "pytest>=8",
+    "requests>=2.32",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["."]
+addopts = "-ra -s"

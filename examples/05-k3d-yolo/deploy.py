@@ -177,6 +177,7 @@ with mlflow.start_run(
         }
     )
 
+    # [docs:start:log-model]
     edgeflow.log_model(
         model_bytes=onnx_bytes,
         preprocess=edgeflow.Pipeline(
@@ -195,6 +196,7 @@ with mlflow.start_run(
             ]
         ),
     )
+    # [docs:end:log-model]
     run_id = run.info.run_id
 
 print(f"run_id: {run_id}")

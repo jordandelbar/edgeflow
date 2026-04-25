@@ -284,3 +284,6 @@ catboost_info/
 # data
 data/**/*.json
 data/**/*.wasm
+
+# SDK WASM staged from crates/transforms at build time
+apps/sdk/edgeflow/wasm/*.wasm

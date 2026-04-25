@@ -1,0 +1,31 @@
+name: Build WASM transform
+description: >
+  Build the standard WASM transform component (cargo build --target
+  wasm32-wasip2 --release) and stage it into apps/sdk/edgeflow/wasm/. The
+  built artifact is cached across runs and shared between jobs, keyed on
+  the transforms crate and the workspace lockfile. Used by test-rust,
+  test-python, and the e2e workflow so each does not rebuild the same
+  ~half-MB component independently.
+
+runs:
+  using: composite
+  steps:
+    - name: cache built _lib.wasm
+      id: wasm-cache
+      uses: actions/cache@v4
+      with:
+        path: crates/transforms/target/wasm32-wasip2/release/_lib.wasm
+        key: wasm-transform-${{ runner.os }}-${{ hashFiles('crates/transforms/**', 'Cargo.lock') }}
+
+    - name: cargo build --target wasm32-wasip2 --release
+      if: steps.wasm-cache.outputs.cache-hit != 'true'
+      shell: bash
+      working-directory: crates/transforms
+      run: cargo build --target wasm32-wasip2 --release
+
+    - name: stage _lib.wasm into apps/sdk/edgeflow/wasm/
+      shell: bash
+      run: |
+        mkdir -p apps/sdk/edgeflow/wasm
+        cp crates/transforms/target/wasm32-wasip2/release/_lib.wasm \
+           apps/sdk/edgeflow/wasm/standard_pipeline.wasm

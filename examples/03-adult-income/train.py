@@ -5,6 +5,7 @@
 #   "mlflow",
 #   "scikit-learn",
 #   "xgboost",
+#   "pandas",
 # ]
 # ///
 # Tutorial: https://github.com/jordandelbar/edgeflow/blob/main/docs/book/tutorials/03-adult-income.rst
@@ -16,7 +17,7 @@ features.  The sklearn ColumnTransformer is passed to edgeflow so its encoding
 tables are written to schema.json.  The inference server accepts a JSON body,
 applies the encodings, and feeds the resulting float tensor to the ONNX model.
 
-Dataset: UCI Adult Income (fetch_openml, no Kaggle account required)
+Dataset: UCI Adult Income, pulled as CSV.
 Model:   XGBClassifier (default) | LGBMClassifier | CatBoostClassifier
          Set EDGEFLOW_MODEL_TYPE=xgboost|lightgbm|catboost (default: xgboost)
 Target:  binary - '>50K' income or not
@@ -47,13 +48,12 @@ import os
 import edgeflow
 import mlflow
 import numpy as np
+import pandas as pd
+from edgeflow.models import clf_to_onnx
 from sklearn.compose import ColumnTransformer
-from sklearn.datasets import fetch_openml
 from sklearn.metrics import f1_score, roc_auc_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import OrdinalEncoder
-
-from edgeflow.models import clf_to_onnx
 
 # ── config ─────────────────────────────────────────────────────────────────────
 
@@ -64,6 +64,34 @@ MODEL_TYPE = os.environ.get("EDGEFLOW_MODEL_TYPE", "xgboost")
 N_ESTIMATORS = 200
 MAX_DEPTH = 4
 LEARNING_RATE = 0.1
+ADULT_URL = "https://archive.ics.uci.edu/ml/machine-learning-databases/adult/adult.data"
+COLUMN_NAMES = [
+    "age",
+    "workclass",
+    "fnlwgt",
+    "education",
+    "education-num",
+    "marital-status",
+    "occupation",
+    "relationship",
+    "race",
+    "sex",
+    "capital-gain",
+    "capital-loss",
+    "hours-per-week",
+    "native-country",
+    "target",
+]
+CATEGORICAL_COLS = [
+    "workclass",
+    "education",
+    "marital-status",
+    "occupation",
+    "relationship",
+    "race",
+    "sex",
+    "native-country",
+]
 
 # ── model factory ───────────────────────────────────────────────────────────────
 
@@ -110,10 +138,17 @@ def make_clf(model_type: str):
 # ── dataset ────────────────────────────────────────────────────────────────────
 
 print(f"model type: {MODEL_TYPE}")
-print("fetching adult income dataset from OpenML...")
-data = fetch_openml("adult", version=2, as_frame=True, parser="auto")
-X = data.data
-y = (data.target == ">50K").astype(int)
+print(f"fetching adult income dataset from {ADULT_URL}...")
+df = pd.read_csv(
+    ADULT_URL,
+    names=COLUMN_NAMES,
+    na_values="?",
+    skipinitialspace=True,
+)
+y = (df["target"] == ">50K").astype(int)
+X = df.drop(columns="target")
+for col in CATEGORICAL_COLS:
+    X[col] = X[col].astype("category")
 
 print(f"dataset: {X.shape[0]:,} rows, {X.shape[1]} features")
 print(f"class balance: {y.mean():.1%} >50K")
@@ -128,6 +163,7 @@ print(f"numerical features  ({len(numerical_cols)}): {numerical_cols}")
 
 # OrdinalEncoder for all categoricals - no OHE expansion needed for tree models.
 # unknown_value=-1 handles unseen categories at inference time gracefully.
+# [docs:start:column-transformer]
 preprocessor = ColumnTransformer(
     [
         (
@@ -138,6 +174,7 @@ preprocessor = ColumnTransformer(
         ("num", "passthrough", numerical_cols),
     ]
 )
+# [docs:end:column-transformer]
 
 # ── train ──────────────────────────────────────────────────────────────────────
 
@@ -188,6 +225,7 @@ with mlflow.start_run(
     # clf_to_onnx detects the framework and uses the appropriate export path.
     # The column_transformer is passed separately so edgeflow can write the
     # encoding tables to schema.json - the server applies them at request time.
+    # [docs:start:log-model]
     edgeflow.log_model(
         model_bytes=clf_to_onnx(clf),
         postprocess=edgeflow.Pipeline(
@@ -195,6 +233,7 @@ with mlflow.start_run(
         ),
         column_transformer=preprocessor,
     )
+    # [docs:end:log-model]
     run_id = run.info.run_id
 
 print(f"run_id: {run_id}")

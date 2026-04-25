@@ -24,12 +24,11 @@ import os
 import edgeflow
 import mlflow
 import numpy as np
+from edgeflow.models import sklearn_to_onnx
 from sklearn.datasets import load_iris
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
 from sklearn.model_selection import train_test_split
-
-from edgeflow.models import sklearn_to_onnx
 
 # config
 
@@ -64,12 +63,14 @@ with mlflow.start_run(experiment_id=exp.experiment_id, run_name="iris-logistic")
         }
     )
     mlflow.log_metric("accuracy", accuracy)
+    # [docs:start:log-model]
     edgeflow.log_model(
         model_bytes=sklearn_to_onnx(clf),
         postprocess=edgeflow.Pipeline(
             [edgeflow.ClassifierOutput(labels=list(iris.target_names))]
         ),
     )
+    # [docs:end:log-model]
     run_id = run.info.run_id
 
 print(f"run_id: {run_id}")
