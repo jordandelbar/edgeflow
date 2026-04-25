@@ -134,6 +134,79 @@ fn inputs_json_missing_field_errors() {
     assert!(inputs::json_to_tensor(br#"{"y": 1.0}"#, &specs).is_err());
 }
 
+// ── plain JSON array input (Single-mode body sniffing) ───────────────────────
+
+#[test]
+fn inputs_looks_like_json_array_detects_bracket() {
+    assert!(inputs::looks_like_json_array(b"[1,2,3]"));
+    assert!(inputs::looks_like_json_array(b"  \t\n[1,2,3]"));
+    assert!(inputs::looks_like_json_array(b"[[1,2],[3,4]]"));
+}
+
+#[test]
+fn inputs_looks_like_json_array_rejects_other_bodies() {
+    assert!(!inputs::looks_like_json_array(b""));
+    assert!(!inputs::looks_like_json_array(b"   "));
+    assert!(!inputs::looks_like_json_array(b"{\"a\":1}"));
+    // Binary tensor header: ndim=1, dtype=1 - first byte is 0x01, not '['.
+    assert!(!inputs::looks_like_json_array(&[1u8, 1, 0, 0, 4, 0, 0, 0]));
+}
+
+#[test]
+fn inputs_json_array_1d_auto_batches() {
+    let (shape, data) = inputs::json_array_to_tensor(b"[5.1, 3.5, 1.4, 0.2]").unwrap();
+    assert_eq!(shape, vec![1, 4]);
+    assert_eq!(data, vec![5.1f32, 3.5, 1.4, 0.2]);
+}
+
+#[test]
+fn inputs_json_array_2d_kept_as_is() {
+    let (shape, data) = inputs::json_array_to_tensor(b"[[1.0, 2.0], [3.0, 4.0]]").unwrap();
+    assert_eq!(shape, vec![2, 2]);
+    assert_eq!(data, vec![1.0f32, 2.0, 3.0, 4.0]);
+}
+
+#[test]
+fn inputs_json_array_explicit_batch_of_one() {
+    let (shape, data) = inputs::json_array_to_tensor(b"[[5.1, 3.5, 1.4, 0.2]]").unwrap();
+    assert_eq!(shape, vec![1, 4]);
+    assert_eq!(data, vec![5.1f32, 3.5, 1.4, 0.2]);
+}
+
+#[test]
+fn inputs_json_array_accepts_integers() {
+    let (shape, data) = inputs::json_array_to_tensor(b"[1, 2, 3]").unwrap();
+    assert_eq!(shape, vec![1, 3]);
+    assert_eq!(data, vec![1.0f32, 2.0, 3.0]);
+}
+
+#[test]
+fn inputs_json_array_3d_nested() {
+    let (shape, data) = inputs::json_array_to_tensor(b"[[[1,2],[3,4]],[[5,6],[7,8]]]").unwrap();
+    assert_eq!(shape, vec![2, 2, 2]);
+    assert_eq!(data, vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]);
+}
+
+#[test]
+fn inputs_json_array_rejects_ragged() {
+    assert!(inputs::json_array_to_tensor(b"[[1, 2], [3, 4, 5]]").is_err());
+}
+
+#[test]
+fn inputs_json_array_rejects_non_numeric() {
+    assert!(inputs::json_array_to_tensor(br#"["a", "b"]"#).is_err());
+}
+
+#[test]
+fn inputs_json_array_rejects_object_body() {
+    assert!(inputs::json_array_to_tensor(br#"{"a": 1}"#).is_err());
+}
+
+#[test]
+fn inputs_json_array_rejects_empty_outer() {
+    assert!(inputs::json_array_to_tensor(b"[]").is_err());
+}
+
 // ── backend + pipeline (model fixture required) ──────────────────────────────
 
 #[test]
@@ -181,4 +254,59 @@ fn pipeline_rejects_wrong_input_size() {
     // Send only 2 features instead of 4 - shape mismatch should error
     let input = tensor::encode(&[1, 2], &[5.1f32, 3.5]);
     assert!(p.infer(&input).is_err());
+}
+
+#[test]
+fn pipeline_single_mode_accepts_json_array() {
+    let model = load_model();
+    let mut p =
+        pipeline::Pipeline::new(backend::build_backend(), &model, None, None, None).unwrap();
+    let output = p.infer(b"[5.1, 3.5, 1.4, 0.2]").unwrap();
+    let (shape, data) = tensor::decode(&output).unwrap();
+    assert_eq!(shape, vec![1, 3]);
+    let sum: f32 = data.iter().sum();
+    assert!((sum - 1.0).abs() < 1e-5, "softmax should sum to 1");
+}
+
+/// Regression: the JSON-array dispatch must sniff `raw_input`, not the
+/// post-pre-transform body. Real iris deployments inject a `FloatBytesToTensor`
+/// pre-transform that would mangle a JSON body if the pipeline let it run.
+#[test]
+fn pipeline_json_array_bypasses_pre_transform() {
+    let model = load_model();
+    let wasm = std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../sdk/edgeflow/wasm/standard_pipeline.wasm"
+    ))
+    .expect("standard_pipeline.wasm missing - run `just build-transforms`");
+    let pre_config = br#"{"steps":[{"type":"float_to_tensor","n_features":4}]}"#;
+
+    let mut p = pipeline::Pipeline::new(
+        backend::build_backend(),
+        &model,
+        Some((&wasm, Some(pre_config.as_slice()))),
+        None,
+        None,
+    )
+    .unwrap();
+
+    // Run the same logical input two ways and assert the outputs match.
+    // If the pre-transform ran on the JSON body, it would interpret the ASCII
+    // bytes as f32 LE garbage and produce a different (or failing) prediction.
+    let from_json = p.infer(b"[5.1, 3.5, 1.4, 0.2]").unwrap();
+    let raw_floats: Vec<u8> = [5.1f32, 3.5, 1.4, 0.2]
+        .iter()
+        .flat_map(|f| f.to_le_bytes())
+        .collect();
+    let from_binary = p.infer(&raw_floats).unwrap();
+
+    let (s_json, d_json) = tensor::decode(&from_json).unwrap();
+    let (s_bin, d_bin) = tensor::decode(&from_binary).unwrap();
+    assert_eq!(s_json, s_bin);
+    for (a, b) in d_json.iter().zip(d_bin) {
+        assert!(
+            (a - b).abs() < 1e-6,
+            "JSON path diverged from binary path: {a} vs {b}",
+        );
+    }
 }

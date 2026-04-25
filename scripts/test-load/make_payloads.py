@@ -5,7 +5,7 @@ Usage:
     python make_payloads.py
 
 Outputs (in ./payloads/):
-    iris.bin     - 16 bytes: 4 × f32 LE (typical iris sample)
+    iris.json    - JSON array body: [5.1, 3.5, 1.4, 0.2]
     adult.json   - JSON body for the adult-income named-input model
 
 For yolov8 you need a real JPEG - copy any test image:
@@ -14,15 +14,14 @@ For yolov8 you need a real JPEG - copy any test image:
 
 import json
 import os
-import struct
 
 os.makedirs("payloads", exist_ok=True)
 
 # ── iris: sepal_len=5.1, sepal_w=3.5, petal_len=1.4, petal_w=0.2 ─────────────
-iris_bytes = struct.pack("<4f", 5.1, 3.5, 1.4, 0.2)
-with open("payloads/iris.bin", "wb") as f:
+iris_bytes = json.dumps([5.1, 3.5, 1.4, 0.2]).encode()
+with open("payloads/iris.json", "wb") as f:
     f.write(iris_bytes)
-print(f"wrote payloads/iris.bin ({len(iris_bytes)} bytes)")
+print(f"wrote payloads/iris.json ({len(iris_bytes)} bytes)")
 
 # ── adult income: representative "high-earner" profile ───────────────────────
 adult = {

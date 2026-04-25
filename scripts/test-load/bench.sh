@@ -40,10 +40,10 @@ case "$TARGET" in
     CONTENT_TYPE="image/jpeg"
     ;;
   *)
-    # Default: iris-style raw float binary
+    # Default: iris-style JSON array body (`[5.1, 3.5, 1.4, 0.2]`)
     LOCUSTFILE="locustfile.py"
-    PAYLOAD_FILE="payloads/iris.bin"
-    CONTENT_TYPE="application/octet-stream"
+    PAYLOAD_FILE="payloads/iris.json"
+    CONTENT_TYPE="application/json"
     ;;
 esac
 
@@ -67,5 +67,7 @@ PAYLOAD_FILE="$PAYLOAD_FILE" \
 CONTENT_TYPE="$CONTENT_TYPE" \
 uv run locust -f "$LOCUSTFILE" \
     --headless \
+    --only-summary \
+    --loglevel WARNING \
     -u "$USERS" -r "$((USERS / 2 < 1 ? 1 : USERS / 2))" \
     -t "$DURATION"

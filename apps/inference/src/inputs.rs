@@ -156,6 +156,77 @@ pub fn parse_schema(bytes: Option<&[u8]>) -> (InputMode, Vec<InputSpec>) {
     (InputMode::Named, specs)
 }
 
+/// True if `body`'s first non-whitespace byte is `[`.
+///
+/// Used by the inference pipeline to dispatch a `Single`-mode body to the
+/// JSON-array decoder instead of the binary tensor decoder, with no schema
+/// or content-type plumbing.
+pub fn looks_like_json_array(body: &[u8]) -> bool {
+    body.iter()
+        .find(|&&b| !b.is_ascii_whitespace())
+        .is_some_and(|&b| b == b'[')
+}
+
+/// Decode a nested JSON array of numbers into a flat f32 tensor.
+///
+/// Shape is inferred from nesting depth. A 1D body (e.g. `[5.1, 3.5, 1.4, 0.2]`)
+/// is auto-batched to `[1, n]`; multi-dim bodies (`[[..],[..]]`) keep their
+/// natural shape. Ragged sub-arrays and non-numeric elements are rejected.
+pub fn json_array_to_tensor(body: &[u8]) -> Result<(Vec<usize>, Vec<f32>)> {
+    let value: serde_json::Value =
+        serde_json::from_slice(body).map_err(|e| anyhow!("invalid JSON body: {e}"))?;
+    let arr = value
+        .as_array()
+        .ok_or_else(|| anyhow!("expected a JSON array"))?;
+    if arr.is_empty() {
+        return Err(anyhow!("input array must not be empty"));
+    }
+
+    let mut shape: Vec<usize> = Vec::new();
+    let mut data: Vec<f32> = Vec::new();
+    walk_json_array(&value, &mut shape, &mut data, 0)?;
+
+    // Auto-batch 1D inputs so the common `[a, b, c, d]` curl matches the
+    // typical `[1, n_features]` model input shape.
+    if shape.len() == 1 {
+        shape.insert(0, 1);
+    }
+    Ok((shape, data))
+}
+
+fn walk_json_array(
+    value: &serde_json::Value,
+    shape: &mut Vec<usize>,
+    data: &mut Vec<f32>,
+    depth: usize,
+) -> Result<()> {
+    match value {
+        serde_json::Value::Array(items) => {
+            if depth == shape.len() {
+                shape.push(items.len());
+            } else if shape[depth] != items.len() {
+                return Err(anyhow!(
+                    "ragged array: expected {} elements at depth {depth}, got {}",
+                    shape[depth],
+                    items.len()
+                ));
+            }
+            for item in items {
+                walk_json_array(item, shape, data, depth + 1)?;
+            }
+            Ok(())
+        }
+        serde_json::Value::Number(n) => {
+            let f = n
+                .as_f64()
+                .ok_or_else(|| anyhow!("number out of range: {n}"))?;
+            data.push(f as f32);
+            Ok(())
+        }
+        other => Err(anyhow!("expected number, got {}", other)),
+    }
+}
+
 /// Convert a JSON request body to a flat `[1, n_features]` f32 tensor.
 ///
 /// Field order follows `specs` exactly - this must match the column order

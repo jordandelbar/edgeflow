@@ -67,33 +67,51 @@ impl Pipeline {
     }
 
     pub fn infer(&mut self, raw_input: &[u8]) -> Result<Vec<u8>> {
-        // Apply pre-transform (if any).
-        let body = match &mut self.pre {
-            Some(t) => {
-                let _span = tracing::info_span!("wasm.preprocess").entered();
-                t.run(raw_input)?
+        // Per-request format dispatch: a JSON array body in Single mode bypasses
+        // the pre-transform entirely (the transform assumes binary tensor input
+        // and would mangle a JSON body), going straight to the array decoder.
+        let json_array_path =
+            self.input_mode == InputMode::Single && inputs::looks_like_json_array(raw_input);
+
+        // Apply pre-transform only on the binary/Named paths. `body` must live
+        // past the decode match so `Cow::Borrowed` can hold a slice into it on
+        // the zero-copy Single binary path.
+        let body: Vec<u8> = if json_array_path {
+            Vec::new()
+        } else {
+            match &mut self.pre {
+                Some(t) => {
+                    let _span = tracing::info_span!("wasm.preprocess").entered();
+                    t.run(raw_input)?
+                }
+                None => raw_input.to_vec(),
             }
-            None => raw_input.to_vec(),
         };
 
-        // Parse the body into a flat f32 tensor according to input mode.
+        // Parse into a flat f32 tensor.
         //
-        // Single: decode returns a &[f32] view directly into `body` - no allocation.
+        // Single binary: decode returns a &[f32] view directly into `body` - no allocation.
+        // Single JSON array: per-request body sniff; allocates a Vec<f32>.
         // Named:  json_to_tensor always allocates a Vec<f32> (field-by-field build).
-        // Cow lets both arms share the same type without forcing an allocation for Single.
         let (shape, data): (Vec<usize>, Cow<'_, [f32]>) = {
             let _span = tracing::info_span!("tensor.decode").entered();
-            match self.input_mode {
-                InputMode::Single => {
-                    let (shape, data) = tensor::decode(&body)?;
-                    let n: usize = shape.iter().product();
-                    anyhow::ensure!(data.len() == n, "tensor data length mismatch");
-                    (shape, Cow::Borrowed(data))
-                }
-                InputMode::Named => {
-                    let (shape, data) = inputs::json_to_tensor(&body, &self.specs)
-                        .context("failed to encode JSON input to tensor")?;
-                    (shape, Cow::Owned(data))
+            if json_array_path {
+                let (shape, data) = inputs::json_array_to_tensor(raw_input)
+                    .context("failed to decode JSON array input")?;
+                (shape, Cow::Owned(data))
+            } else {
+                match self.input_mode {
+                    InputMode::Single => {
+                        let (shape, data) = tensor::decode(&body)?;
+                        let n: usize = shape.iter().product();
+                        anyhow::ensure!(data.len() == n, "tensor data length mismatch");
+                        (shape, Cow::Borrowed(data))
+                    }
+                    InputMode::Named => {
+                        let (shape, data) = inputs::json_to_tensor(&body, &self.specs)
+                            .context("failed to encode JSON input to tensor")?;
+                        (shape, Cow::Owned(data))
+                    }
                 }
             }
         };
