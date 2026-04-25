@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.3.0](https://github.com/jordandelbar/edgeflow/compare/v0.2.1...v0.3.0) (2026-04-25)
+
+
+### ⚠ BREAKING CHANGES
+
+* Replace pre-transform double-instantiation with transform-from ([#5](https://github.com/jordandelbar/edgeflow/issues/5))
+
+### Bug Fixes
+
+* Add boosting extras for xgboost and lightgbm onnx export ([#8](https://github.com/jordandelbar/edgeflow/issues/8)) ([eda4239](https://github.com/jordandelbar/edgeflow/commit/eda42391e9ff397429edca4552d57c8700b0f5cd))
+* Compose first deploys stuck in pending state ([#7](https://github.com/jordandelbar/edgeflow/issues/7)) ([073e431](https://github.com/jordandelbar/edgeflow/commit/073e4319932e9ceff4e1d8517aa442c8bba41b72))
+* Run preprocess pre-transforms on JSON array inputs ([9f50b3f](https://github.com/jordandelbar/edgeflow/commit/9f50b3f3377df129c3185af286a9ebcd20968d5e))
+
+
+### Refactor
+
+* Replace pre-transform double-instantiation with transform-from ([#5](https://github.com/jordandelbar/edgeflow/issues/5)) ([e7bddfa](https://github.com/jordandelbar/edgeflow/commit/e7bddfaaa0123aabe4321e92bf21125897a10474))
+
 ## [0.2.1](https://github.com/jordandelbar/edgeflow/compare/v0.2.0...v0.2.1) (2026-04-25)
 
 
