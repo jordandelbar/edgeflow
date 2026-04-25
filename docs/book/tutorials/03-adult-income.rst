@@ -38,7 +38,8 @@ Prerequisites
 
 The script:
 
-- Fetches the UCI Adult Income dataset from OpenML.
+- Pulls the UCI Adult Income CSV directly from
+  ``archive.ics.uci.edu``.
 - Splits train/test, builds a ``ColumnTransformer`` with
   ``OrdinalEncoder`` for the 8 categorical columns and passthrough for
   the 6 numerical columns.
@@ -69,9 +70,9 @@ Expected output:
 .. code-block:: text
 
    model type: xgboost
-   fetching adult income dataset from OpenML...
-   dataset: 48,842 rows, 14 features
-   class balance: 23.9% >50K
+   fetching adult income dataset from https://archive.ics.uci.edu/...
+   dataset: 32,561 rows, 14 features
+   class balance: 24.1% >50K
    training xgboost...
    F1: 0.7095  AUC-ROC: 0.9285
    pushing to edgeflow at http://localhost:5000...
