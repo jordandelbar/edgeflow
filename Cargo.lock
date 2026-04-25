@@ -1282,7 +1282,7 @@ checksum = "15401da73a9ed8c80e3b2d4dc05fe10e7b72d7243b9f614e516a44fa99986e88"
 
 [[package]]
 name = "edgeflow-cli"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1295,7 +1295,7 @@ dependencies = [
 
 [[package]]
 name = "edgeflow-common"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -1308,14 +1308,14 @@ dependencies = [
 
 [[package]]
 name = "edgeflow-config"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "anyhow",
 ]
 
 [[package]]
 name = "edgeflow-core"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "serde",
@@ -1326,7 +1326,7 @@ dependencies = [
 
 [[package]]
 name = "edgeflow-inference"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "bytes",
@@ -1353,7 +1353,7 @@ dependencies = [
 
 [[package]]
 name = "edgeflow-k8s"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "edgeflow-core",
@@ -1365,7 +1365,7 @@ dependencies = [
 
 [[package]]
 name = "edgeflow-orchestrator"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1376,7 +1376,7 @@ dependencies = [
 
 [[package]]
 name = "edgeflow-server"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "axum 0.8.8",
@@ -1402,7 +1402,7 @@ dependencies = [
 
 [[package]]
 name = "edgeflow-store"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1417,7 +1417,7 @@ dependencies = [
 
 [[package]]
 name = "edgeflow-telemetry"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "chrono",
