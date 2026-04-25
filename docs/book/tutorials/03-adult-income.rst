@@ -1,11 +1,12 @@
 Adult income: JSON input with mixed feature types
 =================================================
 
-Most real tabular models have categorical features. You cannot send
-``"Bachelors"`` as raw bytes; you have to map it to a number first.
-Tutorial 02 handled numeric normalisation; this tutorial handles the
-harder case: a model that mixes string categoricals with numerics, and
-a client that wants to send a plain JSON object without knowing the
+Most real tabular models have categorical features. A positional JSON
+array of floats falls apart the moment one of those fields is
+``"Bachelors"`` instead of a number; you have to map strings to integers
+first. Tutorial 02 handled numeric normalisation; this tutorial handles
+the harder case: a model that mixes string categoricals with numerics,
+and a client that wants to send a plain JSON object without knowing the
 encoding tables.
 
 Edgeflow handles this with **named-input mode**: the client sends JSON

@@ -24,12 +24,11 @@ import os
 import edgeflow
 import mlflow
 import numpy as np
+from edgeflow.models import sklearn_to_onnx
 from sklearn.datasets import load_iris
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
 from sklearn.model_selection import train_test_split
-
-from edgeflow.models import sklearn_to_onnx
 
 # config
 

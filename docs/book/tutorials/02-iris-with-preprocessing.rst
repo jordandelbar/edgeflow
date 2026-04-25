@@ -1,15 +1,15 @@
 Iris with preprocessing: ship transforms with the model
 =======================================================
 
-In tutorial 01 the client sent raw feature bytes. In production, those
-features usually need normalisation, scaling, or encoding before they
-hit the model. The naive approach is to do that work in the client, but
-then every consumer has to ship the same preprocessing logic and stay
-in sync with the model.
+In tutorial 01 the client sent a JSON array of features. In production
+those features usually need normalisation, scaling, or encoding before
+they hit the model. The naive approach is to do that work in the client,
+but then every consumer has to ship the same preprocessing logic and
+stay in sync with the model.
 
 Edgeflow's answer: bake the preprocessing into the deployment artifact
-itself, as a WASM pre-transform. The client keeps sending the same raw
-bytes; the inference server runs the transform inside the pipeline,
+itself, as a WASM pre-transform. The client keeps sending the same
+request; the inference server runs the transform inside the pipeline,
 just before the model. Hot-swap a new model with new normalisation
 parameters and the client never knows.
 
@@ -18,7 +18,7 @@ You will:
 1. Train a LogisticRegression on z-scored iris features.
 2. Attach a ``Normalize`` WASM pre-transform with the per-feature mean
    and std baked in.
-3. Send the same raw bytes as tutorial 01 - and get the right answer.
+3. Send the same JSON array as tutorial 01 - and get the right answer.
 
 Prerequisites
 -------------
@@ -57,18 +57,19 @@ pre-transform. Output:
    accuracy: 0.9667
    pushing to edgeflow at http://localhost:5000...
 
-3. Send raw (un-normalised) features
-------------------------------------
+3. Send un-normalised features
+------------------------------
 
-Send the wire format the pre-transform expects: ``4 x f32`` little-endian,
-raw (un-normalised) values.
+Send the same JSON array as tutorial 01, with the raw (un-normalised)
+feature values:
 
 .. code-block:: bash
 
-   python3 -c "import struct, sys; sys.stdout.buffer.write(struct.pack('<4f', 5.1, 3.5, 1.4, 0.2))" \
-     | curl -s -X POST http://localhost:8080/infer --data-binary @-
+   curl -X POST http://localhost:8080/infer \
+        -H 'Content-Type: application/json' \
+        -d '[5.1, 3.5, 1.4, 0.2]'
 
-The server runs your bytes through the WASM ``Normalize`` transform
+The server runs your input through the WASM ``Normalize`` transform
 first, then through the ONNX model. You get back the same labelled
 prediction format as tutorial 01.
 
@@ -81,7 +82,7 @@ What just happened?
   ``wasmtime`` component for the pre-transform, and now runs it on
   every request before reaching the backend.
 - Cost: ~2x ``memcpy`` at the WASM boundary thanks to the bindgen'd
-  component model. For a 16-byte tensor this is essentially free.
+  component model. For a 4-feature tensor this is essentially free.
 
 Try this
 --------
@@ -89,13 +90,13 @@ Try this
 Train a second version with a deliberately wrong mean (say, all zeros)
 and run ``train.py`` again. The new version is registered as ``v2``
 and the ``iris-inference`` target hot-swaps to it. The client keeps
-sending the same bytes; the predictions go bad. Roll back by deploying
+sending the same JSON; the predictions go bad. Roll back by deploying
 ``v1`` again. No client change, no downtime.
 
 Next steps
 ----------
 
-- :doc:`03-adult-income` - drop raw bytes entirely, accept JSON with
-  named fields plus categorical encodings.
+- :doc:`03-adult-income` - swap the positional array for a JSON object
+  with named fields plus categorical encodings.
 - :doc:`05-k3d-yolo` - same pre/post-transform pattern, but with real
   image data and a 6 MB model.
