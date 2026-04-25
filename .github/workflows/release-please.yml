@@ -19,9 +19,38 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: googleapis/release-please-action@v4
+        id: release
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
           # Use a PAT so tag/release creation triggers publish-* workflows.
           # GITHUB_TOKEN-created tags don't trigger downstream workflows by design.
           token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+
+      # When release-please opens or updates a Release PR, the workspace version
+      # bump in Cargo.toml leaves Cargo.lock stale (each workspace crate's
+      # version entry lags). Refresh the lock in the PR branch so MSRV/CI pass
+      # and the merge produces a self-consistent main. cargo metadata resolves
+      # the workspace and rewrites only those entries; external deps stay frozen.
+      - uses: actions/checkout@v4
+        if: steps.release.outputs.pr
+        with:
+          ref: ${{ fromJSON(steps.release.outputs.pr).headBranchName }}
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.release.outputs.pr
+      - uses: Swatinem/rust-cache@v2
+        if: steps.release.outputs.pr
+      - name: refresh Cargo.lock
+        if: steps.release.outputs.pr
+        run: |
+          cargo metadata --format-version 1 --quiet > /dev/null
+          if git diff --quiet Cargo.lock; then
+            echo "Cargo.lock already up to date"
+          else
+            git config user.email "release-please[bot]@users.noreply.github.com"
+            git config user.name "release-please[bot]"
+            git add Cargo.lock
+            git commit -m "chore: Refresh Cargo.lock"
+            git push
+          fi
