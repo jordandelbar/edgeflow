@@ -1,10 +1,5 @@
 name: release-please
 
-# Runs on every push to main. release-please decides what to do:
-#   - unreleased feat:/fix: commits  -> opens or updates a single Release PR
-#   - merge of a Release PR           -> creates the git tag + GitHub release
-#   - nothing to do                   -> no-op
-# workflow_dispatch is also wired so you can re-run manually if needed.
 on:
   push:
     branches: [main]
@@ -18,25 +13,24 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/create-github-app-token@v1
+        id: app-token
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
       - uses: googleapis/release-please-action@v4
         id: release
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
-          # Use a PAT so tag/release creation triggers publish-* workflows.
-          # GITHUB_TOKEN-created tags don't trigger downstream workflows by design.
-          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
 
-      # When release-please opens or updates a Release PR, the workspace version
-      # bump in Cargo.toml leaves Cargo.lock stale (each workspace crate's
-      # version entry lags). Refresh the lock in the PR branch so MSRV/CI pass
-      # and the merge produces a self-consistent main. cargo metadata resolves
-      # the workspace and rewrites only those entries; external deps stay frozen.
       - uses: actions/checkout@v4
         if: steps.release.outputs.pr
         with:
           ref: ${{ fromJSON(steps.release.outputs.pr).headBranchName }}
-          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
       - uses: dtolnay/rust-toolchain@stable
         if: steps.release.outputs.pr
       - uses: Swatinem/rust-cache@v2
@@ -48,8 +42,8 @@ jobs:
           if git diff --quiet Cargo.lock; then
             echo "Cargo.lock already up to date"
           else
-            git config user.email "release-please[bot]@users.noreply.github.com"
-            git config user.name "release-please[bot]"
+            git config user.email "279289800+edgeflow-releases[bot]@users.noreply.github.com"
+            git config user.name "edgeflow-releases[bot]"
             git add Cargo.lock
             git commit -m "chore: Refresh Cargo.lock"
             git push
