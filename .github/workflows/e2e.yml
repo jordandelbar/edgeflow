@@ -34,7 +34,10 @@ jobs:
       - name: build stack images
         uses: docker/bake-action@v5
         with:
-          files: deploy/docker-compose.yaml
+          files: deploy/docker-bake.hcl
+          targets: |
+            server
+            inference-ort
           load: true
           set: |
             *.cache-from=type=gha
