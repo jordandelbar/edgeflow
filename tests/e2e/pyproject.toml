@@ -13,6 +13,4 @@ package = false
 
 [tool.pytest.ini_options]
 testpaths = ["."]
-# -s disables output capture so docker compose build/up logs stream live.
-# E2E runs are slow and silent capture makes them indistinguishable from hangs.
 addopts = "-ra -s"

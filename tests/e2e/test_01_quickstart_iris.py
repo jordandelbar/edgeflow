@@ -21,13 +21,25 @@ def test_quickstart_iris_train_and_infer(
     edgeflow_stack,
     inference_url,
     repo_root: Path,
-    tutorial_python: Path,
+    local_sdk_wheel: Path,
 ):
     tutorial_dir = repo_root / TUTORIAL_DIR_NAME
 
     env = {**os.environ, "PYTHONUNBUFFERED": "1"}
+    # Verbatim tutorial command (`uv run train.py`) plus `--find-links` so uv
+    # finds the local wheel. The wheel's `+e2e` local version segment makes
+    # it strictly outrank PyPI's same-version release, so the local source
+    # wins deterministically and PEP 723 metadata gets validated by uv.
     subprocess.run(
-        [str(tutorial_python), "train.py"],
+        [
+            "uv",
+            "run",
+            "--find-links",
+            str(local_sdk_wheel.parent),
+            "--reinstall-package",
+            "edgeflow",
+            "train.py",
+        ],
         cwd=tutorial_dir,
         check=True,
         timeout=TRAIN_TIMEOUT_SECONDS,

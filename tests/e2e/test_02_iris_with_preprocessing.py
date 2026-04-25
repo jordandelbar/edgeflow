@@ -23,13 +23,21 @@ def test_iris_with_preprocessing_train_and_infer(
     edgeflow_stack,
     inference_url,
     repo_root: Path,
-    tutorial_python: Path,
+    local_sdk_wheel: Path,
 ):
     tutorial_dir = repo_root / TUTORIAL_DIR_NAME
 
     env = {**os.environ, "PYTHONUNBUFFERED": "1"}
     subprocess.run(
-        [str(tutorial_python), "train.py"],
+        [
+            "uv",
+            "run",
+            "--find-links",
+            str(local_sdk_wheel.parent),
+            "--reinstall-package",
+            "edgeflow",
+            "train.py",
+        ],
         cwd=tutorial_dir,
         check=True,
         timeout=TRAIN_TIMEOUT_SECONDS,

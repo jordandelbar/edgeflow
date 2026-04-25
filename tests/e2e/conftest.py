@@ -8,6 +8,7 @@ at a stack you started yourself (skip build + boot + teardown).
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -102,10 +103,16 @@ def repo_root() -> Path:
 
 @pytest.fixture(scope="session")
 def local_sdk_wheel(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """Build the local SDK as a wheel so tutorial scripts run against the
-    current tree's edgeflow, not the last published PyPI version."""
+    """Build the local SDK as a wheel pinned to `999.0.0` so it strictly
+    outranks any PyPI release of `edgeflow` in uv's resolver. Tests then run
+    `uv run --find-links <wheel-dir> train.py` and uv deterministically picks
+    the local wheel. (PEP 440 local-version segments like `+e2e` are not
+    enough - uv tends to prefer canonical versions of the same base.)
+    Patches apps/sdk/pyproject.toml in place for the build and restores it
+    afterwards."""
     transforms_dir = REPO_ROOT / "crates" / "transforms"
     sdk_dir = REPO_ROOT / "apps" / "sdk"
+    sdk_pyproject = sdk_dir / "pyproject.toml"
 
     _log("building wasm transform (cargo build --target wasm32-wasip2 --release)")
     subprocess.run(
@@ -122,25 +129,42 @@ def local_sdk_wheel(tmp_path_factory: pytest.TempPathFactory) -> Path:
         wasm_dst / "standard_pipeline.wasm",
     )
 
-    wheels_dir = tmp_path_factory.mktemp("sdk-wheel")
-    _log(f"building sdk wheel via maturin into {wheels_dir}")
-    subprocess.run(
-        [
-            "uv",
-            "run",
-            "--with",
-            "maturin",
-            "maturin",
-            "build",
-            "--release",
-            "--features",
-            "python",
-            "--out",
-            str(wheels_dir),
-        ],
-        cwd=sdk_dir,
-        check=True,
+    original_pyproject = sdk_pyproject.read_text()
+    bumped_pyproject, n = re.subn(
+        r'^version = "[^"]+"',
+        'version = "999.0.0"',
+        original_pyproject,
+        count=1,
+        flags=re.MULTILINE,
     )
+    if n != 1:
+        raise RuntimeError(
+            "could not find SDK version line in apps/sdk/pyproject.toml to patch"
+        )
+    sdk_pyproject.write_text(bumped_pyproject)
+
+    wheels_dir = tmp_path_factory.mktemp("sdk-wheel")
+    try:
+        _log(f"building sdk wheel via maturin into {wheels_dir}")
+        subprocess.run(
+            [
+                "uv",
+                "run",
+                "--with",
+                "maturin",
+                "maturin",
+                "build",
+                "--release",
+                "--features",
+                "python",
+                "--out",
+                str(wheels_dir),
+            ],
+            cwd=sdk_dir,
+            check=True,
+        )
+    finally:
+        sdk_pyproject.write_text(original_pyproject)
 
     wheels = list(wheels_dir.glob("edgeflow-*.whl"))
     if len(wheels) != 1:
@@ -149,38 +173,3 @@ def local_sdk_wheel(tmp_path_factory: pytest.TempPathFactory) -> Path:
         )
     _log(f"sdk wheel ready: {wheels[0].name}")
     return wheels[0]
-
-
-@pytest.fixture(scope="session")
-def tutorial_python(
-    local_sdk_wheel: Path, tmp_path_factory: pytest.TempPathFactory
-) -> Path:
-    """Venv pre-installed with the local SDK wheel (with all extras) + every
-    dep any tutorial needs. Tests run train scripts via this venv's python
-    rather than `uv run`, because uv's resolution heuristics make it hard
-    to force the local wheel over PyPI for ties (and `--with <wheel>` does
-    not propagate PEP 723 [extras] declarations)."""
-    venv = tmp_path_factory.mktemp("tutorial-venv")
-    _log(f"creating tutorial venv at {venv}")
-    subprocess.run(
-        ["uv", "venv", str(venv), "--python", "3.13"],
-        check=True,
-    )
-    py = venv / "bin" / "python"
-    _log("installing local sdk wheel + tutorial deps into venv")
-    subprocess.run(
-        [
-            "uv",
-            "pip",
-            "install",
-            "--python",
-            str(py),
-            f"{local_sdk_wheel}[xgboost,lightgbm]",
-            "mlflow",
-            "scikit-learn",
-            "numpy",
-            "xgboost",
-        ],
-        check=True,
-    )
-    return py
