@@ -267,11 +267,59 @@ fn pipeline_single_mode_accepts_json_array() {
     assert!((sum - 1.0).abs() < 1e-5, "softmax should sum to 1");
 }
 
+/// JSON arrays must skip the format-adapter at the head of the pre-pipeline
+/// (FloatBytesToTensor / ImageToTensor) - it's a bytes-to-tensor conversion
+/// the JSON decoder already did - while still running every preprocessor that
+/// follows (Normalize, etc.). Both wire formats must produce the same
+/// prediction for the same logical input.
+#[test]
+fn pipeline_json_array_runs_preprocess_after_decoder() {
+    let model = load_model();
+    let wasm = std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../sdk/edgeflow/wasm/standard_pipeline.wasm"
+    ))
+    .expect("standard_pipeline.wasm missing - run `just build-transforms`");
+
+    // Two-step pipeline: format adapter + real preprocessor. Without the fix,
+    // JSON inputs skip both, so Normalize never runs and predictions diverge.
+    let pre_config = br#"{"steps":[
+        {"type":"float_to_tensor","n_features":4},
+        {"type":"normalize","mean":[5.84,3.05,3.74,1.20],"std":[0.83,0.43,1.77,0.76]}
+    ]}"#;
+
+    let mut p = pipeline::Pipeline::new(
+        backend::build_backend(),
+        &model,
+        Some((&wasm, Some(pre_config.as_slice()))),
+        None,
+        None,
+    )
+    .unwrap();
+
+    let from_json = p.infer(b"[5.1, 3.5, 1.4, 0.2]").unwrap();
+    let raw_floats: Vec<u8> = [5.1f32, 3.5, 1.4, 0.2]
+        .iter()
+        .flat_map(|f| f.to_le_bytes())
+        .collect();
+    let from_binary = p.infer(&raw_floats).unwrap();
+
+    let (s_json, d_json) = tensor::decode(&from_json).unwrap();
+    let (s_bin, d_bin) = tensor::decode(&from_binary).unwrap();
+    assert_eq!(s_json, s_bin);
+    for (a, b) in d_json.iter().zip(d_bin) {
+        assert!(
+            (a - b).abs() < 1e-6,
+            "JSON path diverged from binary path (preprocess skipped?): {a} vs {b}",
+        );
+    }
+}
+
 /// Regression: the JSON-array dispatch must sniff `raw_input`, not the
 /// post-pre-transform body. Real iris deployments inject a `FloatBytesToTensor`
 /// pre-transform that would mangle a JSON body if the pipeline let it run.
 #[test]
-fn pipeline_json_array_bypasses_pre_transform() {
+fn pipeline_json_array_skips_format_adapter() {
     let model = load_model();
     let wasm = std::fs::read(concat!(
         env!("CARGO_MANIFEST_DIR"),
