@@ -112,6 +112,10 @@ bench target users="10" duration="60s":
 test:
     cargo test --workspace
 
+# Run tutorial end-to-end tests (boots docker compose stack, trains, infers)
+test-e2e:
+    cd tests/e2e && uv run pytest -v
+
 # Run MLflow compatibility tests against a running server
 test-compat uri="http://localhost:5000":
     cd scripts && uv run python test/test_mlflow_compat.py --uri {{uri}}
