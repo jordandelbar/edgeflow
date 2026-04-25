@@ -14,8 +14,6 @@ from pathlib import Path
 import requests
 
 TUTORIAL_DIR_NAME = "examples/01-quickstart-iris"
-# Iris LogReg trains in <1s. The slow part is deploy(wait=True) waiting for
-# MQTT ack from the inference pod. If it doesn't ack in 90s, something's wrong.
 TRAIN_TIMEOUT_SECONDS = 90
 
 
@@ -23,17 +21,13 @@ def test_quickstart_iris_train_and_infer(
     edgeflow_stack,
     inference_url,
     repo_root: Path,
-    local_sdk_wheel: Path,
+    tutorial_python: Path,
 ):
     tutorial_dir = repo_root / TUTORIAL_DIR_NAME
 
-    # PYTHONUNBUFFERED forces line-buffered stdout/stderr so we still see the
-    # script's progress output if it hangs and we have to SIGKILL it on timeout.
     env = {**os.environ, "PYTHONUNBUFFERED": "1"}
-    # `--with <wheel>` overrides the script's inline `edgeflow` dep so we test
-    # the current tree's SDK, not the last PyPI release.
     subprocess.run(
-        ["uv", "run", "--with", str(local_sdk_wheel), "train.py"],
+        [str(tutorial_python), "train.py"],
         cwd=tutorial_dir,
         check=True,
         timeout=TRAIN_TIMEOUT_SECONDS,

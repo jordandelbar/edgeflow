@@ -18,8 +18,6 @@ from pathlib import Path
 import requests
 
 TUTORIAL_DIR_NAME = "examples/03-adult-income"
-# OpenML fetch + xgboost on ~39k rows + deploy. Cold first-run dominated by
-# the data fetch; subsequent runs hit the OpenML cache and are faster.
 TRAIN_TIMEOUT_SECONDS = 240
 
 
@@ -27,20 +25,19 @@ def test_adult_income_train_and_infer(
     edgeflow_stack,
     inference_url,
     repo_root: Path,
-    local_sdk_wheel: Path,
+    tutorial_python: Path,
 ):
     tutorial_dir = repo_root / TUTORIAL_DIR_NAME
 
     env = {**os.environ, "PYTHONUNBUFFERED": "1"}
     subprocess.run(
-        ["uv", "run", "--with", str(local_sdk_wheel), "train.py"],
+        [str(tutorial_python), "train.py"],
         cwd=tutorial_dir,
         check=True,
         timeout=TRAIN_TIMEOUT_SECONDS,
         env=env,
     )
 
-    # Same JSON body the tutorial documents.
     sample = {
         "workclass": "Private",
         "education": "Bachelors",

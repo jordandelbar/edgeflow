@@ -149,3 +149,38 @@ def local_sdk_wheel(tmp_path_factory: pytest.TempPathFactory) -> Path:
         )
     _log(f"sdk wheel ready: {wheels[0].name}")
     return wheels[0]
+
+
+@pytest.fixture(scope="session")
+def tutorial_python(
+    local_sdk_wheel: Path, tmp_path_factory: pytest.TempPathFactory
+) -> Path:
+    """Venv pre-installed with the local SDK wheel (with all extras) + every
+    dep any tutorial needs. Tests run train scripts via this venv's python
+    rather than `uv run`, because uv's resolution heuristics make it hard
+    to force the local wheel over PyPI for ties (and `--with <wheel>` does
+    not propagate PEP 723 [extras] declarations)."""
+    venv = tmp_path_factory.mktemp("tutorial-venv")
+    _log(f"creating tutorial venv at {venv}")
+    subprocess.run(
+        ["uv", "venv", str(venv), "--python", "3.13"],
+        check=True,
+    )
+    py = venv / "bin" / "python"
+    _log("installing local sdk wheel + tutorial deps into venv")
+    subprocess.run(
+        [
+            "uv",
+            "pip",
+            "install",
+            "--python",
+            str(py),
+            f"{local_sdk_wheel}[xgboost,lightgbm]",
+            "mlflow",
+            "scikit-learn",
+            "numpy",
+            "xgboost",
+        ],
+        check=True,
+    )
+    return py
