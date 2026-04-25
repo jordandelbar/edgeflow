@@ -7,7 +7,6 @@ Train in Python. Serve in Rust.
 [![crates.io](https://img.shields.io/crates/v/edgeflow-cli.svg?label=edgeflow-cli)](https://crates.io/crates/edgeflow-cli)
 [![PyPI](https://img.shields.io/pypi/v/edgeflow.svg?label=edgeflow)](https://pypi.org/project/edgeflow/)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![MSRV](https://img.shields.io/badge/MSRV-1.88-orange.svg)](Cargo.toml)
 
 Edgeflow is an MLflow-compatible experiment tracker, model registry, and
 inference server, built for people who can't afford the memory tax of a
