@@ -1,51 +1,67 @@
 data_dir      := "./data"
 static_dir    := "./static"
 otel_endpoint := "http://localhost:4317"
-registry      := "localhost:5001"
 
+# ── cluster lifecycle ────────────────────────────────────────────────────────
+
+# Bring up the full edgeflow dev cluster (recreates from scratch)
+[group('cluster')]
+up: _banner _preflight down build-images cluster-create push-images apply-observability apply-server apply-inference
+    @bash scripts/dev/next-steps.sh
+
+# Tear down the edgeflow dev cluster
+[group('cluster')]
+down:
+    bash scripts/dev/cluster-delete.sh
+
+# Create a fresh k3d cluster and label its nodes
+[group('cluster')]
+cluster-create:
+    bash scripts/dev/cluster-create.sh
+
+# ── images ───────────────────────────────────────────────────────────────────
+
+# Pull and tag vendored observability images
 pull:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    declare -A images=(
-        ["otel/opentelemetry-collector-contrib:0.145.0"]="{{ registry }}/otel-collector-contrib:0.145.0"
-        ["grafana/tempo:2.7.2"]="{{ registry }}/grafana/tempo:2.7.2"
-        ["grafana/loki:3.5.0"]="{{ registry }}/loki:3.5.0"
-        ["grafana/grafana:11.6.1"]="{{ registry }}/grafana:11.6.1"
-        ["prom/prometheus:v3.3.0"]="{{ registry }}/prometheus:v3.3.0"
-    )
-    for src in "${!images[@]}"; do
-        dst="${images[$src]}"
-        echo "Pulling $src..."
-        docker pull "$src"
-        echo "Tagging as $dst..."
-        docker tag "$src" "$dst"
-    done
+    bash scripts/dev/pull-vendor-images.sh
 
-push:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    # Vendor images
-    for img in \
-        {{ registry }}/otel-collector-contrib:0.145.0 \
-        {{ registry }}/prometheus:v3.3.0 \
-        {{ registry }}/grafana/tempo:2.7.2 \
-        {{ registry }}/grafana:11.6.1; do
-        echo "Pushing $img..."
-        docker push "$img"
-    done
-    # App images
-    for img in edgeflow-server:dev edgeflow-inference:dev-ort; do
-        echo "Tagging and pushing {{ registry }}/$img..."
-        docker tag "$img" "{{ registry }}/$img"
-        docker push "{{ registry }}/$img"
-    done
+# Build the server + inference docker images
+build-images:
+    bash scripts/dev/build-images.sh
 
-# Build everything
+# Push vendor + app images to the local registry
+push-images:
+    bash scripts/dev/push-images.sh
+
+# ── partial reapply (for iteration during a dev session) ─────────────────────
+
+# Re-apply the observability manifest and wait
+[group('iteration')]
+apply-observability:
+    bash scripts/dev/apply-observability.sh
+
+# Re-apply the server manifest and wait
+[group('iteration')]
+apply-server:
+    bash scripts/dev/apply-server.sh
+
+# Re-apply the inference services
+[group('iteration')]
+apply-inference:
+    bash scripts/dev/apply-inference.sh
+
+# Rebuild images and roll the running edgeflow-server pod
+[group('iteration')]
+deploy-server: build-images push-images
+    kubectl rollout restart deployment/edgeflow-server
+    kubectl rollout status deployment/edgeflow-server --timeout=120s
+
+# ── host-side build (for hot-reload dev workflows) ───────────────────────────
+
+# Build everything (transforms + UI + native server binary)
 build: build-transforms build-ui build-server
 
-# Compile the standard Rust transforms:
-#   - WASM component → apps/sdk/edgeflow/wasm/standard_pipeline.wasm  (server, ~150 KB)
-#   - Native PyO3 extension → edgeflow/_lib.so                        (local execution)
+# Build the WASM transforms component + the PyO3 extension for the SDK
 build-transforms:
     cd crates/transforms && \
         cargo build --target wasm32-wasip2 --release
@@ -59,27 +75,13 @@ build-ui:
     rm -rf {{static_dir}}
     cp -r apps/ui/build {{static_dir}}
 
-# Build the server in release mode
+# Build the native server binary in release mode
 build-server:
     cargo build --release -p edgeflow-server
 
-# Apply the observability stack (OTel Collector, Prometheus, Tempo, Grafana)
-deploy-observability:
-    kubectl apply -f deploy/manifests/observability.yaml
-    kubectl rollout status deployment/otelcol --timeout=120s
-    kubectl rollout status deployment/prometheus --timeout=120s
-    kubectl rollout status deployment/tempo --timeout=120s
-    kubectl rollout status deployment/grafana --timeout=120s
+# ── dev hot-reload ───────────────────────────────────────────────────────────
 
-# Build the server image, push to local registry, and rollout restart
-deploy-server:
-    docker build -f deploy/server.Dockerfile -t edgeflow-server:dev .
-    docker tag edgeflow-server:dev {{ registry }}/edgeflow-server:dev
-    docker push {{ registry }}/edgeflow-server:dev
-    kubectl rollout restart deployment/edgeflow-server
-    kubectl rollout status deployment/edgeflow-server --timeout=120s
-
-# Run the server in dev mode (with OTEL if the observability stack is up)
+# Run the server natively (with OTEL if the observability stack is up)
 dev-server:
     EDGEFLOW_DATA_DIR={{data_dir}} EDGEFLOW_STATIC_DIR={{static_dir}} \
     OTEL_EXPORTER_OTLP_ENDPOINT={{otel_endpoint}} \
@@ -87,8 +89,7 @@ dev-server:
     RUST_LOG=edgeflow_server=debug,tower_http=debug \
     cargo run -p edgeflow-server
 
-# Run an inference pod locally against the dev server (requires EDGEFLOW_TARGET)
-# Example: just dev-inference iris-inference
+# Run an inference pod natively against the dev server. Example: just dev-inference iris-inference
 dev-inference target:
     EDGEFLOW_SERVER=http://localhost:5000 \
     EDGEFLOW_TARGET={{target}} \
@@ -101,15 +102,15 @@ dev-inference target:
 dev-ui:
     cd apps/ui && npm run dev
 
-# Run a load test against a target
-# Example: just bench iris-inference
-# Example: just bench adult-inference 50 120s
+# ── tests / docs / housekeeping ──────────────────────────────────────────────
+
+# Run a load test against a target. Example: just bench iris-inference 50 120s
 bench target users="10" duration="60s":
     cd scripts/test-load && ./bench.sh {{target}} {{users}} {{duration}}
 
 # Run Rust unit tests
 test:
-    cargo test
+    cargo test --workspace
 
 # Run MLflow compatibility tests against a running server
 test-compat uri="http://localhost:5000":
@@ -126,3 +127,13 @@ docs:
 clean:
     cargo clean
     rm -rf {{static_dir}} apps/ui/build apps/ui/node_modules
+
+# ── private helpers ──────────────────────────────────────────────────────────
+
+[private]
+_banner:
+    @bash scripts/dev/banner.sh
+
+[private]
+_preflight:
+    @bash scripts/dev/preflight.sh
