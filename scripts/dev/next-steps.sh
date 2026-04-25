@@ -7,8 +7,11 @@ cat <<'EOF'
     grafana     http://localhost:3000
     prometheus  http://localhost:9090
 
-  deploy a model:
-    cd examples/01-quickstart-iris && uv run python train.py
+  deploy a model (local source - dev mode):
+    uv run --with-editable apps/sdk examples/01-quickstart-iris/train.py
+
+  load-test (auto-deploys if needed):
+    just bench iris-inference
 
   tear down:
     just down
