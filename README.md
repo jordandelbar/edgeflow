@@ -29,20 +29,15 @@ processing runs as WASM, and deployments hot-swap without downtime.
 Bring up a local server and one inference pod:
 
 ```bash
-docker compose -f deploy/docker-compose.yaml up --build
+curl -O https://raw.githubusercontent.com/jordandelbar/edgeflow/main/deploy/quickstart.yaml
+docker compose -f quickstart.yaml up
 ```
 
-The first build compiles everything from source and takes a few minutes.
-Once it's running, train and deploy a model:
+In another shell, train and deploy an iris classifier:
 
-```python
-import edgeflow
-
-with edgeflow.start_run() as run:
-    edgeflow.log_model(model, "iris")
-
-mv = edgeflow.register(run.info.run_id, name="iris")
-edgeflow.deploy(name="iris", version=mv.version, target="my-target")
+```bash
+curl -O https://raw.githubusercontent.com/jordandelbar/edgeflow/main/examples/01-quickstart-iris/train.py
+uv run train.py
 ```
 
 Then call it:
@@ -51,6 +46,7 @@ Then call it:
 curl -X POST http://localhost:8080/infer \
      -H 'Content-Type: application/json' \
      -d '[5.1, 3.5, 1.4, 0.2]'
+# {"class_id":0,"label":"setosa","confidence":0.9766}
 ```
 
 The compose path runs a single inference pod. Any target name works,

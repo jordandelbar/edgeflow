@@ -1,18 +1,22 @@
+# /// script
+# requires-python = ">=3.12"
+# dependencies = [
+#   "edgeflow",
+#   "mlflow",
+#   "scikit-learn",
+# ]
+# ///
 # Tutorial: https://github.com/jordandelbar/edgeflow/blob/main/docs/book/tutorials/01-quickstart-iris.rst
-# This file is the companion script; the walkthrough lives in the book.
 """
-Iris LogisticRegression training script.
+Iris LogisticRegression - train, register, deploy.
 
-Flow:
-  1. Train sklearn LogisticRegression on iris
-  2. Export to ONNX via edgeflow.models.sklearn_to_onnx
-  3. Push model + standard transforms to edgeflow
-  4. Trigger deployment
+Run standalone with no venv setup:
+  uv run train.py
 
-Input protocol: 16 raw bytes - 4 x f32 LE (sepal_len, sepal_w, petal_len, petal_w)
-
-  python3 -c "import struct, sys; sys.stdout.buffer.write(struct.pack('<4f', 5.1, 3.5, 1.4, 0.2))" \\
-    | curl -s -X POST http://localhost:8080/infer --data-binary @-
+After it finishes:
+  curl -X POST http://localhost:8080/infer \\
+       -H 'Content-Type: application/json' \\
+       -d '[5.1, 3.5, 1.4, 0.2]'
 """
 
 import os
@@ -74,5 +78,5 @@ print(f"run_id: {run_id}")
 
 mv = edgeflow.register(run_id, "iris-classifier", server=EDGEFLOW_SERVER)
 deployment = edgeflow.deploy(
-    mv.name, mv.version, EDGEFLOW_TARGET, server=EDGEFLOW_SERVER, wait=False
+    mv.name, mv.version, EDGEFLOW_TARGET, server=EDGEFLOW_SERVER, wait=True
 )
