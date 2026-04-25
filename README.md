@@ -11,7 +11,7 @@ inference server, built for people who can't afford the memory tax of a
 Python serving stack. Models run as ONNX (ort or tract), pre/post
 processing runs as WASM, and deployments hot-swap without downtime.
 
-![Edgeflow deployment detail: live throughput, p50/p95/p99 latency, per-pod memory and health](docs/screenshots/deployment-detail.png)
+![Edgeflow deployments page: live throughput, p50/p95/p99 latency, CPU and memory per target](docs/images/screenshot.png)
 
 ## What you get
 
