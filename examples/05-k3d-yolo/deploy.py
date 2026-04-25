@@ -1,5 +1,12 @@
+# /// script
+# requires-python = ">=3.12"
+# dependencies = [
+#   "edgeflow",
+#   "mlflow",
+#   "ultralytics",
+# ]
+# ///
 # Tutorial: https://github.com/jordandelbar/edgeflow/blob/main/docs/book/tutorials/05-k3d-yolo.rst
-# This file is the companion script; the walkthrough lives in the book.
 """
 YOLOv8 deployment script.
 
@@ -196,7 +203,7 @@ print(f"run_id: {run_id}")
 
 mv = edgeflow.register(run_id, "yolov8n", server=EDGEFLOW_SERVER)
 deployment = edgeflow.deploy(
-    mv.name, mv.version, EDGEFLOW_TARGET, server=EDGEFLOW_SERVER, wait=False
+    mv.name, mv.version, EDGEFLOW_TARGET, server=EDGEFLOW_SERVER, wait=True
 )
 
 print()

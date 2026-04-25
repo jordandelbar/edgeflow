@@ -35,8 +35,7 @@ Prerequisites
 
 .. code-block:: bash
 
-   git clone https://github.com/jordandelbar/edgeflow
-   cd edgeflow/examples/05-k3d-yolo
+   curl -O https://raw.githubusercontent.com/jordandelbar/edgeflow/main/examples/05-k3d-yolo/deploy.py
    uv run deploy.py
 
 The script downloads ``yolov8n.pt`` (~6 MB) on first run, exports it

@@ -1,5 +1,13 @@
+# /// script
+# requires-python = ">=3.12"
+# dependencies = [
+#   "edgeflow",
+#   "mlflow",
+#   "scikit-learn",
+#   "xgboost",
+# ]
+# ///
 # Tutorial: https://github.com/jordandelbar/edgeflow/blob/main/docs/book/tutorials/03-adult-income.rst
-# This file is the companion script; the walkthrough lives in the book.
 """
 Adult Income classifier training script.
 
@@ -195,5 +203,5 @@ print(f"run_id: {run_id}")
 
 mv = edgeflow.register(run_id, "adult-income-classifier", server=EDGEFLOW_SERVER)
 deployment = edgeflow.deploy(
-    mv.name, mv.version, EDGEFLOW_TARGET, server=EDGEFLOW_SERVER, wait=False
+    mv.name, mv.version, EDGEFLOW_TARGET, server=EDGEFLOW_SERVER, wait=True
 )

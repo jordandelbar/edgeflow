@@ -33,17 +33,15 @@ Same as tutorial 01. If the stack is already running, skip ahead.
 
 .. code-block:: bash
 
-   curl -fsSL https://raw.githubusercontent.com/jordandelbar/edgeflow/main/deploy/docker-compose.yaml \
-     -o edgeflow-compose.yaml
-   docker compose -f edgeflow-compose.yaml up -d
+   curl -O https://raw.githubusercontent.com/jordandelbar/edgeflow/main/deploy/quickstart.yaml
+   docker compose -f quickstart.yaml up -d
 
 2. Train with preprocessing baked in
 ------------------------------------
 
 .. code-block:: bash
 
-   git clone https://github.com/jordandelbar/edgeflow
-   cd edgeflow/examples/02-iris-with-preprocessing
+   curl -O https://raw.githubusercontent.com/jordandelbar/edgeflow/main/examples/02-iris-with-preprocessing/train.py
    uv run train.py
 
 The script computes per-feature mean and std on the training set,
@@ -59,11 +57,11 @@ pre-transform. Output:
    accuracy: 0.9667
    pushing to edgeflow at http://localhost:5000...
 
-3. Send the same bytes as tutorial 01
--------------------------------------
+3. Send raw (un-normalised) features
+------------------------------------
 
-The wire format is unchanged. ``4 x f32`` little-endian, raw values
-(not normalised).
+Send the wire format the pre-transform expects: ``4 x f32`` little-endian,
+raw (un-normalised) values.
 
 .. code-block:: bash
 

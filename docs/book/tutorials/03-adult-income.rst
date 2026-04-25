@@ -32,8 +32,7 @@ Prerequisites
 
 .. code-block:: bash
 
-   git clone https://github.com/jordandelbar/edgeflow
-   cd edgeflow/examples/03-adult-income
+   curl -O https://raw.githubusercontent.com/jordandelbar/edgeflow/main/examples/03-adult-income/train.py
    uv run train.py
 
 The script:
@@ -42,9 +41,7 @@ The script:
 - Splits train/test, builds a ``ColumnTransformer`` with
   ``OrdinalEncoder`` for the 8 categorical columns and passthrough for
   the 6 numerical columns.
-- Trains an ``XGBClassifier`` (default; switch with
-  ``EDGEFLOW_MODEL_TYPE=lightgbm`` or ``catboost`` after
-  ``uv sync --extra lightgbm`` / ``--extra catboost``).
+- Trains an ``XGBClassifier``.
 - Calls ``edgeflow.log_model`` with both the ONNX model **and** the
   column transformer, so its encoding tables are written into
   ``schema.json``.
