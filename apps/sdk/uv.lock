@@ -112,13 +112,21 @@ wheels = [
 
 [[package]]
 name = "edgeflow"
-version = "0.0.1.dev0"
+version = "0.2.1"
 source = { editable = "." }
 dependencies = [
     { name = "componentize-py" },
     { name = "onnx" },
     { name = "requests" },
     { name = "skl2onnx" },
+]
+
+[package.optional-dependencies]
+lightgbm = [
+    { name = "onnxmltools" },
+]
+xgboost = [
+    { name = "onnxmltools" },
 ]
 
 [package.dev-dependencies]
@@ -131,9 +139,12 @@ dev = [
 requires-dist = [
     { name = "componentize-py", specifier = ">=0.13" },
     { name = "onnx", specifier = ">=1.16" },
+    { name = "onnxmltools", marker = "extra == 'lightgbm'", specifier = ">=1.12" },
+    { name = "onnxmltools", marker = "extra == 'xgboost'", specifier = ">=1.12" },
     { name = "requests", specifier = ">=2.31" },
     { name = "skl2onnx", specifier = ">=1.17" },
 ]
+provides-extras = ["xgboost", "lightgbm"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -300,6 +311,21 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/2c/3b/d5660a7d2ddf14f531ca66d409239f543bb290277c3f14f4b4b78e32efa3/onnx-1.20.1-cp313-cp313t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:be1e5522200b203b34327b2cf132ddec20ab063469476e1f5b02bb7bd259a489", size = 17515602, upload-time = "2026-01-10T01:39:54.132Z" },
     { url = "https://files.pythonhosted.org/packages/9c/b4/47225ab2a92562eff87ba9a1a028e3535d659a7157d7cde659003998b8e3/onnx-1.20.1-cp313-cp313t-win_amd64.whl", hash = "sha256:15c815313bbc4b2fdc7e4daeb6e26b6012012adc4d850f4e3b09ed327a7ea92a", size = 16395729, upload-time = "2026-01-10T01:39:57.577Z" },
     { url = "https://files.pythonhosted.org/packages/aa/7d/1bbe626ff6b192c844d3ad34356840cc60fca02e2dea0db95e01645758b1/onnx-1.20.1-cp313-cp313t-win_arm64.whl", hash = "sha256:eb335d7bcf9abac82a0d6a0fda0363531ae0b22cfd0fc6304bff32ee29905def", size = 16348968, upload-time = "2026-01-10T01:40:00.491Z" },
+]
+
+[[package]]
+name = "onnxmltools"
+version = "1.16.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+    { name = "onnx" },
+    { name = "protobuf" },
+    { name = "skl2onnx" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/41/3e/85a40b6e56a8aaa45bffc9eb00f93182b87841b4dc5a4198ea609993e17c/onnxmltools-1.16.0.tar.gz", hash = "sha256:cd76e0a7ba6a3c4ca4acf3b4c7973cda6a70f2edc146ab11d4efc3dfbee6805a", size = 208397, upload-time = "2026-01-30T12:45:06.1Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/fb/e6/6713d9a089a6861b4bf748f02a6238cb2759968aadf672dccef3e960376b/onnxmltools-1.16.0-py3-none-any.whl", hash = "sha256:7b27196e7dcc0d9de29110f211e7941ad1c71dd97606baa729144d9acd105d3c", size = 303991, upload-time = "2026-01-30T12:45:04.809Z" },
 ]
 
 [[package]]

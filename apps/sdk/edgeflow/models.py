@@ -64,14 +64,18 @@ def _skl_clf_to_onnx(clf, n_features: int | None = None) -> bytes:
 
 
 def _xgb_clf_to_onnx(clf, n_features: int | None = None) -> bytes:
-    """ONNX export for XGBClassifier via onnxmltools-registered skl2onnx converter.
-
-    Requires onnxmltools: pip install onnxmltools
-    """
+    """ONNX export for XGBClassifier via onnxmltools-registered skl2onnx converter."""
     import xgboost
-    from onnxmltools.convert.xgboost.operator_converters.XGBoost import (
-        convert_xgboost,
-    )
+
+    try:
+        from onnxmltools.convert.xgboost.operator_converters.XGBoost import (
+            convert_xgboost,
+        )
+    except ImportError as exc:
+        raise ImportError(
+            "onnxmltools is required for XGBoost ONNX export: pip install edgeflow[xgboost]"
+        ) from exc
+
     from skl2onnx import update_registered_converter
     from skl2onnx.common.shape_calculator import (
         calculate_linear_classifier_output_shapes,
@@ -112,7 +116,7 @@ def _lgbm_clf_to_onnx(clf, n_features: int | None = None) -> bytes:
         from onnxmltools.convert.common.data_types import FloatTensorType as OmlFloat
     except ImportError as exc:
         raise ImportError(
-            "onnxmltools is required for LightGBM ONNX export: pip install onnxmltools"
+            "onnxmltools is required for LightGBM ONNX export: pip install edgeflow[lightgbm]"
         ) from exc
 
     if n_features is None:

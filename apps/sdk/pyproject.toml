@@ -13,6 +13,10 @@ dependencies = [
     "requests>=2.31",
 ]
 
+[project.optional-dependencies]
+xgboost = ["onnxmltools>=1.12"]
+lightgbm = ["onnxmltools>=1.12"]
+
 [tool.maturin]
 python-source = "."
 module-name = "edgeflow._lib"
