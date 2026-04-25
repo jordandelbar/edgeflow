@@ -8,11 +8,8 @@ The model is a tiny linear classifier (Gemm + Softmax) with:
 Because the output is already float32 at index 0, it works directly with the
 ORT backend without any postprocess WASM.
 
-Dependencies (install once):
-    pip install onnx numpy
-
 Usage (from repo root):
-    python scripts/gen_bench_model.py
+    just gen-bench-model
 """
 
 import os

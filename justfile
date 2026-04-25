@@ -114,7 +114,11 @@ test:
 
 # Run MLflow compatibility tests against a running server
 test-compat uri="http://localhost:5000":
-    python scripts/test_mlflow_compat.py --uri {{uri}}
+    cd scripts && uv run python test/test_mlflow_compat.py --uri {{uri}}
+
+# Generate the iris.onnx fixture used by inference tests and benches
+gen-bench-model:
+    cd scripts && uv run python test/gen_bench_model.py
 
 # Build and serve the Sphinx documentation
 docs:

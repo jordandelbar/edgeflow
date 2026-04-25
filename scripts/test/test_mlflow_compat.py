@@ -1,9 +1,9 @@
 """
 End-to-end compatibility test against edgeflow using the official MLflow client.
-Requires: pip install mlflow
 
 Usage:
-    python scripts/test_mlflow_compat.py [--uri http://localhost:5000]
+    just test-compat [URI]
+    cd scripts && uv run python test/test_mlflow_compat.py [--uri http://localhost:5000]
 """
 
 import argparse

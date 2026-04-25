@@ -6,7 +6,7 @@
 ///   pipeline/{infer_small,infer_large} - full path: decode → backend → encode
 ///
 /// Before running, generate the model fixtures:
-///   uv run python scripts/gen_bench_model.py
+///   just gen-bench-model
 ///
 /// Then:
 ///   cargo bench -p edgeflow-inference
@@ -16,9 +16,8 @@ use std::hint::black_box;
 
 fn load_model(name: &str) -> Vec<u8> {
     let path = format!("{}/tests/fixtures/{name}", env!("CARGO_MANIFEST_DIR"));
-    std::fs::read(&path).unwrap_or_else(|_| {
-        panic!("fixture {name} missing - run `uv run python scripts/gen_bench_model.py`")
-    })
+    std::fs::read(&path)
+        .unwrap_or_else(|_| panic!("fixture {name} missing - run `just gen-bench-model`"))
 }
 
 // ── tensor codec at three representative sizes ────────────────────────────────

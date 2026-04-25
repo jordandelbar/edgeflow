@@ -2,15 +2,14 @@
 ///
 /// Tests that don't touch the model fixture (tensor, inputs) always pass.
 /// Tests that require the model fixture need it generated first:
-///   python scripts/gen_bench_model.py
+///   just gen-bench-model
 ///
 /// Model shape: f32 [N, 4] → f32 [N, 3]  (Gemm + Softmax, no WASM needed)
 use edgeflow_inference::{backend, inputs, pipeline, tensor};
 
 fn load_model() -> Vec<u8> {
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/iris.onnx");
-    std::fs::read(path)
-        .expect("model fixture missing - run `python scripts/gen_bench_model.py` first")
+    std::fs::read(path).expect("model fixture missing - run `just gen-bench-model` first")
 }
 
 // ── tensor wire format ───────────────────────────────────────────────────────
