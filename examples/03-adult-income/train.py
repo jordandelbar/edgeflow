@@ -1,7 +1,7 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-#   "edgeflow",
+#   "edgeflow[xgboost]",
 #   "mlflow",
 #   "scikit-learn",
 #   "xgboost",
