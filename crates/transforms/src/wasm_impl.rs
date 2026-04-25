@@ -1,6 +1,6 @@
 use std::sync::OnceLock;
 
-use crate::layers::{run_pipeline, PipelineConfig};
+use crate::layers::{run_pipeline, run_pipeline_from, PipelineConfig};
 
 wit_bindgen::generate!({
     world: "configurable-transform",
@@ -20,6 +20,13 @@ impl Guest for Component {
     fn transform(input: Vec<u8>) -> Vec<u8> {
         let cfg = CONFIG.get().expect("init must be called before transform");
         run_pipeline(cfg, input)
+    }
+
+    fn transform_from(input: Vec<u8>, start: u32) -> Vec<u8> {
+        let cfg = CONFIG
+            .get()
+            .expect("init must be called before transform-from");
+        run_pipeline_from(cfg, input, start as usize)
     }
 }
 

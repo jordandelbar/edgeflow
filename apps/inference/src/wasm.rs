@@ -118,12 +118,30 @@ impl WasmTransform {
     }
 
     pub fn run(&mut self, input: &[u8]) -> Result<Vec<u8>> {
+        self.run_from(input, 0)
+    }
+
+    /// Run the transform starting at step `start`. `start = 0` is equivalent to
+    /// `run`. Used by the host to skip a leading format-adapter step when the
+    /// input already arrived as a tensor (JSON-array path), without having to
+    /// instantiate a second WASM component.
+    ///
+    /// Legacy componentize-py components only expose the plain `transform`
+    /// export and have no notion of step indices; calling them with `start > 0`
+    /// is an error.
+    pub fn run_from(&mut self, input: &[u8], start: u32) -> Result<Vec<u8>> {
         let WasmTransform { store, inner } = self;
         match inner {
             Inner::Standard(b) => b
-                .call_transform(&mut *store, input)
+                .call_transform_from(&mut *store, input, start)
                 .map_err(anyhow::Error::from),
-            Inner::Legacy(func) => run_legacy(func, &mut *store, input),
+            Inner::Legacy(func) => {
+                anyhow::ensure!(
+                    start == 0,
+                    "legacy WASM transform does not support start > 0"
+                );
+                run_legacy(func, &mut *store, input)
+            }
         }
         .context("transform call failed")
     }

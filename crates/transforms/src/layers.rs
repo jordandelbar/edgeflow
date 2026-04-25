@@ -40,8 +40,17 @@ pub struct PipelineConfig {
 }
 
 pub fn run_pipeline(config: &PipelineConfig, input: Vec<u8>) -> Vec<u8> {
+    run_pipeline_from(config, input, 0)
+}
+
+/// Run the pipeline starting at `start` (skipping the first `start` steps).
+/// `start` past the end is a no-op and returns the input unchanged - this
+/// lets the host skip a leading format adapter when the input already
+/// arrives as a tensor.
+pub fn run_pipeline_from(config: &PipelineConfig, input: Vec<u8>, start: usize) -> Vec<u8> {
     let mut data = input;
-    for step in &config.steps {
+    let steps = config.steps.get(start..).unwrap_or(&[]);
+    for step in steps {
         data = run_layer(step, data);
     }
     data

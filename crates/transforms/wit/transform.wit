@@ -10,10 +10,12 @@ world transform {
 
 /// Configurable transform contract for the standard Rust pipeline.
 /// init() is called once after instantiation with a JSON pipeline config;
-/// transform() is then called per request. The host checks for the init
-/// export at runtime - components implementing the plain `transform` world
-/// remain fully compatible.
+/// transform() is then called per request. transform-from() is a variant
+/// that runs the pipeline starting at step `start`, letting the host skip
+/// a leading format-adapter step (e.g. float-to-tensor / image-to-tensor)
+/// when the input already arrives as a tensor (JSON-array path).
 world configurable-transform {
-  export init:      func(config: list<u8>);
-  export transform: func(input: list<u8>) -> list<u8>;
+  export init:           func(config: list<u8>);
+  export transform:      func(input: list<u8>) -> list<u8>;
+  export transform-from: func(input: list<u8>, start: u32) -> list<u8>;
 }
