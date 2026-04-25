@@ -1,3 +1,5 @@
+# Tutorial: https://github.com/jordandelbar/edgeflow/blob/main/docs/book/tutorials/05-k3d-yolo.rst
+# This file is the companion script; the walkthrough lives in the book.
 """
 YOLOv8 deployment script.
 

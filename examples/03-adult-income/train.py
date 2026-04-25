@@ -1,3 +1,5 @@
+# Tutorial: https://github.com/jordandelbar/edgeflow/blob/main/docs/book/tutorials/03-adult-income.rst
+# This file is the companion script; the walkthrough lives in the book.
 """
 Adult Income classifier training script.
 

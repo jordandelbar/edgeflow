@@ -1,3 +1,5 @@
+# Tutorial: https://github.com/jordandelbar/edgeflow/blob/main/docs/book/tutorials/02-iris-with-preprocessing.rst
+# This file is the companion script; the walkthrough lives in the book.
 """
 Iris LogisticRegression trained on z-scored features.
 

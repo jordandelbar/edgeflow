@@ -1,0 +1,18 @@
+# Virtual uv workspace coordinating runnable tutorial examples.
+#
+# Each member under examples/ has its own dependency surface so users only
+# install what their tutorial needs (no torch for iris, no xgboost for YOLO).
+#
+# The SDK (apps/sdk) and dev scripts (scripts/) are intentionally NOT members:
+# the SDK has its own release lifecycle, and scripts/ is dev-only.
+
+[tool.uv.workspace]
+members = ["examples/*"]
+
+# Dev-only: resolve the `edgeflow` dependency from the local SDK while it is
+# not yet on PyPI. Once 0.1.0 ships, remove this block; examples will then
+# resolve `edgeflow` from PyPI like any user would. The override applies only
+# inside the workspace, so copying an example directory out of the repo still
+# resolves cleanly against PyPI.
+[tool.uv.sources]
+edgeflow = { path = "apps/sdk", editable = true }

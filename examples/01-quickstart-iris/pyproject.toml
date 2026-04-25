@@ -1,0 +1,14 @@
+[project]
+name = "edgeflow-example-quickstart-iris"
+version = "0.0.0"
+description = "Edgeflow tutorial 01: train and deploy a LogisticRegression on iris."
+requires-python = ">=3.12"
+dependencies = [
+    "edgeflow",
+    "mlflow",
+    "numpy",
+    "scikit-learn",
+]
+
+[tool.uv]
+package = false
