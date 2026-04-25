@@ -3,6 +3,8 @@
 Train in Python. Serve in Rust.
 
 [![CI](https://github.com/jordandelbar/edgeflow/actions/workflows/ci.yml/badge.svg)](https://github.com/jordandelbar/edgeflow/actions/workflows/ci.yml)
+[![crates.io](https://img.shields.io/crates/v/edgeflow-cli.svg?label=edgeflow-cli)](https://crates.io/crates/edgeflow-cli)
+[![PyPI](https://img.shields.io/pypi/v/edgeflow.svg?label=edgeflow)](https://pypi.org/project/edgeflow/)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![MSRV](https://img.shields.io/badge/MSRV-1.88-orange.svg)](Cargo.toml)
 
