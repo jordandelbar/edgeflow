@@ -1,8 +1,13 @@
 name: release-please
 
-# Manual trigger: open a Release PR on demand.
-# Run via the GitHub Actions UI ("Run workflow") or `gh workflow run release-please.yml`.
+# Runs on every push to main. release-please decides what to do:
+#   - unreleased feat:/fix: commits  -> opens or updates a single Release PR
+#   - merge of a Release PR           -> creates the git tag + GitHub release
+#   - nothing to do                   -> no-op
+# workflow_dispatch is also wired so you can re-run manually if needed.
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -17,3 +22,6 @@ jobs:
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+          # Use a PAT so tag/release creation triggers publish-* workflows.
+          # GITHUB_TOKEN-created tags don't trigger downstream workflows by design.
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
