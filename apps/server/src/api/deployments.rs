@@ -205,18 +205,45 @@ async fn create_deployment(
         )
         .await?;
 
-    // Check if pods are already registered for this target.
+    // Persist resource settings and provision the pod if this is a new target.
+    // Compose orchestrator no-ops (a pre-provisioned container already serves
+    // every target via wildcard MQTT subscribe); k8s creates a Deployment.
     if state.store.get_target(&req.target).await?.is_some() {
-        // Upgrade path: pod is alive, tell it to load the new run.
-        // If edgeflow resource settings were provided, persist them.
         if req.resources.sessions.is_some() || req.resources.max_concurrent.is_some() {
             state
                 .store
                 .store_target_resources(&req.target, &req.resources)
                 .await?;
         }
+    } else {
+        let resolved_resources = edgeflow_orchestrator::resolve_resources(&req.resources);
+        state
+            .store
+            .store_target_resources(&req.target, &resolved_resources)
+            .await?;
+        state
+            .orchestrator
+            .create_inference_pod(
+                &req.target,
+                req.node.as_deref(),
+                &resolved_resources,
+                &req.infra,
+            )
+            .await?;
+    }
 
-        // Re-fetch to get the latest (possibly just-updated) resource settings.
+    // Publish the upgrade command iff the orchestrator already has a live pod
+    // for this target. Compose returns a synthetic pod for any target name,
+    // so first-deploys get MQTT-dispatched. K8s on first deploy returns no
+    // pods (the Deployment was just created); the pod's startup poll picks
+    // up the still-pending deployment instead.
+    let pod_already_alive = state
+        .orchestrator
+        .list_running_pods(&req.target)
+        .await
+        .is_some_and(|pods| !pods.is_empty());
+
+    if pod_already_alive {
         let sessions = state
             .store
             .get_target(&req.target)
@@ -259,23 +286,6 @@ async fn create_deployment(
                 "no mqtt publisher available - deployment stays pending"
             );
         }
-    } else {
-        // First deploy: pod doesn't exist yet. Persist edgeflow-owned settings,
-        // then create the k8s Deployment (k8s owns cpu/memory/replicas/etc.).
-        let resolved_resources = edgeflow_orchestrator::resolve_resources(&req.resources);
-        state
-            .store
-            .store_target_resources(&req.target, &resolved_resources)
-            .await?;
-        state
-            .orchestrator
-            .create_inference_pod(
-                &req.target,
-                req.node.as_deref(),
-                &resolved_resources,
-                &req.infra,
-            )
-            .await?;
     }
 
     let deployment = state
