@@ -47,7 +47,15 @@ Same as tutorial 01. If the stack is already running, skip ahead.
 The script computes per-feature mean and std on the training set,
 trains a ``LogisticRegression`` on z-scored features, and pushes the
 model along with an ``edgeflow.Normalize(mean=..., std=...)``
-pre-transform. Output:
+pre-transform. The relevant call:
+
+.. literalinclude:: ../../../examples/02-iris-with-preprocessing/train.py
+   :language: python
+   :start-after: # [docs:start:log-model]
+   :end-before: # [docs:end:log-model]
+   :dedent:
+
+Expected output:
 
 .. code-block:: text
 
@@ -76,13 +84,16 @@ prediction format as tutorial 01.
 What just happened?
 -------------------
 
-- The pre-transform was compiled to WASM at ``log_model`` time and
-  bundled with the ONNX bytes into a single deployment artifact.
-- The inference pod loaded the artifact, instantiated a
-  ``wasmtime`` component for the pre-transform, and now runs it on
-  every request before reaching the backend.
-- Cost: ~2x ``memcpy`` at the WASM boundary thanks to the bindgen'd
-  component model. For a 4-feature tensor this is essentially free.
+When you called ``log_model``, edgeflow compiled the ``Normalize``
+pre-transform into a WASM component and bundled it with the ONNX
+bytes into a single deployment artifact. The inference pod loaded
+that artifact, spun up a ``wasmtime`` runtime for the pre-transform,
+and now runs it on every request before the model sees a tensor.
+
+The boundary cost is roughly two ``memcpy`` operations per call. For
+a 4-feature input that's effectively free; heavier pre-transforms
+like image decoding pay more, but the pod-to-WASM trip stays in the
+same order of magnitude as a local function call.
 
 Try this
 --------

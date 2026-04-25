@@ -44,6 +44,19 @@ postprocess WASM), and registers it under the model name ``yolov8n``.
 It also attaches the COCO 80-class label list to ``DetectionOutput``
 so responses come back with human-readable labels, not class indices.
 
+The pre/post pipeline composition is the heart of the tutorial:
+
+.. literalinclude:: ../../../examples/05-k3d-yolo/deploy.py
+   :language: python
+   :start-after: # [docs:start:log-model]
+   :end-before: # [docs:end:log-model]
+   :dedent:
+
+``ImageToTensor`` decodes JPEG/PNG, resizes to 640x640, and switches
+to NCHW layout. ``DetectionOutput`` runs NMS, maps class indices to
+COCO labels, and emits the JSON response. Both run as WASM components
+inside the inference pod; no Python on the request path.
+
 Expected output:
 
 .. code-block:: text

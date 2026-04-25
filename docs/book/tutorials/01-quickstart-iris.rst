@@ -45,9 +45,21 @@ them in an ephemeral environment.
 
 The script trains a ``LogisticRegression`` on iris, exports it to ONNX,
 pushes it to the server via MLflow, registers a model version, and
-deploys it to the ``quickstart`` target. The script blocks until the
-pod confirms the model is loaded, so once it exits you can call the
-endpoint immediately.
+deploys it to the ``quickstart`` target. The model and its
+postprocessing pipeline are bundled in a single ``log_model`` call:
+
+.. literalinclude:: ../../../examples/01-quickstart-iris/train.py
+   :language: python
+   :start-after: # [docs:start:log-model]
+   :end-before: # [docs:end:log-model]
+   :dedent:
+
+``ClassifierOutput`` maps the raw probability vector to ``{class_id,
+label, confidence}``. No preprocess pipeline is set, so the server
+hands the input straight to the ONNX session.
+
+The script blocks until the pod confirms the model is loaded, so once
+it exits you can call the endpoint immediately.
 
 3. Send a request
 -----------------

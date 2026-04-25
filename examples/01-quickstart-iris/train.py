@@ -63,12 +63,14 @@ with mlflow.start_run(experiment_id=exp.experiment_id, run_name="iris-logistic")
         }
     )
     mlflow.log_metric("accuracy", accuracy)
+    # [docs:start:log-model]
     edgeflow.log_model(
         model_bytes=sklearn_to_onnx(clf),
         postprocess=edgeflow.Pipeline(
             [edgeflow.ClassifierOutput(labels=list(iris.target_names))]
         ),
     )
+    # [docs:end:log-model]
     run_id = run.info.run_id
 
 print(f"run_id: {run_id}")

@@ -128,6 +128,7 @@ print(f"numerical features  ({len(numerical_cols)}): {numerical_cols}")
 
 # OrdinalEncoder for all categoricals - no OHE expansion needed for tree models.
 # unknown_value=-1 handles unseen categories at inference time gracefully.
+# [docs:start:column-transformer]
 preprocessor = ColumnTransformer(
     [
         (
@@ -138,6 +139,7 @@ preprocessor = ColumnTransformer(
         ("num", "passthrough", numerical_cols),
     ]
 )
+# [docs:end:column-transformer]
 
 # ── train ──────────────────────────────────────────────────────────────────────
 
@@ -188,6 +190,7 @@ with mlflow.start_run(
     # clf_to_onnx detects the framework and uses the appropriate export path.
     # The column_transformer is passed separately so edgeflow can write the
     # encoding tables to schema.json - the server applies them at request time.
+    # [docs:start:log-model]
     edgeflow.log_model(
         model_bytes=clf_to_onnx(clf),
         postprocess=edgeflow.Pipeline(
@@ -195,6 +198,7 @@ with mlflow.start_run(
         ),
         column_transformer=preprocessor,
     )
+    # [docs:end:log-model]
     run_id = run.info.run_id
 
 print(f"run_id: {run_id}")

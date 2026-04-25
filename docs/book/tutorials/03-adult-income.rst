@@ -47,6 +47,23 @@ The script:
   column transformer, so its encoding tables are written into
   ``schema.json``.
 
+The column transformer is the hinge of named-input mode:
+
+.. literalinclude:: ../../../examples/03-adult-income/train.py
+   :language: python
+   :start-after: # [docs:start:column-transformer]
+   :end-before: # [docs:end:column-transformer]
+   :dedent:
+
+Edgeflow introspects this object to derive the per-field encoding
+tables. The ``log_model`` call passes it alongside the ONNX bytes:
+
+.. literalinclude:: ../../../examples/03-adult-income/train.py
+   :language: python
+   :start-after: # [docs:start:log-model]
+   :end-before: # [docs:end:log-model]
+   :dedent:
+
 Expected output:
 
 .. code-block:: text
@@ -89,15 +106,18 @@ class probabilities.
 What just happened?
 -------------------
 
-- ``edgeflow.log_model`` introspected the ``ColumnTransformer`` and
-  wrote a ``schema.json`` listing each input field, its dtype, and its
-  encoding (ordinal map for categoricals, passthrough for numerics).
-- At pod load time, ``parse_schema`` saw the named-input definitions
-  and switched the pipeline into **Named** mode (see
-  ``apps/inference/src/inputs.rs``).
-- On every request, the server parses the JSON, looks up each
-  categorical value in its encoding table, and assembles a flat
-  ``f32`` tensor in the order the model expects.
+When you called ``log_model``, edgeflow introspected the
+``ColumnTransformer`` and wrote each field's dtype and encoding into
+a ``schema.json`` artifact bundled with the ONNX bytes: an ordinal
+map for categoricals, passthrough for numerics.
+
+When the inference pod loaded that artifact, the schema told it to
+expect JSON objects keyed by field name (named-input mode) rather
+than the positional float array tutorials 01 and 02 used. On each
+request the server parses the JSON, looks up each categorical value
+in its encoding table, and assembles a flat ``f32`` tensor in the
+order the model expects - all before the ONNX session sees a single
+byte.
 
 Unknown categories
 ------------------
