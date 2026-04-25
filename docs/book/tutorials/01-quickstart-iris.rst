@@ -11,14 +11,12 @@ You will:
 2. Train a classifier and push it to edgeflow.
 3. Send a request to the live inference endpoint.
 
-No git clone required.
-
 Prerequisites
 -------------
 
 - Docker and docker compose
 - Python 3.12+
-- ``uv`` (or ``pip``) to install the ``edgeflow`` client
+- ``uv`` to install the ``edgeflow`` client
 
 1. Bring up edgeflow
 --------------------
@@ -37,7 +35,20 @@ Two containers start: the control-plane ``server`` on ``:5000`` and an
 2. Train and deploy
 -------------------
 
-Fetch the training script and run it:
+Two paths, pick whichever fits.
+
+**Recommended:** clone the repo and run from the example directory.
+You get the full project to poke around, and ``uv`` resolves
+dependencies from the example's ``pyproject.toml`` automatically.
+
+.. code-block:: bash
+
+   git clone https://github.com/jordandelbar/edgeflow
+   cd edgeflow/examples/01-quickstart-iris
+   uv run train.py
+
+**Quick-try (no clone):** fetch the script and resolve dependencies
+inline.
 
 .. code-block:: bash
 
@@ -79,5 +90,8 @@ What just happened?
 Next steps
 ----------
 
-- Tutorial 02: JSON input instead of raw bytes, using named-input mode.
-- How-to: hot-swap a model without downtime.
+- :doc:`02-iris-with-preprocessing` - move feature normalisation off
+  the client and into a WASM pre-transform that ships with the model.
+- :doc:`03-adult-income` - JSON input with encoded categorical
+  features (named-input mode).
+- :doc:`05-k3d-yolo` - real CV model, image input, k3d deployment.

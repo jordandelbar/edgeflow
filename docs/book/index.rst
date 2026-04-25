@@ -8,6 +8,9 @@ MLOps for edge device fleets.
    :caption: Tutorials
 
    tutorials/01-quickstart-iris
+   tutorials/02-iris-with-preprocessing
+   tutorials/03-adult-income
+   tutorials/05-k3d-yolo
 
 .. toctree::
    :maxdepth: 2

@@ -1,0 +1,58 @@
+name: docs
+
+# Build the Sphinx site (with d2 diagrams) and deploy to GitHub Pages.
+# Mirrors `just docs` locally.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow only one concurrent deployment, but let in-progress runs finish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: install d2
+        run: curl -fsSL https://d2lang.com/install.sh | sh -s --
+
+      - name: render diagrams
+        run: |
+          mkdir -p docs/book/_static/diagrams
+          for f in docs/book/diagrams/*.d2; do
+            d2 "$f" "docs/book/_static/diagrams/$(basename "$f" .d2).svg"
+          done
+
+      - name: build sphinx
+        working-directory: docs/book
+        run: uv run sphinx-build -b html . _build/html
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/book/_build/html
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

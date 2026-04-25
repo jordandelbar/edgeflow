@@ -33,7 +33,7 @@ The system must:
 Decision
 --------
 
-The system is composed of **two components** with clearly separated responsibilities.
+The system is **two components** with separate responsibilities.
 A third component (device manager / lifecycle supervisor) was considered and rejected - see Alternatives Considered.
 
 1. edgeflow-server
@@ -102,7 +102,7 @@ In **managed mode** (when ``[server]`` is configured):
 
 **Key design choice:** ``edgeflow-inference`` is useful standalone, without edgeflow-server.
 A user can run it as a pure ONNX inference server and never use the rest of the platform.
-This lowers the barrier to adoption and makes the component independently valuable.
+This lets users adopt the inference component without committing to the rest of edgeflow.
 Process supervision (restart on crash) is delegated to the OS layer (systemd, Docker restart policy)
 rather than implemented as a third binary.
 
@@ -117,7 +117,7 @@ Communication Architecture
 
 **Transport evolution:**
 
-The managed communication path is designed to evolve without breaking changes:
+The managed communication path can evolve without breaking changes:
 
 1. **HTTP pull (v1, no extra infrastructure)** - inference polls server for pending deployments.
    Works through NAT and firewalls. Acceptable latency for model deployment (not control-plane timing-critical).
@@ -180,10 +180,10 @@ ONNX is the sole supported model format for deployment.
 
 **Rationale:**
 
-- Universal export target from PyTorch, TensorFlow, scikit-learn, and most major frameworks
-- ``ort`` (ONNX Runtime Rust bindings) is mature and actively maintained
+- Universal export target from PyTorch, TensorFlow, and scikit-learn
+- ``ort`` (ONNX Runtime Rust bindings) is actively maintained
 - The ONNX graph contains full I/O schema (tensor names, shapes, dtypes) which edgeflow uses to auto-generate
-  inference wrappers and telemetry configuration, no user configuration required
+  inference wrappers and telemetry configuration without user configuration
 - Enables hardware-specific optimization (CUDA, TensorRT, CoreML)
   via ORT execution providers without changing the model artifact
 
@@ -204,7 +204,7 @@ For the initial implementation: **running mean/std shift on input tensors**.
 Key Lineage Chain
 -----------------
 
-The central value proposition of edgeflow is full lineage from training to device:
+Edgeflow's core value is full lineage from training to device:
 
 .. image:: /_static/diagrams/001-lineage.svg
    :alt: Key lineage chain
@@ -224,17 +224,17 @@ Consequences
 **Positive:**
 
 - Two-component design keeps the operational surface minimal - one server binary, one inference binary per device
-- ``edgeflow-inference`` can be adopted standalone, lowering the barrier to entry
+- ``edgeflow-inference`` can be adopted on its own, useful as a pure ONNX server
 - Embedded MQTT broker means zero extra infrastructure for the common case
-- HTTP poll fallback means the system works through NAT and firewalls out of the box
-- MQTT handles flaky edge networks gracefully (QoS, persistent sessions, offline buffering) when available
+- HTTP poll fallback means the system works through NAT and firewalls without extra setup
+- MQTT handles intermittent edge connectivity (QoS, persistent sessions, offline buffering) when available
 - MLflow shim provides immediate compatibility with existing Python training code
-- Single Rust binary for the server is trivially deployable on constrained hardware
+- Single Rust binary for the server is easy to deploy on constrained hardware
 - ``Store`` trait abstraction allows SQLite → Postgres migration without changing business logic
 
 **Negative / risks:**
 
-- ``edgeflow-inference`` now carries both inference logic and lifecycle coordination - these must be kept cleanly separated internally so standalone mode remains truly standalone
+- ``edgeflow-inference`` now carries both inference logic and lifecycle coordination - these need clean internal separation so standalone mode keeps working without the server
 - ONNX-only model format excludes teams using TensorFlow SavedModel or TorchScript directly; acceptable tradeoff for PoC, revisit at v1
 - Maintaining MLflow API compatibility is ongoing work as MLflow evolves; treat the shim as frozen at the current API surface, do not track MLflow HEAD
 

@@ -18,7 +18,7 @@ In practice, this is a significant friction point. Real edge applications sit be
 - Model outputs are raw tensors (logit vectors, bounding box coordinates, regression values) that must be thresholded, decoded, or post-filtered before the application can act on them
 - These transforms are model-specific and tightly coupled to the training pipeline - they belong with the model artifact, not embedded in the application
 
-Today, users are forced to handle this in their application code (ROS nodes, robot software), duplicating logic across devices and making model updates fragile. Changing the model often requires updating application code across the fleet in lockstep.
+Today, users are forced to handle this in their application code (ROS nodes, robot software). The same logic ends up duplicated across devices, and model updates become fragile: changing the model usually means updating application code on every device at the same time.
 
 --------
 
@@ -109,7 +109,7 @@ WASM modules are versioned artifacts stored in the registry alongside the ``.onn
    :alt: Artifact delivery and hot-swap
    :width: 100%
 
-The inference binary itself never changes during a model update. Only the artifact bundle is replaced. This is a significantly smaller operation than a binary redeploy across a fleet on a constrained network.
+The inference binary itself never changes during a model update. Only the artifact bundle is replaced. This is a much smaller operation than a binary redeploy across a fleet on a constrained network.
 
 Sandboxing
 ~~~~~~~~~~
@@ -132,7 +132,7 @@ The Python decorator interface is the stable user-facing contract. The WASM comp
 
 **Primary: componentize-py**
 
-Compiles Python source to a WASM component. Requires no Python runtime on the device. Produces self-contained ``.wasm`` artifacts. The main risk is maturity - componentize-py is actively developed but not yet battle-tested at production scale. Must be validated early with realistic transforms (JPEG decode, numpy normalization) before committing to this path.
+Compiles Python source to a WASM component. Requires no Python runtime on the device. Produces self-contained ``.wasm`` artifacts. The main risk is maturity - componentize-py is actively developed but not yet proven at production scale. Must be validated early with realistic transforms (JPEG decode, numpy normalization) before committing to this path.
 
 **Fallback A: RustPython in WASM**
 
@@ -152,7 +152,7 @@ Consequences
 **Positive:**
 
 - Pre/post processing logic ships with the model artifact - application code no longer needs to change when the model changes
-- The same Python functions used at training time run on the device - no logic duplication, no drift between training and inference transforms
+- The same Python functions used at training time run on the device, so transforms cannot drift between training and inference
 - Modules are sandboxed: a broken transform returns an error, it does not crash ``edgeflow-inference``
 - Model updates are artifact swaps, not binary redeploys - smaller, faster, safer over constrained fleet networks
 - Extends the lineage chain: the transform module version is part of the model version record
