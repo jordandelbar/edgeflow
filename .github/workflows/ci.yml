@@ -50,7 +50,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip2
       - uses: Swatinem/rust-cache@v2
+      - name: build wasm transform
+        working-directory: crates/transforms
+        run: cargo build --target wasm32-wasip2 --release
+      - name: stage wasm into sdk
+        run: |
+          mkdir -p apps/sdk/edgeflow/wasm
+          cp crates/transforms/target/wasm32-wasip2/release/_lib.wasm \
+             apps/sdk/edgeflow/wasm/standard_pipeline.wasm
       - run: cargo test --workspace --no-fail-fast
 
   msrv:
