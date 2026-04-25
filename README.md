@@ -46,7 +46,8 @@ edgeflow.deploy(name="iris", version=mv.version, target="my-target")
 Then call it:
 
 ```bash
-curl -X POST http://localhost:5000/api/v1/targets/my-target/infer \
+curl -X POST http://localhost:8080/infer \
+     -H 'Content-Type: application/json' \
      -d '[5.1, 3.5, 1.4, 0.2]'
 ```
 

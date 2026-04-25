@@ -32,6 +32,8 @@ services:
       EDGEFLOW_INFER_ADDR: 0.0.0.0:8080
       EDGEFLOW_MQTT_URL: mqtt://server:1883
       RUST_LOG: edgeflow_inference=info
+    ports:
+      - "8080:8080"
     depends_on:
       - server
 
