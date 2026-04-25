@@ -1,11 +1,9 @@
-# Dev variant - builds images from source on first run.
-#   docker compose -f deploy/docker-compose.yaml up [--build]
+# Edgeflow quickstart
+#   curl -O https://raw.githubusercontent.com/jordandelbar/edgeflow/main/deploy/quickstart.yaml
+#   docker compose -f quickstart.yaml up
 services:
   server:
-    image: edgeflow-server:dev
-    build:
-      context: ..
-      dockerfile: deploy/server.Dockerfile
+    image: ghcr.io/jordandelbar/edgeflow-server:latest
     environment:
       EDGEFLOW_ORCHESTRATOR: compose
       EDGEFLOW_COMPOSE_INFERENCE_URL: http://inference:8080
@@ -17,18 +15,10 @@ services:
       - edgeflow-data:/data
 
   inference:
-    image: edgeflow-inference:dev-ort
-    build:
-      context: ..
-      dockerfile: deploy/inference.Dockerfile
-      args:
-        BACKEND: ort-backend
+    image: ghcr.io/jordandelbar/edgeflow-inference:latest
     environment:
       EDGEFLOW_SERVER: http://server:5000
-      # Internal placeholder - never shown to the user. Metrics report under
-      # this label regardless of which target the user deploys to.
       EDGEFLOW_TARGET: compose
-      # Wildcard MQTT subscribe: pick up commands for any target name.
       EDGEFLOW_POD_DYNAMIC_TOPIC: "true"
       EDGEFLOW_POD_IP: inference
       EDGEFLOW_INFER_ADDR: 0.0.0.0:8080
