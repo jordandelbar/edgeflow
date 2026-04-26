@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use anyhow::{Context, Result};
 use serde_json::Value;
 
@@ -31,6 +33,10 @@ pub struct Pipeline {
     input_mode: InputMode,
     /// Non-empty only for Named mode.
     specs: Vec<InputSpec>,
+    /// Reused across requests for the JSON-array and Named encode steps.
+    input_buf: Vec<u8>,
+    /// Reused across requests for backend output (wire-format bytes).
+    output_buf: Vec<u8>,
 }
 
 /// Inspect a pre-transform config and return 1 when `steps[0]` is a known
@@ -109,6 +115,8 @@ impl Pipeline {
             post,
             input_mode,
             specs,
+            input_buf: Vec::new(),
+            output_buf: Vec::new(),
         })
     }
 
@@ -118,62 +126,59 @@ impl Pipeline {
 
         // ── Stage 1+2: run pre-transform. ──
         //
-        // Single binary:    run pre from step 0.
-        // Single JSON array: input already arrived as a JSON-decoded tensor.
-        //                    Standard pre: run from `pre_adapter_offset` so we
-        //                    skip the format adapter but still run Normalize etc.
-        //                    Legacy pre (opaque config): bypass entirely - same
-        //                    back-compat behavior as before.
-        // Named:            convert JSON object to a flat tensor; pre is bypassed.
-        let pre_output: Vec<u8> = if json_array_path {
+        // Single binary:    pre from step 0.
+        // Single JSON array: parsed JSON encoded into self.input_buf; standard
+        //                    pre runs from `pre_adapter_offset` to skip the
+        //                    format adapter; legacy pre (opaque config) is
+        //                    bypassed.
+        // Named:            JSON object encoded into self.input_buf; pre is
+        //                    bypassed.
+        let pre_output: Cow<'_, [u8]> = if json_array_path {
             let (shape, data) = {
                 let _span = tracing::info_span!("tensor.decode").entered();
                 inputs::json_array_to_tensor(raw_input)
                     .context("failed to decode JSON array input")?
             };
-            let tensor_bytes = tensor::encode(&shape, &data);
+            tensor::encode_into(&shape, &data, &mut self.input_buf);
             match (&mut self.pre, self.pre_is_legacy) {
                 (Some(t), false) => {
                     let _span = tracing::info_span!("wasm.preprocess").entered();
-                    t.run_from(&tensor_bytes, self.pre_adapter_offset)?
+                    Cow::Owned(t.run_from(&self.input_buf, self.pre_adapter_offset)?)
                 }
-                _ => tensor_bytes,
+                _ => Cow::Borrowed(self.input_buf.as_slice()),
             }
         } else if self.input_mode == InputMode::Named {
             let _span = tracing::info_span!("tensor.decode").entered();
             let (shape, data) = inputs::json_to_tensor(raw_input, &self.specs)
                 .context("failed to encode JSON input to tensor")?;
-            tensor::encode(&shape, &data)
+            tensor::encode_into(&shape, &data, &mut self.input_buf);
+            Cow::Borrowed(self.input_buf.as_slice())
         } else {
             match &mut self.pre {
                 Some(t) => {
                     let _span = tracing::info_span!("wasm.preprocess").entered();
-                    t.run(raw_input)?
+                    Cow::Owned(t.run(raw_input)?)
                 }
-                None => raw_input.to_vec(),
+                None => Cow::Borrowed(raw_input),
             }
         };
 
         // ── Stage 3: decode wire format and run backend. ──
-        let (shape, data) = tensor::decode(&pre_output)?;
+        let (shape, data) = tensor::decode(pre_output.as_ref())?;
         let n: usize = shape.iter().product();
         anyhow::ensure!(data.len() == n, "tensor data length mismatch");
-        let (out_shape, out_data) = {
+        {
             let _span = tracing::info_span!("backend.infer").entered();
-            self.backend.infer(&shape, data)?
-        };
+            self.backend.infer(&shape, data, &mut self.output_buf)?;
+        }
 
-        // ── Stage 4: encode output and apply post-transform. ──
-        let output_tensor_bytes = {
-            let _span = tracing::info_span!("tensor.encode").entered();
-            tensor::encode(&out_shape, &out_data)
-        };
+        // ── Stage 4: post-transform. Output is already wire-format in output_buf. ──
         match &mut self.post {
             Some(t) => {
                 let _span = tracing::info_span!("wasm.postprocess").entered();
-                t.run(&output_tensor_bytes)
+                t.run(&self.output_buf)
             }
-            None => Ok(output_tensor_bytes),
+            None => Ok(std::mem::take(&mut self.output_buf)),
         }
     }
 }
