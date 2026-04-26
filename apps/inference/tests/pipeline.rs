@@ -301,7 +301,7 @@ fn pipeline_json_array_runs_preprocess_after_decoder() {
     let mut p = pipeline::Pipeline::new(
         backend::build_backend(),
         &model,
-        Some((&wasm, Some(pre_config.as_slice()))),
+        Some((&wasm, pre_config.as_slice())),
         None,
         None,
     )
@@ -341,7 +341,7 @@ fn pipeline_json_array_skips_format_adapter() {
     let mut p = pipeline::Pipeline::new(
         backend::build_backend(),
         &model,
-        Some((&wasm, Some(pre_config.as_slice()))),
+        Some((&wasm, pre_config.as_slice())),
         None,
         None,
     )
