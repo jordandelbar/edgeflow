@@ -3,6 +3,7 @@ name = "edgeflow-inference"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
 publish = false
 
 [lib]
@@ -40,8 +41,8 @@ reqwest = { version = "0.13", features = ["json"], default-features = false }
 serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "net", "sync", "time", "macros"] }
 tracing = "0.1"
-wasmtime = { version = "43", features = ["component-model", "anyhow"] }
-wasmtime-wasi = "43"
+wasmtime = { version = "44", features = ["component-model", "anyhow"] }
+wasmtime-wasi = "44"
 rumqttc = { workspace = true }
 
 [dev-dependencies]
