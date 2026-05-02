@@ -39,7 +39,7 @@ jobs:
               - '.github/actions/build-wasm-transform/**'
 
   smoke:
-    name: iris on k3d
+    name: smoke
     needs: changes
     if: needs.changes.outputs.run == 'true'
     runs-on: ubuntu-latest
