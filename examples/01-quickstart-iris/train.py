@@ -37,7 +37,7 @@ from sklearn.model_selection import train_test_split
 
 # [docs:start:config]
 EDGEFLOW_SERVER = os.environ.get("EDGEFLOW_SERVER", "http://localhost:5000")
-EDGEFLOW_TARGET = os.environ.get("EDGEFLOW_TARGET", "quickstart")
+EDGEFLOW_TARGET = os.environ.get("EDGEFLOW_TARGET", "iris-inference")
 # [docs:end:config]
 
 # train

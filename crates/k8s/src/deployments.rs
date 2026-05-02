@@ -279,9 +279,9 @@ pub async fn create_inference_pod(
                                 port: IntOrString::Int(8080),
                                 ..Default::default()
                             }),
-                            initial_delay_seconds: Some(2),
-                            period_seconds: Some(5),
-                            failure_threshold: Some(60),
+                            initial_delay_seconds: Some(0),
+                            period_seconds: Some(1),
+                            failure_threshold: Some(300),
                             ..Default::default()
                         }),
                         ..Default::default()
