@@ -23,6 +23,7 @@ jobs:
           filters: |
             e2e:
               - 'crates/**'
+              - '!crates/k8s/**'
               - 'apps/server/**'
               - 'apps/inference/**'
               - 'apps/sdk/**'
@@ -30,7 +31,7 @@ jobs:
               - 'deploy/**'
               - 'tests/e2e/**'
               - '.github/workflows/e2e.yml'
-              - '.github/actions/**'
+              - '.github/actions/build-wasm-transform/**'
 
   tutorials:
     name: tutorials
