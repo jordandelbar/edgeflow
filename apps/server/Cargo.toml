@@ -25,4 +25,5 @@ reqwest = { version = "0.13", features = ["json"], default-features = false }
 chrono = { workspace = true, features = ["serde"] }
 rumqttd = { workspace = true }
 rumqttc = { workspace = true }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 toml = "1.1"

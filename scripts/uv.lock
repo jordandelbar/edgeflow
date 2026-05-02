@@ -565,7 +565,7 @@ wheels = [
 
 [[package]]
 name = "edgeflow"
-version = "0.2.1"
+version = "0.3.0"
 source = { editable = "../apps/sdk" }
 dependencies = [
     { name = "componentize-py" },
@@ -578,9 +578,12 @@ dependencies = [
 requires-dist = [
     { name = "componentize-py", specifier = ">=0.13" },
     { name = "onnx", specifier = ">=1.16" },
+    { name = "onnxmltools", marker = "extra == 'lightgbm'", specifier = ">=1.12" },
+    { name = "onnxmltools", marker = "extra == 'xgboost'", specifier = ">=1.12" },
     { name = "requests", specifier = ">=2.31" },
     { name = "skl2onnx", specifier = ">=1.17" },
 ]
+provides-extras = ["xgboost", "lightgbm"]
 
 [package.metadata.requires-dev]
 dev = [

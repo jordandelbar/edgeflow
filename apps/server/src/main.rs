@@ -1,4 +1,5 @@
 mod api;
+mod cors;
 mod mqtt;
 mod state;
 mod target_client;
@@ -12,12 +13,15 @@ use edgeflow_store::prelude::*;
 use edgeflow_store::sqlite::SqliteStore;
 use state::AppState;
 use std::sync::Arc;
-use tower_http::cors::CorsLayer;
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .ok();
+
     edgeflow_telemetry::init("edgeflow-server", "edgeflow_server=info,tower_http=warn")?;
 
     let cancel = shutdown_signal();
@@ -102,10 +106,14 @@ async fn main() -> anyhow::Result<()> {
         .fallback_service(
             ServeDir::new(&cfg.static_dir)
                 .fallback(ServeFile::new(format!("{}/index.html", cfg.static_dir))),
-        )
-        .layer(CorsLayer::permissive())
-        .layer(TraceLayer::new_for_http())
-        .with_state(state);
+        );
+
+    let app = match cors::build_layer(&cfg.cors) {
+        Some(layer) => app.layer(layer),
+        None => app,
+    };
+
+    let app = app.layer(TraceLayer::new_for_http()).with_state(state);
 
     let listener = tokio::net::TcpListener::bind(&cfg.addr).await?;
     tracing::info!("listening on {}", cfg.addr);

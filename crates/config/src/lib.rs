@@ -115,6 +115,45 @@ pub enum OrchestratorKind {
     Compose,
 }
 
+/// CORS policy for the server's HTTP surface. Defaults to `Disabled` -
+/// the docker-compose demo serves the UI from the same origin, so CORS
+/// is unnecessary, and a permissive default would be needlessly open.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CorsPolicy {
+    /// No CORS layer. The browser's Same-Origin Policy applies; same-origin
+    /// requests work, cross-origin browser requests are blocked by the
+    /// browser. curl and server-to-server clients are unaffected.
+    Disabled,
+    /// Any origin, any method, any header. Set
+    /// `EDGEFLOW_CORS_ALLOW_ORIGINS=*` to opt in.
+    Any,
+    /// Exact-match allowlist of origins, e.g.
+    /// `EDGEFLOW_CORS_ALLOW_ORIGINS=https://dashboard.example.com,https://other.example.com`.
+    Allowlist(Vec<String>),
+}
+
+impl CorsPolicy {
+    fn from_env() -> Self {
+        Self::parse(std::env::var("EDGEFLOW_CORS_ALLOW_ORIGINS").ok().as_deref())
+    }
+
+    /// Pure parser for the `EDGEFLOW_CORS_ALLOW_ORIGINS` value. `None`
+    /// represents an unset variable.
+    fn parse(value: Option<&str>) -> Self {
+        match value {
+            None => Self::Disabled,
+            Some(s) if s.trim().is_empty() => Self::Disabled,
+            Some(s) if s.trim() == "*" => Self::Any,
+            Some(s) => Self::Allowlist(
+                s.split(',')
+                    .map(|o| o.trim().to_string())
+                    .filter(|o| !o.is_empty())
+                    .collect(),
+            ),
+        }
+    }
+}
+
 // Server config
 pub struct ServerConfig {
     /// Root directory for persistent data.
@@ -138,6 +177,8 @@ pub struct ServerConfig {
     /// URL the server uses to reach the compose inference container,
     /// e.g. `http://inference:8080`. Required when `orchestrator == Compose`.
     pub compose_inference_url: Option<String>,
+    /// CORS policy for the public HTTP surface. Defaults to `Disabled`.
+    pub cors: CorsPolicy,
 }
 
 impl ServerConfig {
@@ -178,6 +219,67 @@ impl ServerConfig {
             prometheus_url,
             orchestrator,
             compose_inference_url,
+            cors: CorsPolicy::from_env(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cors_unset_is_disabled() {
+        assert_eq!(CorsPolicy::parse(None), CorsPolicy::Disabled);
+    }
+
+    #[test]
+    fn cors_empty_is_disabled() {
+        assert_eq!(CorsPolicy::parse(Some("")), CorsPolicy::Disabled);
+        assert_eq!(CorsPolicy::parse(Some("   ")), CorsPolicy::Disabled);
+    }
+
+    #[test]
+    fn cors_wildcard_is_any() {
+        assert_eq!(CorsPolicy::parse(Some("*")), CorsPolicy::Any);
+        assert_eq!(CorsPolicy::parse(Some("  *  ")), CorsPolicy::Any);
+    }
+
+    #[test]
+    fn cors_single_origin_is_allowlist() {
+        assert_eq!(
+            CorsPolicy::parse(Some("https://example.com")),
+            CorsPolicy::Allowlist(vec!["https://example.com".into()]),
+        );
+    }
+
+    #[test]
+    fn cors_csv_origins_are_trimmed() {
+        assert_eq!(
+            CorsPolicy::parse(Some("https://a.com, https://b.com ,https://c.com")),
+            CorsPolicy::Allowlist(vec![
+                "https://a.com".into(),
+                "https://b.com".into(),
+                "https://c.com".into(),
+            ]),
+        );
+    }
+
+    #[test]
+    fn cors_empty_csv_entries_are_dropped() {
+        assert_eq!(
+            CorsPolicy::parse(Some("https://a.com,,https://b.com,")),
+            CorsPolicy::Allowlist(vec!["https://a.com".into(), "https://b.com".into()]),
+        );
+    }
+
+    #[test]
+    fn cors_wildcard_inside_csv_is_treated_as_origin() {
+        // An exact-match allowlist of literal "*" is nonsense as a real origin
+        // but the parser keeps it; only a bare "*" (after trim) means "Any".
+        assert_eq!(
+            CorsPolicy::parse(Some("*,https://a.com")),
+            CorsPolicy::Allowlist(vec!["*".into(), "https://a.com".into()]),
+        );
     }
 }
