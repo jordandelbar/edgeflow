@@ -36,12 +36,20 @@ impl<'a> TargetClient<'a> {
         resp.json().await.context("failed to parse schema response")
     }
 
-    /// `POST /infer` - sends raw bytes and returns the response bytes.
-    pub async fn infer(&self, body: Vec<u8>) -> Result<Vec<u8>> {
+    /// `POST /infer` with a caller-chosen Content-Type. The playground
+    /// proxy passes the original Content-Type through so a JSON-object
+    /// request (Named mode) or an image upload (`image/jpeg`) reaches the
+    /// pod with the right header instead of being lied about as
+    /// `application/octet-stream`.
+    pub async fn infer_with_content_type(
+        &self,
+        body: Vec<u8>,
+        content_type: &str,
+    ) -> Result<Vec<u8>> {
         let resp = self
             .http
             .post(format!("{}/infer", self.address))
-            .header("content-type", "application/octet-stream")
+            .header("content-type", content_type)
             .body(body)
             .send()
             .await

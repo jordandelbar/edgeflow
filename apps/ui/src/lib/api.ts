@@ -39,6 +39,19 @@ async function v1post<T>(path: string, body: unknown): Promise<T> {
   return res.json();
 }
 
+/** POST a raw body (string / Blob / ArrayBuffer / Uint8Array) with a
+ * caller-chosen Content-Type. Used by the playground proxy where the body
+ * shape varies per input mode (float bytes, named JSON, image bytes). */
+async function v1postRaw<T>(path: string, body: BodyInit, contentType: string): Promise<T> {
+  const res = await fetch(`${V1}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': contentType },
+    body,
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
 async function v1patch<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`${V1}${path}`, {
     method: 'PATCH',
@@ -253,6 +266,42 @@ export type TargetStats = {
   cpu_ratio:    number | null;
 };
 
+/** A single named-input field as written to schema.json by the SDK when a
+ * `ColumnTransformer` is attached. `encoding`'s `type` tag is opaque to the
+ * UI - we duck-type on the payload shape (`categories` / `map`) so any
+ * encoder that exposes a finite set of valid values gets the right widget
+ * with no UI changes. */
+export type SchemaField = {
+  name: string;
+  type: string;
+  encoding?: {
+    type: string;
+    map?: Record<string, number>;
+    categories?: string[];
+    [k: string]: unknown;
+  };
+};
+
+/** Subset of `schema.json` the playground UI consumes. The SDK writes one
+ * of: `{format: "float_bytes", n_features}` (raw float bytes per request),
+ * `{format: "json", fields}` (named JSON object, optional encodings),
+ * `{format: "image", width, height, mime?}` (raw image bytes). Missing
+ * `input` means no preprocess - playground falls back to MLflow run params. */
+export type Schema = {
+  input?: {
+    format: 'float_bytes' | 'json' | 'image' | string;
+    n_features?: number;
+    fields?: SchemaField[];
+    width?: number;
+    height?: number;
+    mime?: string;
+  };
+  output?: {
+    format: string;
+    labels?: string[];
+  };
+};
+
 export const targets = {
   list:    () => v1get<{ targets: Target[] }>('/targets'),
   get:     (target: string) => v1get<{ target: Target }>(`/targets/${target}`),
@@ -271,8 +320,14 @@ export const targets = {
     v1get<TargetStats>(`/targets/${target}/stats`),
   health:  (target: string) =>
     v1get<{ status: string }>(`/targets/${target}/health`),
-  playground: (target: string, data: number[]) =>
-    v1post<{ shape: number[]; data: number[] }>(`/targets/${target}/infer/playground`, { data }),
+  schema:  (target: string) =>
+    v1get<Schema>(`/targets/${target}/schema`),
+  /** Forwards a raw body to the pod's `/infer` via the server playground
+   * proxy. The Content-Type tells the pod how to interpret the body
+   * (`application/octet-stream` for float bytes, `application/json` for
+   * named or array JSON, `image/jpeg`/`image/png` for image inputs). */
+  playground: (target: string, body: BodyInit, contentType: string) =>
+    v1postRaw<unknown>(`/targets/${target}/infer/playground`, body, contentType),
   teardown: async (target: string): Promise<void> => {
     const res = await fetch(`${V1}/targets/${target}`, { method: 'DELETE' });
     if (!res.ok) throw new Error(await res.text());
