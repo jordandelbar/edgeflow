@@ -1,18 +1,24 @@
 //! Production orchestrator: thin wrapper over `edgeflow-k8s`.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use edgeflow_core::{InfraSettings, ResourceSettings, TargetPod};
+use edgeflow_k8s::PodCache;
 
 use crate::Orchestrator;
 
 #[derive(Default)]
-pub struct K8sOrchestrator;
+pub struct K8sOrchestrator {
+    pod_cache: Option<Arc<PodCache>>,
+}
 
 impl K8sOrchestrator {
-    pub fn new() -> Self {
-        Self
+    pub async fn new() -> Self {
+        Self {
+            pod_cache: PodCache::start().await,
+        }
     }
 }
 
@@ -47,11 +53,11 @@ impl Orchestrator for K8sOrchestrator {
     }
 
     async fn list_running_pods(&self, target: &str) -> Option<Vec<TargetPod>> {
-        edgeflow_k8s::list_running_pods(target).await
+        self.pod_cache.as_ref()?.for_target(target)
     }
 
     async fn list_all_running_pods(&self) -> Option<HashMap<String, Vec<TargetPod>>> {
-        edgeflow_k8s::list_all_running_pods().await
+        self.pod_cache.as_ref()?.all_grouped()
     }
 
     async fn list_nodes(&self) -> Vec<String> {

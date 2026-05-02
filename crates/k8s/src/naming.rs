@@ -6,6 +6,10 @@ use k8s_openapi::api::core::v1::{
 };
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::LabelSelector;
 
+/// Label key set on every inference Deployment / Pod, valued with the target name.
+/// Used by the pod cache watcher and by deployment selectors.
+pub(crate) const TARGET_LABEL: &str = "edgeflow-target";
+
 /// Sanitize a target name into a valid k8s resource name.
 /// k8s names: lowercase alphanumeric + `-`, max 63 chars.
 pub(crate) fn k8s_name(target: &str) -> String {
@@ -22,7 +26,7 @@ pub(crate) fn k8s_name(target: &str) -> String {
 
 pub(crate) fn label_selector(target: &str) -> LabelSelector {
     LabelSelector {
-        match_labels: Some([("edgeflow-target".to_string(), target.to_string())].into()),
+        match_labels: Some([(TARGET_LABEL.to_string(), target.to_string())].into()),
         ..Default::default()
     }
 }

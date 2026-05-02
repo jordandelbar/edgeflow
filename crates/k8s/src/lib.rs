@@ -5,7 +5,7 @@
 //! `k8s_openapi`. Everything is grouped by domain:
 //!
 //! - [`deployments`] - create / read / update / delete inference Deployments
-//! - [`pods`] - list inference pods with k8s-derived health
+//! - [`pods`] - cached pod listing via a `kube::runtime::reflector` watcher
 //! - [`nodes`] - list cluster nodes
 //! - [`settings`] - apply env-var overrides + defaults to user-supplied settings
 //!
@@ -24,5 +24,5 @@ pub use deployments::{
     patch_inference_pod_resources,
 };
 pub use nodes::list_nodes;
-pub use pods::{list_all_running_pods, list_running_pods};
+pub use pods::PodCache;
 pub use settings::{resolve_infra, resolve_resources};

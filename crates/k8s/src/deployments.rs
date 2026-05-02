@@ -14,7 +14,7 @@ use k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
 use kube::api::{Api, DeleteParams, PostParams};
 
 use crate::client::{client, namespace};
-use crate::naming::{k8s_name, placement_affinity};
+use crate::naming::{k8s_name, placement_affinity, TARGET_LABEL};
 use crate::settings::{resolve_infra, resolve_resources};
 
 /// Read infrastructure settings for `target` from the k8s Deployment spec.
@@ -147,7 +147,7 @@ pub async fn create_inference_pod(
     let name = k8s_name(target);
     let mut labels = BTreeMap::new();
     labels.insert("app".to_string(), name.clone());
-    labels.insert("edgeflow-target".to_string(), target.to_string());
+    labels.insert(TARGET_LABEL.to_string(), target.to_string());
 
     let deployment = Deployment {
         metadata: ObjectMeta {

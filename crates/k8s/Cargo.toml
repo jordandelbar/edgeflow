@@ -7,8 +7,10 @@ publish = false
 
 [dependencies]
 edgeflow-core = { path = "../core" }
-kube = { version = "0.97", default-features = false, features = ["client", "rustls-tls"] }
+kube = { version = "0.97", default-features = false, features = ["client", "rustls-tls", "runtime"] }
 k8s-openapi = { version = "0.23", features = ["v1_31"] }
 anyhow = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt", "sync"] }
+futures = "0.3"
 tracing = { workspace = true }
 serde_json = { workspace = true }

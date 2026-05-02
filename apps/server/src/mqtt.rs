@@ -5,8 +5,6 @@ use anyhow::{Context, Result};
 use edgeflow_common::parse_broker_addr;
 use rumqttc::{AsyncClient, MqttOptions, QoS};
 
-// ── Publisher ─────────────────────────────────────────────────────────────────
-
 /// Shared MQTT client for publishing commands from the server to inference pods.
 pub struct MqttPublisher {
     client: AsyncClient,
