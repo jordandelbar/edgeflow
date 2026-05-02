@@ -1,4 +1,4 @@
-name: k3d E2E
+name: E2E k3d
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
   pull_request:
 
 concurrency:
-  group: k3d-e2e-${{ github.ref }}
+  group: e2e-k3d-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -35,7 +35,7 @@ jobs:
               - 'deploy/inference.Dockerfile'
               - 'scripts/dev/**'
               - 'tests/e2e/**'
-              - '.github/workflows/k3d-e2e.yml'
+              - '.github/workflows/e2e-k3d.yml'
               - '.github/actions/build-wasm-transform/**'
 
   smoke:
