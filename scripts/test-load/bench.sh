@@ -42,6 +42,7 @@ case "$TARGET" in
   *yolo*|*image*)
     LOCUSTFILE="locustfile.py"
     PAYLOAD_FILE="payloads/sample.jpg"
+    INFER_HOST="http://127.0.0.1:8082"
     CONTENT_TYPE="image/jpeg"
     DEPLOY_SCRIPT="$REPO_ROOT/examples/05-k3d-yolo/deploy.py"
     ;;
