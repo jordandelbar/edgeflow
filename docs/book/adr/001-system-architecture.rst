@@ -80,7 +80,6 @@ Responsible for model execution and, in managed mode, for its own lifecycle coor
 In **managed mode** (when ``[server]`` is configured):
 
 - Register with ``edgeflow-server`` on startup
-- Send periodic heartbeats
 - Listen for deployment instructions (MQTT subscription or HTTP poll fallback)
 - Download model artifacts from the registry
 - Hot-swap the loaded model without downtime
@@ -138,7 +137,6 @@ MQTT Topic Structure
     edgeflow/targets/{target_id}/deploy          ← server → inference (deployment instruction)
     edgeflow/targets/{target_id}/deploy/ack      ← inference → server (accepted, loading)
     edgeflow/targets/{target_id}/deploy/status   ← inference → server (deployed / failed)
-    edgeflow/targets/{target_id}/heartbeat       ← inference → server
     edgeflow/targets/{target_id}/telemetry       ← inference → server
 
 --------
@@ -151,7 +149,7 @@ Native API (product identity)
 
 .. code-block:: text
 
-    /api/v1/targets/**       ← target registration, heartbeat, pending deployments
+    /api/v1/targets/**       ← target registration, pending deployments
     /api/v1/deployments/**
     /api/v1/models/**
     /api/v1/experiments/**
@@ -246,8 +244,8 @@ Alternatives Considered
 **Separate ``edgeflow-device`` binary (device manager)**
 
 Rejected. The responsibilities originally assigned to a separate device manager -
-registration, heartbeats, artifact download, hot-swap, deployment confirmation -
-are already implemented in ``edgeflow-inference``.
+registration, artifact download, hot-swap, deployment confirmation -
+are already implemented in ``edgeflow-inference`` (pod health is observed via the k8s API instead).
 The only remaining concern (process restart on crash) is better handled by systemd or Docker restart policies
 than by a custom-written process supervisor.
 A third binary adds operational surface (a third systemd unit, a third thing to monitor and update)
