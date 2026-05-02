@@ -82,9 +82,10 @@ jobs:
           scripts/dev/apply-inference.sh
 
       - name: run iris smoke
+        working-directory: tests/e2e
         env:
           EDGEFLOW_E2E_SKIP_STACK: "1"
-        run: uv run pytest tests/e2e/test_01_quickstart_iris.py -v
+        run: uv run pytest test_01_quickstart_iris.py -v
 
       - name: dump cluster state on failure
         if: failure()
