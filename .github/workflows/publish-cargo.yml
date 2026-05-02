@@ -2,7 +2,7 @@ name: publish-cargo
 
 on:
   push:
-    tags: ['v*']
+    tags: ["v*"]
   workflow_dispatch:
 
 permissions:
@@ -10,13 +10,17 @@ permissions:
 
 jobs:
   publish:
-    name: cargo publish edgeflow-cli
+    name: cargo publish
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: cargo publish
+      - name: cargo publish edgeflow-client
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish -p edgeflow-client
+      - name: cargo publish edgeflow-cli
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: cargo publish -p edgeflow-cli
