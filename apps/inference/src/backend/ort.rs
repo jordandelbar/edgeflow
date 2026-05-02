@@ -3,6 +3,7 @@ use ort::session::Session;
 use ort::value::TensorRef;
 
 use super::InferenceBackend;
+use edgeflow_common::tensor;
 
 pub struct OrtBackend {
     session: Option<Session>,
@@ -30,7 +31,7 @@ impl InferenceBackend for OrtBackend {
         Ok(())
     }
 
-    fn infer(&mut self, shape: &[usize], data: &[f32]) -> Result<(Vec<usize>, Vec<f32>)> {
+    fn infer(&mut self, shape: &[usize], data: &[f32], out: &mut Vec<u8>) -> Result<()> {
         let session = self.session.as_mut().context("model not loaded")?;
 
         let ort_shape: Vec<i64> = shape.iter().map(|&d| d as i64).collect();
@@ -47,8 +48,7 @@ impl InferenceBackend for OrtBackend {
             .context("failed to extract f32 output from ORT")?;
 
         let out_shape_usize: Vec<usize> = out_shape.iter().map(|&d| d as usize).collect();
-        let out_data_owned: Vec<f32> = out_data.to_vec();
-
-        Ok((out_shape_usize, out_data_owned))
+        tensor::encode_into(&out_shape_usize, out_data, out);
+        Ok(())
     }
 }

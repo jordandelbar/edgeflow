@@ -16,9 +16,10 @@ pub trait InferenceBackend: Send + Sync {
 
     /// Run inference on a single f32 tensor.
     ///
-    /// Receives the input as `(shape, flat f32 data)` and returns the output
-    /// in the same form.
-    fn infer(&mut self, shape: &[usize], data: &[f32]) -> Result<(Vec<usize>, Vec<f32>)>;
+    /// Input is `(shape, flat f32 data)`. Output is written into `out` as
+    /// wire-format bytes (see `edgeflow_common::tensor::encode_into`). The
+    /// caller owns `out` and reuses it across requests for allocator pooling.
+    fn infer(&mut self, shape: &[usize], data: &[f32], out: &mut Vec<u8>) -> Result<()>;
 }
 
 /// Construct the configured backend at runtime.

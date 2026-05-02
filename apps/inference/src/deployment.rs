@@ -1,6 +1,6 @@
 use std::sync::{Arc, Condvar, Mutex, RwLock};
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 
 use edgeflow_inference::pipeline::Pipeline;
 
@@ -99,8 +99,24 @@ pub fn load_and_swap(
             Ok((model, pre_wasm, pre_cfg, post_wasm, post_cfg, schema))
         })
         .and_then(|(model, pre_wasm, pre_cfg, post_wasm, post_cfg, schema)| {
-            let pre = pre_wasm.as_deref().map(|w| (w, pre_cfg.as_deref()));
-            let post = post_wasm.as_deref().map(|w| (w, post_cfg.as_deref()));
+            let pre = match (pre_wasm.as_deref(), pre_cfg.as_deref()) {
+                (Some(w), Some(c)) => Some((w, c)),
+                (Some(_), None) => {
+                    return Err(anyhow!(
+                        "preprocess.wasm present but preprocess.json missing"
+                    ))
+                }
+                (None, _) => None,
+            };
+            let post = match (post_wasm.as_deref(), post_cfg.as_deref()) {
+                (Some(w), Some(c)) => Some((w, c)),
+                (Some(_), None) => {
+                    return Err(anyhow!(
+                        "postprocess.wasm present but postprocess.json missing"
+                    ))
+                }
+                (None, _) => None,
+            };
 
             tracing::info!(sessions, "building session pool");
             let mut pipelines = Vec::with_capacity(sessions);

@@ -18,7 +18,8 @@ fn load_model() -> Vec<u8> {
 fn tensor_encode_decode_roundtrip() {
     let shape = [1usize, 4];
     let data = [5.1f32, 3.5, 1.4, 0.2];
-    let encoded = tensor::encode(&shape, &data);
+    let mut encoded = Vec::new();
+    tensor::encode_into(&shape, &data, &mut encoded);
     let (s, d) = tensor::decode(&encoded).unwrap();
     assert_eq!(s, shape);
     for (a, b) in d.iter().zip(&data) {
@@ -41,7 +42,8 @@ fn tensor_decode_rejects_unknown_dtype() {
 #[test]
 fn tensor_encode_header_layout() {
     // Verify the exact wire layout: ndim(1) | dtype(1) | pad(2) | shape dims(4 each) | data
-    let encoded = tensor::encode(&[2usize, 3], &[0f32; 6]);
+    let mut encoded = Vec::new();
+    tensor::encode_into(&[2usize, 3], &[0f32; 6], &mut encoded);
     assert_eq!(encoded[0], 2); // ndim
     assert_eq!(encoded[1], 1); // dtype = f32
     assert_eq!(encoded[2], 0); // padding
@@ -213,7 +215,10 @@ fn backend_loads_and_infers() {
     let model = load_model();
     let mut b = backend::build_backend();
     b.load(&model).unwrap();
-    let (out_shape, out_data) = b.infer(&[1, 4], &[5.1f32, 3.5, 1.4, 0.2]).unwrap();
+    let mut buf = Vec::new();
+    b.infer(&[1, 4], &[5.1f32, 3.5, 1.4, 0.2], &mut buf)
+        .unwrap();
+    let (out_shape, out_data) = tensor::decode(&buf).unwrap();
     assert_eq!(out_shape, vec![1, 3], "expected [1, 3] output shape");
     assert_eq!(out_data.len(), 3);
 }
@@ -223,7 +228,10 @@ fn backend_output_sums_to_one() {
     let model = load_model();
     let mut b = backend::build_backend();
     b.load(&model).unwrap();
-    let (_, out) = b.infer(&[1, 4], &[5.1f32, 3.5, 1.4, 0.2]).unwrap();
+    let mut buf = Vec::new();
+    b.infer(&[1, 4], &[5.1f32, 3.5, 1.4, 0.2], &mut buf)
+        .unwrap();
+    let (_, out) = tensor::decode(&buf).unwrap();
     let sum: f32 = out.iter().sum();
     assert!(
         (sum - 1.0).abs() < 1e-5,
@@ -236,7 +244,8 @@ fn pipeline_single_mode_end_to_end() {
     let model = load_model();
     let mut p =
         pipeline::Pipeline::new(backend::build_backend(), &model, None, None, None).unwrap();
-    let input = tensor::encode(&[1, 4], &[5.1f32, 3.5, 1.4, 0.2]);
+    let mut input = Vec::new();
+    tensor::encode_into(&[1, 4], &[5.1f32, 3.5, 1.4, 0.2], &mut input);
     let output = p.infer(&input).unwrap();
     let (shape, data) = tensor::decode(&output).unwrap();
     assert_eq!(shape, vec![1, 3]);
@@ -251,7 +260,8 @@ fn pipeline_rejects_wrong_input_size() {
     let mut p =
         pipeline::Pipeline::new(backend::build_backend(), &model, None, None, None).unwrap();
     // Send only 2 features instead of 4 - shape mismatch should error
-    let input = tensor::encode(&[1, 2], &[5.1f32, 3.5]);
+    let mut input = Vec::new();
+    tensor::encode_into(&[1, 2], &[5.1f32, 3.5], &mut input);
     assert!(p.infer(&input).is_err());
 }
 
@@ -291,7 +301,7 @@ fn pipeline_json_array_runs_preprocess_after_decoder() {
     let mut p = pipeline::Pipeline::new(
         backend::build_backend(),
         &model,
-        Some((&wasm, Some(pre_config.as_slice()))),
+        Some((&wasm, pre_config.as_slice())),
         None,
         None,
     )
@@ -331,7 +341,7 @@ fn pipeline_json_array_skips_format_adapter() {
     let mut p = pipeline::Pipeline::new(
         backend::build_backend(),
         &model,
-        Some((&wasm, Some(pre_config.as_slice()))),
+        Some((&wasm, pre_config.as_slice())),
         None,
         None,
     )

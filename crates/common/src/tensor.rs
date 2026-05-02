@@ -9,17 +9,18 @@
 /// dtype codes: 1 = f32
 pub const DTYPE_F32: u8 = 1;
 
-pub fn encode(shape: &[usize], data: &[f32]) -> Vec<u8> {
-    let mut buf = Vec::with_capacity(4 + shape.len() * 4 + data.len() * 4);
+/// Encode into an existing buffer, reusing capacity. Clears `buf` first.
+pub fn encode_into(shape: &[usize], data: &[f32], buf: &mut Vec<u8>) {
+    buf.clear();
+    buf.reserve(4 + shape.len() * 4 + data.len() * 4);
     buf.push(shape.len() as u8);
     buf.push(DTYPE_F32);
-    buf.push(0u8); // padding
-    buf.push(0u8); // padding
+    buf.push(0u8);
+    buf.push(0u8);
     for &dim in shape {
         buf.extend_from_slice(&(dim as u32).to_le_bytes());
     }
     buf.extend_from_slice(bytemuck::cast_slice(data));
-    buf
 }
 
 pub fn decode(bytes: &[u8]) -> anyhow::Result<(Vec<usize>, &[f32])> {

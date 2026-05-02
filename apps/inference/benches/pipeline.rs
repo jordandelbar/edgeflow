@@ -33,14 +33,19 @@ fn bench_tensor(c: &mut Criterion) {
     for &n in TENSOR_SIZES {
         let data: Vec<f32> = (0..n).map(|i| i as f32 * 0.001).collect();
         let shape = [1usize, n];
-        let encoded = tensor::encode(&shape, &data);
+        let mut encoded = Vec::new();
+        tensor::encode_into(&shape, &data, &mut encoded);
 
         g.throughput(Throughput::Bytes((n * 4) as u64));
 
+        // Mirrors production: encode_into against a hoisted, reused buffer.
         g.bench_with_input(
-            BenchmarkId::new("encode", n),
+            BenchmarkId::new("encode_into", n),
             &(shape, &data),
-            |b, (shape, data)| b.iter(|| tensor::encode(black_box(shape), black_box(data))),
+            |b, (shape, data)| {
+                let mut buf = Vec::new();
+                b.iter(|| tensor::encode_into(black_box(shape), black_box(data), &mut buf))
+            },
         );
         g.bench_with_input(BenchmarkId::new("decode", n), &encoded, |b, encoded| {
             b.iter(|| tensor::decode(black_box(encoded)).unwrap())
@@ -62,8 +67,12 @@ fn bench_backend(c: &mut Criterion) {
         b.load(&model).expect("failed to load iris model");
         let shape = [1usize, 4];
         let data = vec![5.1f32, 3.5, 1.4, 0.2];
+        let mut out = Vec::new();
         g.bench_function("infer_small", |bench| {
-            bench.iter(|| b.infer(black_box(&shape), black_box(&data)).unwrap())
+            bench.iter(|| {
+                b.infer(black_box(&shape), black_box(&data), &mut out)
+                    .unwrap()
+            })
         });
     }
 
@@ -74,8 +83,12 @@ fn bench_backend(c: &mut Criterion) {
         b.load(&model).expect("failed to load large model");
         let shape = [1usize, 4096];
         let data: Vec<f32> = (0..4096).map(|i| i as f32 * 0.001).collect();
+        let mut out = Vec::new();
         g.bench_function("infer_large", |bench| {
-            bench.iter(|| b.infer(black_box(&shape), black_box(&data)).unwrap())
+            bench.iter(|| {
+                b.infer(black_box(&shape), black_box(&data), &mut out)
+                    .unwrap()
+            })
         });
     }
 
@@ -92,7 +105,8 @@ fn bench_pipeline(c: &mut Criterion) {
         let model = load_model("iris.onnx");
         let mut p = pipeline::Pipeline::new(backend::build_backend(), &model, None, None, None)
             .expect("failed to build pipeline (iris)");
-        let input = tensor::encode(&[1, 4], &[5.1f32, 3.5, 1.4, 0.2]);
+        let mut input = Vec::new();
+        tensor::encode_into(&[1, 4], &[5.1f32, 3.5, 1.4, 0.2], &mut input);
         g.bench_function("infer_small", |b| {
             b.iter(|| p.infer(black_box(&input)).unwrap())
         });
@@ -104,7 +118,8 @@ fn bench_pipeline(c: &mut Criterion) {
         let mut p = pipeline::Pipeline::new(backend::build_backend(), &model, None, None, None)
             .expect("failed to build pipeline (large)");
         let data: Vec<f32> = (0..4096).map(|i| i as f32 * 0.001).collect();
-        let input = tensor::encode(&[1, 4096], &data);
+        let mut input = Vec::new();
+        tensor::encode_into(&[1, 4096], &data, &mut input);
         g.bench_function("infer_large", |b| {
             b.iter(|| p.infer(black_box(&input)).unwrap())
         });

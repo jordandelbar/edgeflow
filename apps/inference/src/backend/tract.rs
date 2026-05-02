@@ -4,6 +4,7 @@ use tract_onnx::tract_hir::infer::Factoid;
 use tract_onnx::tract_hir::internal::DimLike;
 
 use super::InferenceBackend;
+use edgeflow_common::tensor;
 
 type TractModel = SimplePlan<TypedFact, Box<dyn TypedOp>, Graph<TypedFact, Box<dyn TypedOp>>>;
 
@@ -56,7 +57,7 @@ impl InferenceBackend for TractBackend {
         Ok(())
     }
 
-    fn infer(&mut self, shape: &[usize], data: &[f32]) -> Result<(Vec<usize>, Vec<f32>)> {
+    fn infer(&mut self, shape: &[usize], data: &[f32], out: &mut Vec<u8>) -> Result<()> {
         let model = self.model.as_ref().context("model not loaded")?;
 
         let input = tract_ndarray::Array::from_shape_vec(shape, data.to_vec())
@@ -68,13 +69,13 @@ impl InferenceBackend for TractBackend {
             .run(tvec!(input_tensor.into()))
             .context("tract inference failed")?;
 
-        let out = outputs[0]
+        let view = outputs[0]
             .to_array_view::<f32>()
             .context("failed to extract f32 output from tract")?;
 
-        let out_shape = out.shape().to_vec();
-        let out_data = out.iter().copied().collect();
-
-        Ok((out_shape, out_data))
+        let out_shape = view.shape().to_vec();
+        let slice = view.as_slice().context("tract output is non-contiguous")?;
+        tensor::encode_into(&out_shape, slice, out);
+        Ok(())
     }
 }
