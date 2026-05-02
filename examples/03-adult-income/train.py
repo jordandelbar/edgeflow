@@ -1,11 +1,14 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-#   "edgeflow[xgboost]",
-#   "mlflow",
-#   "scikit-learn",
-#   "xgboost",
-#   "pandas",
+#   "edgeflow[xgboost,lightgbm]",
+#   "mlflow>=3.11.1,<4",
+#   "numpy>=2.4.4,<3",
+#   "pandas>=2.3.3,<3",
+#   "scikit-learn>=1.8.0,<2",
+#   "xgboost>=3.2.0,<4",
+#   "lightgbm>=4.6.0,<5",
+#   "catboost>=1.2.10,<2",
 # ]
 # ///
 # Tutorial: https://github.com/jordandelbar/edgeflow/blob/main/docs/book/tutorials/03-adult-income.rst

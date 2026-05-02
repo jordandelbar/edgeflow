@@ -90,10 +90,11 @@ bytes into a single deployment artifact. The inference pod loaded
 that artifact, spun up a ``wasmtime`` runtime for the pre-transform,
 and now runs it on every request before the model sees a tensor.
 
-The boundary cost is roughly two ``memcpy`` operations per call. For
-a 4-feature input that's effectively free; heavier pre-transforms
-like image decoding pay more, but the pod-to-WASM trip stays in the
-same order of magnitude as a local function call.
+The pod-to-WASM trip is structurally cheap: roughly two ``memcpy``
+operations per call to move the input in and the output back out.
+The cost of the transform itself dominates - trivial for a 4-feature
+``Normalize``, more significant for image decoding (see
+:doc:`05-k3d-yolo`).
 
 Try this
 --------
