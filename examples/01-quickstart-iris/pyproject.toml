@@ -1,14 +1,15 @@
+# [docs:start:deps]
 [project]
-name = "edgeflow-example-quickstart-iris"
+name = "iris-tutorial"
 version = "0.0.0"
-description = "Edgeflow tutorial 01: train and deploy a LogisticRegression on iris."
 requires-python = ">=3.12"
 dependencies = [
     "edgeflow",
-    "mlflow",
-    "numpy",
-    "scikit-learn",
+    "mlflow>=3.11.1,<4",
+    "numpy>=2.4.4,<3",
+    "scikit-learn>=1.8.0,<2",
 ]
+# [docs:end:deps]
 
 [tool.uv]
 package = false

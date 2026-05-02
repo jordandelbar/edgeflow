@@ -2,8 +2,9 @@
 # requires-python = ">=3.12"
 # dependencies = [
 #   "edgeflow",
-#   "mlflow",
-#   "scikit-learn",
+#   "mlflow>=3.11.1,<4",
+#   "numpy>=2.4.4,<3",
+#   "scikit-learn>=1.8.0,<2",
 # ]
 # ///
 # Tutorial: https://github.com/jordandelbar/edgeflow/blob/main/docs/book/tutorials/02-iris-with-preprocessing.rst

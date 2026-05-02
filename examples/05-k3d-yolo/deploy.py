@@ -2,8 +2,8 @@
 # requires-python = ">=3.12"
 # dependencies = [
 #   "edgeflow",
-#   "mlflow",
-#   "ultralytics",
+#   "mlflow>=3.11.1,<4",
+#   "ultralytics>=8.4.46,<9",
 # ]
 # ///
 # Tutorial: https://github.com/jordandelbar/edgeflow/blob/main/docs/book/tutorials/05-k3d-yolo.rst
