@@ -1,14 +1,94 @@
-"""
-edgeflow model export helpers.
+"""edgeflow model utilities.
 
-clf_to_onnx          - unified export for sklearn, XGBoost, LightGBM, CatBoost
-                       classifiers; detects framework from class module
-sklearn_to_onnx      - LogisticRegression, hand-rolled standard ops graph
-                       (kept for reference; predates skl2onnx support)
-read_onnx_input_shape - read n_features from a float[N, k] ONNX input
+Two flavours of helpers live here:
+
+**Training-time exporters** (local, no server):
+    clf_to_onnx           - unified export for sklearn / XGBoost / LightGBM /
+                            CatBoost classifiers; detects framework
+    sklearn_to_onnx       - hand-rolled LogisticRegression export, kept for
+                            reference (predates skl2onnx support)
+    read_onnx_input_shape - read n_features from a float[N, k] ONNX input
+
+**Registry ops** (REST, mirror ``edgeflow models`` CLI subcommand):
+    list                  - list registered models
+    versions              - list versions of a registered model
+    register              - register a run as a model version
+    stage                 - transition a model version to a stage
+    delete                - delete a registered model
+    delete_version        - delete a specific model version
 """
 
 from __future__ import annotations
+
+from edgeflow._internal import client
+from edgeflow._types import RegisteredModel, registered_model_from_dict
+from edgeflow.deploy import ModelVersion, register
+
+
+# ── Registry ops (REST) ──────────────────────────────────────────────────────
+
+
+def list(*, server: str | None = None) -> list[RegisteredModel]:
+    """List all registered models. Mirrors ``edgeflow models list``."""
+    res = client(server).list_registered_models()
+    return [registered_model_from_dict(m) for m in res.get("registered_models", [])]
+
+
+def versions(name: str, *, server: str | None = None) -> list[ModelVersion]:
+    """List versions of a registered model. Mirrors ``edgeflow models versions``."""
+    res = client(server).list_model_versions(name)
+    return [
+        ModelVersion(
+            name=v["name"],
+            version=str(v["version"]),
+            run_id=v.get("run_id"),
+            current_stage=v.get("current_stage", "None"),
+        )
+        for v in res.get("model_versions", [])
+    ]
+
+
+def stage(
+    name: str, version: str, stage: str, *, server: str | None = None
+) -> ModelVersion:
+    """Transition a model version to a stage. Mirrors ``edgeflow models stage``."""
+    res = client(server).transition_stage(name, version, stage)
+    v = res.get("model_version", res)
+    return ModelVersion(
+        name=v["name"],
+        version=str(v["version"]),
+        run_id=v.get("run_id"),
+        current_stage=v.get("current_stage", "None"),
+    )
+
+
+def delete(name: str, *, server: str | None = None) -> None:
+    """Delete a registered model. Mirrors ``edgeflow models delete``."""
+    client(server).delete_registered_model(name)
+
+
+def delete_version(name: str, version: str, *, server: str | None = None) -> None:
+    """Delete a specific model version. Mirrors ``edgeflow models delete-version``."""
+    client(server).delete_model_version(name, version)
+
+
+# Re-export ``register`` (lives in deploy.py for historical reasons - it
+# was the first registry op to land). Both ``edgeflow.register`` and
+# ``edgeflow.models.register`` resolve to the same function.
+__all__ = [
+    "list",
+    "versions",
+    "register",
+    "stage",
+    "delete",
+    "delete_version",
+    "clf_to_onnx",
+    "sklearn_to_onnx",
+    "read_onnx_input_shape",
+]
+
+
+# ── Training-time exporters (local) ──────────────────────────────────────────
 
 
 def clf_to_onnx(clf, n_features: int | None = None) -> bytes:

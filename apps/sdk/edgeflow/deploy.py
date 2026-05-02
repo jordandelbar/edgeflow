@@ -4,21 +4,12 @@ Programmatic register/deploy API.
 
 from __future__ import annotations
 
-import os
 import time
 from dataclasses import dataclass
 
-from edgeflow import _lib
+from edgeflow._internal import client
 
 TERMINAL_STATES = {"deployed", "failed", "superseded"}
-_DEFAULT_SERVER = "http://localhost:5000"
-
-
-def _client(server: str | None) -> _lib.Client:
-    """
-    Resolve the server URL and construct a fresh Rust Client.
-    """
-    return _lib.Client(server or os.environ.get("EDGEFLOW_SERVER", _DEFAULT_SERVER))
 
 
 @dataclass
@@ -75,7 +66,7 @@ def register(
     Returns:
         A :class:`ModelVersion` with ``.name``, ``.version``, ``.run_id``.
     """
-    res = _client(server).register_model(run_id, name)
+    res = client(server).register_model(run_id, name)
     mv = res.get("model_version", res)
 
     print(f"📦 Registered {name} v{mv['version']}")
@@ -119,11 +110,11 @@ def deploy(
     Raises:
         RuntimeError: If the deployment fails or times out.
     """
-    client = _client(server)
+    api = client(server)
 
     print(f"🚀 Deploying {model_name} v{model_version} → target '{target}'")
 
-    res = client.create_deployment(
+    res = api.create_deployment(
         model_name, model_version, target, sessions, max_concurrent
     )
     dep = res["deployment"]
@@ -139,7 +130,7 @@ def deploy(
 
     while time.monotonic() < deadline:
         time.sleep(2)
-        res = client.get_deployment(deployment_id)
+        res = api.get_deployment(deployment_id)
         dep = res["deployment"]
         state = dep["state"]
         if state != last_state:
