@@ -18,6 +18,10 @@ use tower_http::trace::TraceLayer;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .ok();
+
     edgeflow_telemetry::init("edgeflow-server", "edgeflow_server=info,tower_http=warn")?;
 
     let cancel = shutdown_signal();
