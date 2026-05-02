@@ -50,8 +50,10 @@ pub struct Deployment {
 /// Edgeflow-owned inference settings, persisted in SQLite.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ResourceSettings {
-    /// Number of ORT sessions to keep in the pool (true parallelism).
-    /// Defaults to 1 on the inference pod if not set.
+    /// Pipeline pool size: each slot owns its own pre/post WASM contexts
+    /// (separate `wasmtime::Store` and reusable input/output buffers).
+    /// The underlying ORT session is shared across slots, so this knob
+    /// does NOT scale model weights in RAM. Defaults to 1 if not set.
     pub sessions: Option<i64>,
     /// Maximum in-flight requests before returning 429.
     /// Defaults to `sessions` on the inference pod if not set.

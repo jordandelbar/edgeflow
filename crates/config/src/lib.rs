@@ -43,7 +43,9 @@ pub struct InferenceConfig {
     pub node_name: Option<Arc<str>>,
     /// Pod identity used for registration. Falls back to `target`.
     pub pod_id: Arc<str>,
-    /// Number of model sessions to keep warm. Default: `1`.
+    /// Pipeline pool size (pre/post WASM contexts per request slot). The
+    /// ORT session is shared across slots, so this does NOT scale model
+    /// weights. Default: `1`.
     pub sessions: usize,
     /// Max concurrent inference requests. Default: `sessions`.
     pub max_concurrent: usize,
