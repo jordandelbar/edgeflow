@@ -14,12 +14,19 @@
 /// Then:
 ///   cargo bench -p edgeflow-inference
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use edgeflow_inference::backend::InferenceBackend;
 use edgeflow_inference::{backend, pipeline, tensor};
 use std::hint::black_box;
 use std::sync::mpsc;
 use std::sync::Arc;
 use std::thread;
 use std::time::Instant;
+
+fn loaded_backend(model: &[u8]) -> Arc<dyn InferenceBackend> {
+    let mut b = backend::build_backend();
+    b.load(model).expect("failed to load model");
+    Arc::from(b)
+}
 
 fn load_model(name: &str) -> Vec<u8> {
     let path = format!("{}/tests/fixtures/{name}", env!("CARGO_MANIFEST_DIR"));
@@ -110,7 +117,7 @@ fn bench_pipeline(c: &mut Criterion) {
     // Small - iris model, [1, 4] → [1, 3]
     {
         let model = load_model("iris.onnx");
-        let mut p = pipeline::Pipeline::new(backend::build_backend(), &model, None, None, None)
+        let mut p = pipeline::Pipeline::new(loaded_backend(&model), None, None, None)
             .expect("failed to build pipeline (iris)");
         let mut input = Vec::new();
         tensor::encode_into(&[1, 4], &[5.1f32, 3.5, 1.4, 0.2], &mut input);
@@ -122,7 +129,7 @@ fn bench_pipeline(c: &mut Criterion) {
     // Large - large model, [1, 4096] → [1, 10]
     {
         let model = load_model("large.onnx");
-        let mut p = pipeline::Pipeline::new(backend::build_backend(), &model, None, None, None)
+        let mut p = pipeline::Pipeline::new(loaded_backend(&model), None, None, None)
             .expect("failed to build pipeline (large)");
         let data: Vec<f32> = (0..4096).map(|i| i as f32 * 0.001).collect();
         let mut input = Vec::new();
@@ -216,7 +223,7 @@ fn spawn_workers(
     let mut done_rxs = Vec::with_capacity(n);
     let mut handles = Vec::with_capacity(n);
     for _ in 0..n {
-        let mut p = pipeline::Pipeline::new(backend::build_backend(), model, None, None, None)
+        let mut p = pipeline::Pipeline::new(loaded_backend(model), None, None, None)
             .expect("failed to build pipeline");
         let (work_tx, work_rx) = mpsc::channel::<u64>();
         let (done_tx, done_rx) = mpsc::channel::<()>();

@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use serde_json::Value;
@@ -22,7 +23,7 @@ pub struct Pipeline {
     /// 1 when `pre` starts with a known format adapter (so JSON-array inputs
     /// can skip it via `transform-from`), 0 otherwise.
     pre_adapter_offset: u32,
-    backend: Box<dyn InferenceBackend>,
+    backend: Arc<dyn InferenceBackend>,
     post: Option<WasmTransform>,
     /// Determined from schema.json at load time.
     input_mode: InputMode,
@@ -52,7 +53,11 @@ fn detect_adapter_offset(config: &[u8]) -> Result<u32> {
 }
 
 impl Pipeline {
-    /// Build a pipeline from raw artifact bytes.
+    /// Build a pipeline from an already-loaded backend plus the WASM
+    /// pre/post artifact bytes.
+    ///
+    /// `backend` is shared across every pool slot via `Arc`; the caller
+    /// loads the ONNX model into it once before fanning out to N pipelines.
     ///
     /// `pre` and `post` are `(wasm_bytes, config_bytes)` pairs.
     ///
@@ -62,16 +67,11 @@ impl Pipeline {
     /// A single wasmtime Engine is shared between every WASM transform built
     /// here, so JIT resources (compiled code cache) are initialized once.
     pub fn new(
-        mut backend: Box<dyn InferenceBackend>,
-        model_bytes: &[u8],
+        backend: Arc<dyn InferenceBackend>,
         pre: Option<(&[u8], &[u8])>,
         post: Option<(&[u8], &[u8])>,
         schema: Option<&[u8]>,
     ) -> Result<Self> {
-        tracing::info!("loading inference backend...");
-        backend.load(model_bytes).context("failed to load model")?;
-        tracing::info!("inference backend ready");
-
         let (pre_transform, pre_adapter_offset, post) = if pre.is_some() || post.is_some() {
             let engine = WasmTransform::build_engine()?;
             let (pre_transform, pre_adapter_offset) = if let Some((wasm, cfg)) = pre {

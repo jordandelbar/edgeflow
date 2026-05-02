@@ -11,7 +11,6 @@ pub mod tract;
 /// categorical encoding for Named-mode models happen in the pipeline layer
 /// using the encoding tables stored in schema.json.
 pub trait InferenceBackend: Send + Sync {
-    /// Load a model from raw ONNX bytes.
     fn load(&mut self, model_bytes: &[u8]) -> Result<()>;
 
     /// Run inference on a single f32 tensor.
@@ -19,7 +18,7 @@ pub trait InferenceBackend: Send + Sync {
     /// Input is `(shape, flat f32 data)`. Output is written into `out` as
     /// wire-format bytes (see `edgeflow_common::tensor::encode_into`). The
     /// caller owns `out` and reuses it across requests for allocator pooling.
-    fn infer(&mut self, shape: &[usize], data: &[f32], out: &mut Vec<u8>) -> Result<()>;
+    fn infer(&self, shape: &[usize], data: &[f32], out: &mut Vec<u8>) -> Result<()>;
 }
 
 /// Construct the configured backend at runtime.
