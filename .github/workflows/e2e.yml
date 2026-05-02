@@ -10,8 +10,32 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.filter.outputs.e2e == 'true' || github.ref == 'refs/heads/main' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            e2e:
+              - 'crates/**'
+              - 'apps/server/**'
+              - 'apps/inference/**'
+              - 'apps/sdk/**'
+              - 'examples/**'
+              - 'deploy/**'
+              - 'tests/e2e/**'
+              - '.github/workflows/e2e.yml'
+              - '.github/actions/**'
+
   tutorials:
     name: tutorials
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
