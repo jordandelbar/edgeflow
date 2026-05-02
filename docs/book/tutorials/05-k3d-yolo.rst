@@ -100,18 +100,8 @@ What just happened?
 - ``DetectionOutput`` runs NMS (configurable IoU and confidence
   thresholds), maps class indices to COCO labels, and emits the JSON
   response.
-- End-to-end latency on CPU is around 60 ms per image (median).
-
-Performance numbers
--------------------
-
-For reference, end-to-end on a single ``inference`` pod, no
-batching, raw 1080p JPEG input:
-
-- Median latency: ~58 ms
-- WASM boundary cost: ~2x ``memcpy``
-- Memory at rest: under 100 MB
-- Memory under load: depends on concurrency, typically 150-250 MB
+- The whole hot path (decode, resize, ONNX inference, NMS) runs inside
+  the inference pod with no Python on the request path.
 
 Going to k3d
 ------------
