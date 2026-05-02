@@ -34,18 +34,15 @@ async fn main() -> anyhow::Result<()> {
     let orchestrator: Arc<dyn Orchestrator> = match cfg.orchestrator {
         OrchestratorKind::K8s => {
             tracing::info!("orchestrator: k8s");
-            Arc::new(K8sOrchestrator::new())
+            Arc::new(K8sOrchestrator::new().await)
         }
         OrchestratorKind::Compose => {
-            // from_env() guarantees this is Some when kind == Compose.
             let address = cfg.compose_inference_url.clone().unwrap();
             tracing::info!(address = %address, "orchestrator: compose");
             Arc::new(ComposeOrchestrator::new(address))
         }
     };
 
-    // AppState is built after MQTT setup so the publisher can be passed in.
-    // Declare state as mutable so we can attach the publisher below.
     let mut state = AppState {
         store: Arc::new(store),
         artifact_root,
@@ -55,7 +52,6 @@ async fn main() -> anyhow::Result<()> {
         orchestrator,
     };
 
-    // Background task: time out deployments stuck in deploying/upgrading.
     let timeout_state = state.clone();
     let timeout_cancel = cancel.clone();
     let timeout_ms = cfg.deployment_timeout_secs * 1000;
@@ -90,9 +86,6 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
-    // ── MQTT ─────────────────────────────────────────────────────────────────
-    // If EDGEFLOW_MQTT_URL is set, connect to that external broker.
-    // Otherwise, start the embedded rumqttd broker and connect to it.
     if cfg.mqtt_url.is_none() {
         mqtt::start_embedded_broker(cfg.mqtt_port)?;
         // Give the broker a moment to open its listener before we subscribe.
