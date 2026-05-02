@@ -72,6 +72,8 @@ jobs:
           components: clippy
           targets: wasm32-wasip2
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: rust-stable-workspace
       - name: main workspace
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: transforms workspace (wasm)
@@ -89,6 +91,8 @@ jobs:
         with:
           targets: wasm32-wasip2
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: rust-stable-workspace
       - uses: ./.github/actions/build-wasm-transform
       - run: cargo test --workspace --no-fail-fast
 

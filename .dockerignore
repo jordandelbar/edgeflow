@@ -21,5 +21,9 @@ apps/ui/.svelte-kit/
 docs/
 *.md
 
+# Tutorial scripts and e2e tests - not part of any Docker image
+examples/
+tests/
+
 # Deploy configs - Dockerfiles are passed via -f, not read from context
 deploy/

@@ -20,4 +20,6 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: rust-stable-workspace
       - run: cargo doc --workspace --no-deps
