@@ -67,7 +67,7 @@ fn pod_to_target_pod(pod: &Pod) -> Option<TargetPod> {
         .metadata
         .creation_timestamp
         .as_ref()
-        .map(|t| t.0.timestamp_millis())
+        .map(|t| t.0.as_millisecond())
         .unwrap_or(0);
     let health = health_from_pod(pod);
     Some(TargetPod {
