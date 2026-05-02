@@ -57,7 +57,7 @@ impl InferenceBackend for TractBackend {
         Ok(())
     }
 
-    fn infer(&mut self, shape: &[usize], data: &[f32], out: &mut Vec<u8>) -> Result<()> {
+    fn infer(&self, shape: &[usize], data: &[f32], out: &mut Vec<u8>) -> Result<()> {
         let model = self.model.as_ref().context("model not loaded")?;
 
         let input = tract_ndarray::Array::from_shape_vec(shape, data.to_vec())

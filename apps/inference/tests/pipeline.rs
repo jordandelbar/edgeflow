@@ -5,11 +5,20 @@
 ///   just gen-bench-model
 ///
 /// Model shape: f32 [N, 4] → f32 [N, 3]  (Gemm + Softmax, no WASM needed)
+use std::sync::Arc;
+
+use edgeflow_inference::backend::InferenceBackend;
 use edgeflow_inference::{backend, inputs, pipeline, tensor};
 
 fn load_model() -> Vec<u8> {
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/iris.onnx");
     std::fs::read(path).expect("model fixture missing - run `just gen-bench-model` first")
+}
+
+fn loaded_backend(model: &[u8]) -> Arc<dyn InferenceBackend> {
+    let mut b = backend::build_backend();
+    b.load(model).expect("failed to load model");
+    Arc::from(b)
 }
 
 // ── tensor wire format ───────────────────────────────────────────────────────
@@ -242,8 +251,7 @@ fn backend_output_sums_to_one() {
 #[test]
 fn pipeline_single_mode_end_to_end() {
     let model = load_model();
-    let mut p =
-        pipeline::Pipeline::new(backend::build_backend(), &model, None, None, None).unwrap();
+    let mut p = pipeline::Pipeline::new(loaded_backend(&model), None, None, None).unwrap();
     let mut input = Vec::new();
     tensor::encode_into(&[1, 4], &[5.1f32, 3.5, 1.4, 0.2], &mut input);
     let output = p.infer(&input).unwrap();
@@ -257,8 +265,7 @@ fn pipeline_single_mode_end_to_end() {
 #[test]
 fn pipeline_rejects_wrong_input_size() {
     let model = load_model();
-    let mut p =
-        pipeline::Pipeline::new(backend::build_backend(), &model, None, None, None).unwrap();
+    let mut p = pipeline::Pipeline::new(loaded_backend(&model), None, None, None).unwrap();
     // Send only 2 features instead of 4 - shape mismatch should error
     let mut input = Vec::new();
     tensor::encode_into(&[1, 2], &[5.1f32, 3.5], &mut input);
@@ -268,8 +275,7 @@ fn pipeline_rejects_wrong_input_size() {
 #[test]
 fn pipeline_single_mode_accepts_json_array() {
     let model = load_model();
-    let mut p =
-        pipeline::Pipeline::new(backend::build_backend(), &model, None, None, None).unwrap();
+    let mut p = pipeline::Pipeline::new(loaded_backend(&model), None, None, None).unwrap();
     let output = p.infer(b"[5.1, 3.5, 1.4, 0.2]").unwrap();
     let (shape, data) = tensor::decode(&output).unwrap();
     assert_eq!(shape, vec![1, 3]);
@@ -299,8 +305,7 @@ fn pipeline_json_array_runs_preprocess_after_decoder() {
     ]}"#;
 
     let mut p = pipeline::Pipeline::new(
-        backend::build_backend(),
-        &model,
+        loaded_backend(&model),
         Some((&wasm, pre_config.as_slice())),
         None,
         None,
@@ -339,8 +344,7 @@ fn pipeline_json_array_skips_format_adapter() {
     let pre_config = br#"{"steps":[{"type":"float_to_tensor","n_features":4}]}"#;
 
     let mut p = pipeline::Pipeline::new(
-        backend::build_backend(),
-        &model,
+        loaded_backend(&model),
         Some((&wasm, pre_config.as_slice())),
         None,
         None,

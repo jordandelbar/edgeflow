@@ -1,7 +1,8 @@
 use std::sync::{Arc, Condvar, Mutex, RwLock};
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 
+use edgeflow_inference::backend::InferenceBackend;
 use edgeflow_inference::pipeline::Pipeline;
 
 use crate::client::EdgeflowClient;
@@ -118,12 +119,17 @@ pub fn load_and_swap(
                 (None, _) => None,
             };
 
-            tracing::info!(sessions, "building session pool");
+            tracing::info!("loading inference backend (shared across pool)");
+            let mut backend = edgeflow_inference::backend::build_backend();
+            backend
+                .load(&model)
+                .context("failed to load model into shared backend")?;
+            let backend: Arc<dyn InferenceBackend> = Arc::from(backend);
+
+            tracing::info!(sessions, "building pipeline pool");
             let mut pipelines = Vec::with_capacity(sessions);
-            for i in 0..sessions {
-                tracing::info!(session = i + 1, sessions, "loading session");
-                let backend = edgeflow_inference::backend::build_backend();
-                let pipeline = Pipeline::new(backend, &model, pre, post, schema.as_deref())?;
+            for _ in 0..sessions {
+                let pipeline = Pipeline::new(Arc::clone(&backend), pre, post, schema.as_deref())?;
                 pipelines.push(pipeline);
             }
             Ok((pipelines, schema))

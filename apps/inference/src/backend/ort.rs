@@ -1,3 +1,5 @@
+use std::sync::Mutex;
+
 use anyhow::{Context, Result};
 use ort::session::Session;
 use ort::value::TensorRef;
@@ -6,7 +8,7 @@ use super::InferenceBackend;
 use edgeflow_common::tensor;
 
 pub struct OrtBackend {
-    session: Option<Session>,
+    session: Option<Mutex<Session>>,
 }
 
 impl OrtBackend {
@@ -27,12 +29,17 @@ impl InferenceBackend for OrtBackend {
             .context("failed to create ORT session builder")?
             .commit_from_memory(model_bytes)
             .context("failed to load ONNX model into ORT session")?;
-        self.session = Some(session);
+        self.session = Some(Mutex::new(session));
         Ok(())
     }
 
-    fn infer(&mut self, shape: &[usize], data: &[f32], out: &mut Vec<u8>) -> Result<()> {
-        let session = self.session.as_mut().context("model not loaded")?;
+    fn infer(&self, shape: &[usize], data: &[f32], out: &mut Vec<u8>) -> Result<()> {
+        let mut session = self
+            .session
+            .as_ref()
+            .context("model not loaded")?
+            .lock()
+            .map_err(|e| anyhow::anyhow!("ort session mutex poisoned: {e}"))?;
 
         let ort_shape: Vec<i64> = shape.iter().map(|&d| d as i64).collect();
         // TensorRef borrows `data` directly - no copy of the input floats.
