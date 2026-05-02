@@ -1,5 +1,0 @@
-[tool.uv.workspace]
-members = ["examples/*"]
-
-[tool.uv.sources]
-edgeflow = { path = "apps/sdk", editable = true }
