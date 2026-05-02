@@ -1346,6 +1346,15 @@ dependencies = [
  "chrono",
  "clap",
  "comfy-table",
+ "edgeflow-client",
+ "serde_json",
+]
+
+[[package]]
+name = "edgeflow-client"
+version = "0.3.0"
+dependencies = [
+ "anyhow",
  "reqwest 0.13.2",
  "serde",
  "serde_json",

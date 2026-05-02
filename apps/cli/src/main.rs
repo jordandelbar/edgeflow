@@ -1,9 +1,8 @@
-mod api;
 mod cmd;
 
 use anyhow::Result;
-use api::Api;
 use clap::{Parser, Subcommand};
+use edgeflow_client::Api;
 
 const DEFAULT_SERVER: &str = "http://localhost:5000";
 

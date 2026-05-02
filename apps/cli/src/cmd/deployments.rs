@@ -1,8 +1,8 @@
 use super::fmt_ts;
-use crate::api::Api;
 use anyhow::Result;
 use clap::Subcommand;
 use comfy_table::{presets::UTF8_BORDERS_ONLY, Table};
+use edgeflow_client::Api;
 
 #[derive(Subcommand)]
 pub enum Cmd {

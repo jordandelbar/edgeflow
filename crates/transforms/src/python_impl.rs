@@ -30,5 +30,6 @@ impl NativePipeline {
 #[pymodule]
 fn _lib(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<NativePipeline>()?;
+    m.add_class::<crate::python_client::Client>()?;
     Ok(())
 }

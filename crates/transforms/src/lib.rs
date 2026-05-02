@@ -4,6 +4,8 @@ mod layers;
 #[cfg(target_arch = "wasm32")]
 mod wasm_impl;
 
-// Native target: expose layers to Python via PyO3
+// Native target: expose layers + REST client to Python via PyO3
+#[cfg(feature = "python")]
+mod python_client;
 #[cfg(feature = "python")]
 mod python_impl;

@@ -1,5 +1,5 @@
 from edgeflow.artifacts import log_model
-from edgeflow.deploy import deploy, register, ModelVersion
+from edgeflow.deploy import deploy, register, Deployment, ModelVersion
 from edgeflow.layers import (
     ClassifierOutput,
     DetectionOutput,
@@ -14,6 +14,7 @@ __all__ = [
     "log_model",
     "register",
     "deploy",
+    "Deployment",
     "ModelVersion",
     "Pipeline",
     "FloatBytesToTensor",
