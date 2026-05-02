@@ -2,8 +2,9 @@ use super::ApiError;
 use crate::state::AppState;
 use crate::target_client::TargetClient;
 use axum::{
+    body::Bytes,
     extract::{Path, Query, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     routing::{get, post},
     Json, Router,
 };
@@ -115,29 +116,35 @@ async fn target_schema(
 }
 
 // ── POST /targets/:target/infer/playground ────────────────────────────────────
-
-#[derive(Deserialize)]
-struct PlaygroundRequest {
-    data: Vec<f32>,
-}
+//
+// Thin proxy: forwards the raw request body and Content-Type to the pod's
+// `/infer`. The pod already routes on body shape (binary-tensor header byte
+// vs `[` JSON-array vs `{` JSON-object) and on the WASM pre-transform's
+// format adapter (float_to_tensor, image_to_tensor). Letting the UI pick
+// the Content-Type lets one playground endpoint serve every input mode -
+// raw float bytes for iris, named JSON for adult-income, JPEG/PNG for YOLO.
 
 async fn infer_playground(
     State(state): State<AppState>,
     Path(target): Path<String>,
-    Json(req): Json<PlaygroundRequest>,
+    headers: HeaderMap,
+    body: Bytes,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_target(&state, &target).await?;
     let addr = first_pod_address(&state, &target).await?;
 
-    // Send raw packed floats - same format as the Python client (struct.pack('<Nf', ...)).
-    // The preprocess WASM (FloatBytesToTensor) expects this, not a tensor-encoded header.
-    let body: Vec<u8> = req.data.iter().flat_map(|&v| v.to_le_bytes()).collect();
+    let content_type = headers
+        .get(axum::http::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/octet-stream");
+
     let infer_result = TargetClient::new(&state.http_client, &addr)
-        .infer(body)
+        .infer_with_content_type(body.to_vec(), content_type)
         .await?;
 
     // The postprocess WASM can return anything. Try JSON first (ClassifierOutput,
-    // custom transforms), then fall back to tensor decode (no postprocess).
+    // DetectionOutput, custom transforms), then fall back to tensor decode (no
+    // postprocess).
     let result = if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&infer_result) {
         json
     } else if let Ok((shape, data)) = edgeflow_common::tensor::decode(&infer_result) {

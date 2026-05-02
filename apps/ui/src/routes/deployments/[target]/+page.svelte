@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { runs, targets, nodes, type Deployment, type ModelStatus, type TargetHealth, type Target, type TargetPod, type ResourceSettings, type InfraSettings } from '$lib/api';
+  import { runs, targets, nodes, type Deployment, type ModelStatus, type TargetHealth, type Target, type TargetPod, type ResourceSettings, type InfraSettings, type Schema, type SchemaField } from '$lib/api';
   import { liveData, refreshLiveData } from '$lib/stores';
   import { fmtDateTime } from '$lib/utils';
   import BreadcrumbNav from '$lib/components/BreadcrumbNav.svelte';
@@ -16,15 +16,53 @@
   let error   = $state('');
   let loading = $state(true);
 
-  type Playground = {
-    inputs: number[];
-    nFeatures: number | null;
+  // Playground state. The active `config` varies per input mode declared by
+  // the deployed model's `schema.json`. Mode is decided once in `openTest()`
+  // and is not expected to change for the lifetime of the panel.
+
+  type FloatBytesPg = {
+    mode: 'float_bytes';
+    nFeatures: number;
     featureNames: string[];
-    result: Record<string, unknown> | null;
+    inputs: number[];
+  };
+
+  type JsonField = {
+    name: string;
+    /** Non-null = categorical select; null = numeric input. Derived from
+     * the encoding payload structure (categories list / map keys), so it
+     * works for any encoder that follows the same shape - we do not
+     * dispatch on the encoder's `type` tag. */
+    options: string[] | null;
+    current: string;
+  };
+  type JsonPg = {
+    mode: 'json';
+    fields: JsonField[];
+  };
+
+  type ImagePg = {
+    mode: 'image';
+    width: number | null;
+    height: number | null;
+    mime: string;
+    file: File | null;
+  };
+
+  type FallbackPg = {
+    mode: 'fallback';
+    body: string;
+    contentType: string;
+    reason: string;
+  };
+
+  type Playground = {
+    config: FloatBytesPg | JsonPg | ImagePg | FallbackPg | null;
+    result: unknown;
     err: string;
     running: boolean;
   };
-  let pg = $state<Playground>({ inputs: [], nFeatures: null, featureNames: [], result: null, err: '', running: false });
+  let pg = $state<Playground>({ config: null, result: null, err: '', running: false });
 
   let panel: 'inspect' | 'test' | 'history' = $state('inspect');
 
@@ -54,36 +92,136 @@
       .catch(() => { modelStatus = null; });
   });
 
-  async function openTest() {
-    panel = 'test';
-    if (pg.nFeatures !== null) return;
+  /** Duck-typed dispatch on the encoding's payload, not its `type` tag.
+   * Any encoder that exposes a finite set of valid string values via
+   * `categories` or `map` keys gets a select widget without UI changes. */
+  function fieldOptions(enc: SchemaField['encoding']): string[] | null {
+    if (!enc) return null;
+    if (Array.isArray(enc.categories) && enc.categories.length > 0) {
+      return enc.categories;
+    }
+    if (enc.map && typeof enc.map === 'object') {
+      const keys = Object.keys(enc.map);
+      if (keys.length > 0) return keys;
+    }
+    return null;
+  }
+
+  /** Pull `n_features` and `features` (CSV) from MLflow run params. Used as
+   * a label-source supplement when the schema only tells us the count. */
+  async function readRunParams(): Promise<{ nFeatures: number | null; featureNames: string[] }> {
     const status = modelStatus;
-    if (!status?.run_id) return;
+    if (!status?.run_id) return { nFeatures: null, featureNames: [] };
     try {
       const res = await runs.get(status.run_id);
       const params = res.run.data.params;
-      const nf = parseInt(params.find(p => p.key === 'n_features')?.value ?? '', 10);
-      const featuresParam = params.find(p => p.key === 'features')?.value ?? '';
-      const featureNames = featuresParam ? featuresParam.split(',').map(s => s.trim()) : [];
-      const n = isNaN(nf) ? 4 : nf;
-      pg.nFeatures = n;
-      pg.featureNames = featureNames;
-      pg.inputs = Array(n).fill(0);
+      const nfRaw = params.find(p => p.key === 'n_features')?.value;
+      const namesRaw = params.find(p => p.key === 'features')?.value ?? '';
+      const nf = nfRaw !== undefined ? parseInt(nfRaw, 10) : NaN;
+      const featureNames = namesRaw ? namesRaw.split(',').map(s => s.trim()) : [];
+      return { nFeatures: isNaN(nf) ? null : nf, featureNames };
     } catch {
-      pg.nFeatures = 4;
-      pg.inputs = Array(4).fill(0);
+      return { nFeatures: null, featureNames: [] };
     }
+  }
+
+  async function openTest() {
+    panel = 'test';
+    if (pg.config !== null) return;
+
+    let schema: Schema | null = null;
+    try { schema = await targets.schema(t); } catch { /* leave null - openTest falls through to run-params or float-bytes default */ }
+
+    const fmt = schema?.input?.format;
+
+    if (fmt === 'json' && schema?.input?.fields?.length) {
+      const fields: JsonField[] = schema.input.fields.map(f => ({
+        name: f.name,
+        options: fieldOptions(f.encoding),
+        current: '',
+      }));
+      pg.config = { mode: 'json', fields };
+      return;
+    }
+
+    if (fmt === 'image') {
+      pg.config = {
+        mode: 'image',
+        width: schema?.input?.width ?? null,
+        height: schema?.input?.height ?? null,
+        mime: schema?.input?.mime ?? 'image/jpeg',
+        file: null,
+      };
+      return;
+    }
+
+    if (fmt === 'float_bytes' || fmt === undefined) {
+      const { nFeatures: nFromRun, featureNames } = await readRunParams();
+      const nFeatures = schema?.input?.n_features ?? nFromRun ?? 4;
+      pg.config = {
+        mode: 'float_bytes',
+        nFeatures,
+        featureNames,
+        inputs: Array(nFeatures).fill(0),
+      };
+      return;
+    }
+
+    pg.config = {
+      mode: 'fallback',
+      body: '',
+      contentType: 'application/octet-stream',
+      reason: `Unknown input format "${fmt}". Send a raw body with a Content-Type the pod understands.`,
+    };
   }
 
   async function runPlayground() {
     pg.err = '';
     pg.result = null;
     pg.running = true;
-    const n = pg.nFeatures ?? pg.inputs.length;
-    if (n === 0) { pg.err = 'No inputs configured.'; pg.running = false; return; }
-    const inputData = pg.inputs.slice(0, n);
     try {
-      pg.result = await targets.playground(t, inputData);
+      if (!pg.config) throw new Error('Playground not initialized.');
+      const cfg = pg.config;
+
+      // Concrete union of what we actually send: packed float bytes, a JSON
+      // string, or an image's bytes. All are valid `fetch` body inputs.
+      let body: ArrayBuffer | string;
+      let contentType: string;
+
+      if (cfg.mode === 'float_bytes') {
+        if (cfg.nFeatures === 0) throw new Error('No inputs configured.');
+        const buf = new ArrayBuffer(cfg.nFeatures * 4);
+        const view = new DataView(buf);
+        for (let i = 0; i < cfg.nFeatures; i++) {
+          view.setFloat32(i * 4, cfg.inputs[i] ?? 0, true);
+        }
+        body = buf;
+        contentType = 'application/octet-stream';
+      } else if (cfg.mode === 'json') {
+        const obj: Record<string, string | number> = {};
+        for (const f of cfg.fields) {
+          if (f.options === null) {
+            const n = parseFloat(f.current);
+            if (!Number.isFinite(n)) throw new Error(`Field "${f.name}" must be a number.`);
+            obj[f.name] = n;
+          } else {
+            if (!f.current) throw new Error(`Field "${f.name}" is required.`);
+            obj[f.name] = f.current;
+          }
+        }
+        body = JSON.stringify(obj);
+        contentType = 'application/json';
+      } else if (cfg.mode === 'image') {
+        if (!cfg.file) throw new Error('No file selected.');
+        body = await cfg.file.arrayBuffer();
+        contentType = cfg.file.type || cfg.mime;
+      } else {
+        if (!cfg.body) throw new Error('Body is empty.');
+        body = cfg.body;
+        contentType = cfg.contentType;
+      }
+
+      pg.result = await targets.playground(t, body, contentType);
     } catch (e) {
       pg.err = String(e);
     } finally {
@@ -457,21 +595,21 @@
         <i class="fa-solid fa-triangle-exclamation text-peach mr-1"></i>Playground - not for production use
       </p>
 
-      {#if pg.nFeatures === null}
+      {#if pg.config === null}
         <div class="flex items-center gap-2 text-xs text-gray-400">
           <i class="fa-solid fa-spinner fa-spin"></i>Loading model inputs…
         </div>
-      {:else}
+      {:else if pg.config.mode === 'float_bytes'}
         <div class="flex items-end gap-2 flex-wrap">
-          {#each pg.inputs as _input, i (i)}
-            {@const label = pg.featureNames[i] ?? `Input ${i + 1}`}
+          {#each pg.config.inputs as _input, i (i)}
+            {@const label = pg.config.featureNames[i] ?? `Input ${i + 1}`}
             <div class="flex-1 min-w-20">
               <label for="input-{i}" class="block text-xs text-gray-500 mb-1 truncate" title={label}>{label}</label>
               <input
                 id="input-{i}"
                 type="number"
                 step="any"
-                bind:value={pg.inputs[i]}
+                bind:value={pg.config.inputs[i]}
                 onkeydown={(e) => e.key === 'Enter' && runPlayground()}
                 class="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-peach/50 focus:border-peach bg-white"
               />
@@ -483,13 +621,113 @@
               disabled={pg.running}
               class="flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-semibold bg-peach text-white hover:bg-peach-dark transition-colors disabled:opacity-50"
             >
-              {#if pg.running}
-                <i class="fa-solid fa-spinner fa-spin text-xs"></i>
-              {:else}
-                <i class="fa-solid fa-play text-xs"></i>
-              {/if}
-              Run
+              {#if pg.running}<i class="fa-solid fa-spinner fa-spin text-xs"></i>{:else}<i class="fa-solid fa-play text-xs"></i>{/if}Run
             </button>
+          </div>
+        </div>
+      {:else if pg.config.mode === 'json'}
+        <div class="flex items-end gap-2 flex-wrap">
+          {#each pg.config.fields as field, i (field.name)}
+            <div class="flex-1 min-w-32">
+              <label for="field-{i}" class="block text-xs text-gray-500 mb-1 truncate" title={field.name}>{field.name}</label>
+              {#if field.options !== null}
+                <select
+                  id="field-{i}"
+                  bind:value={field.current}
+                  class="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-peach/50 focus:border-peach bg-white"
+                >
+                  <option value="" disabled>—</option>
+                  {#each field.options as opt (opt)}
+                    <option value={opt}>{opt}</option>
+                  {/each}
+                </select>
+              {:else}
+                <input
+                  id="field-{i}"
+                  type="number"
+                  step="any"
+                  bind:value={field.current}
+                  onkeydown={(e) => e.key === 'Enter' && runPlayground()}
+                  class="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-peach/50 focus:border-peach bg-white"
+                />
+              {/if}
+            </div>
+          {/each}
+          <div class="flex items-end pb-0.5">
+            <button
+              onclick={runPlayground}
+              disabled={pg.running}
+              class="flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-semibold bg-peach text-white hover:bg-peach-dark transition-colors disabled:opacity-50"
+            >
+              {#if pg.running}<i class="fa-solid fa-spinner fa-spin text-xs"></i>{:else}<i class="fa-solid fa-play text-xs"></i>{/if}Run
+            </button>
+          </div>
+        </div>
+      {:else if pg.config.mode === 'image'}
+        <div class="space-y-2">
+          {#if pg.config.width && pg.config.height}
+            <p class="text-xs text-gray-500">
+              Model expects images decoded to {pg.config.width}×{pg.config.height}. Any reasonable JPEG/PNG works - the
+              pod's pre-transform handles the resize.
+            </p>
+          {/if}
+          <div class="flex items-end gap-3 flex-wrap">
+            <div class="flex-1 min-w-64">
+              <label for="image-file" class="block text-xs text-gray-500 mb-1">Image</label>
+              <input
+                id="image-file"
+                type="file"
+                accept="image/*"
+                onchange={(e) => {
+                  const f = (e.currentTarget as HTMLInputElement).files?.[0] ?? null;
+                  if (pg.config?.mode === 'image') pg.config.file = f;
+                }}
+                class="block w-full text-xs text-gray-700 file:mr-3 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-peach file:text-white hover:file:bg-peach-dark"
+              />
+              {#if pg.config.file}
+                <p class="text-[11px] text-gray-400 mt-1 truncate">
+                  {pg.config.file.name} · {(pg.config.file.size / 1024).toFixed(1)} KB · {pg.config.file.type || pg.config.mime}
+                </p>
+              {/if}
+            </div>
+            <div class="flex items-end pb-0.5">
+              <button
+                onclick={runPlayground}
+                disabled={pg.running || !pg.config.file}
+                class="flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-semibold bg-peach text-white hover:bg-peach-dark transition-colors disabled:opacity-50"
+              >
+                {#if pg.running}<i class="fa-solid fa-spinner fa-spin text-xs"></i>{:else}<i class="fa-solid fa-play text-xs"></i>{/if}Run
+              </button>
+            </div>
+          </div>
+        </div>
+      {:else}
+        <div class="space-y-2">
+          <p class="text-xs text-amber-600"><i class="fa-solid fa-circle-info mr-1"></i>{pg.config.reason}</p>
+          <div class="flex flex-col gap-2">
+            <label for="raw-content-type" class="block text-xs text-gray-500">Content-Type</label>
+            <input
+              id="raw-content-type"
+              type="text"
+              bind:value={pg.config.contentType}
+              class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-peach/50 focus:border-peach bg-white"
+            />
+            <label for="raw-body" class="block text-xs text-gray-500">Body</label>
+            <textarea
+              id="raw-body"
+              rows="6"
+              bind:value={pg.config.body}
+              class="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-peach/50 focus:border-peach bg-white"
+            ></textarea>
+            <div>
+              <button
+                onclick={runPlayground}
+                disabled={pg.running}
+                class="flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-semibold bg-peach text-white hover:bg-peach-dark transition-colors disabled:opacity-50"
+              >
+                {#if pg.running}<i class="fa-solid fa-spinner fa-spin text-xs"></i>{:else}<i class="fa-solid fa-play text-xs"></i>{/if}Run
+              </button>
+            </div>
           </div>
         </div>
       {/if}
