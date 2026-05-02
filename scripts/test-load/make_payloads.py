@@ -7,13 +7,12 @@ Usage:
 Outputs (in ./payloads/):
     iris.json    - JSON array body: [5.1, 3.5, 1.4, 0.2]
     adult.json   - JSON body for the adult-income named-input model
-
-For yolov8 you need a real JPEG - copy any test image:
-    cp /path/to/image.jpg payloads/sample.jpg
+    sample.jpg   - canonical ultralytics YOLO test image (bus.jpg)
 """
 
 import json
 import os
+import urllib.request
 
 os.makedirs("payloads", exist_ok=True)
 
@@ -45,5 +44,14 @@ with open("payloads/adult.json", "wb") as f:
     f.write(adult_bytes)
 print(f"wrote payloads/adult.json ({len(adult_bytes)} bytes)")
 
-print("\nFor yolov8, supply a JPEG manually:")
-print("  cp /path/to/image.jpg payloads/sample.jpg")
+# ── yolov8: download ultralytics' canonical test image (bus.jpg) ─────────────
+# Skip the download if the file already exists - lets users drop in their own
+# JPEG without having `make_payloads.py` overwrite it.
+sample_path = "payloads/sample.jpg"
+if os.path.exists(sample_path):
+    print(f"using existing {sample_path} ({os.path.getsize(sample_path)} bytes)")
+else:
+    url = "https://ultralytics.com/images/bus.jpg"
+    print(f"downloading {url} -> {sample_path} ...")
+    urllib.request.urlretrieve(url, sample_path)
+    print(f"wrote {sample_path} ({os.path.getsize(sample_path)} bytes)")
