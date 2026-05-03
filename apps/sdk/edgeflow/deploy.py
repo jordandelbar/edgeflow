@@ -1,13 +1,15 @@
-"""Programmatic deploy/register API - used by both the CLI and training scripts."""
+"""
+Programmatic register/deploy API.
+"""
 
-import os
+from __future__ import annotations
+
 import time
 from dataclasses import dataclass
 
-import requests
+from edgeflow._internal import client
 
 TERMINAL_STATES = {"deployed", "failed", "superseded"}
-_DEFAULT_SERVER = "http://localhost:5000"
 
 
 @dataclass
@@ -18,6 +20,31 @@ class ModelVersion:
     version: str
     run_id: str | None = None
     current_stage: str = "None"
+
+
+@dataclass
+class Deployment:
+    """A deployment returned by :func:`deploy`."""
+
+    deployment_id: str
+    run_id: str
+    target: str
+    state: str
+    created_at: int
+    model_name: str | None = None
+    model_version: str | None = None
+
+
+def _deployment_from_dict(d: dict) -> Deployment:
+    return Deployment(
+        deployment_id=d["deployment_id"],
+        run_id=d["run_id"],
+        target=d["target"],
+        state=d["state"],
+        created_at=int(d["created_at"]),
+        model_name=d.get("model_name"),
+        model_version=d.get("model_version"),
+    )
 
 
 def register(
@@ -37,27 +64,10 @@ def register(
                 then ``http://localhost:5000``.
 
     Returns:
-        A :class:`ModelVersion` with ``.name`` and ``.version``.
+        A :class:`ModelVersion` with ``.name``, ``.version``, ``.run_id``.
     """
-    server = server or os.environ.get("EDGEFLOW_SERVER", _DEFAULT_SERVER)
-
-    # Create registered model (idempotent).
-    resp = requests.post(
-        f"{server}/api/2.0/mlflow/registered-models/create",
-        json={"name": name},
-        timeout=10,
-    )
-    if not resp.ok and "already exists" not in resp.text.lower():
-        resp.raise_for_status()
-
-    # Create model version linked to this run.
-    resp = requests.post(
-        f"{server}/api/2.0/mlflow/model-versions/create",
-        json={"name": name, "run_id": run_id},
-        timeout=10,
-    )
-    resp.raise_for_status()
-    mv = resp.json().get("model_version", {})
+    res = client(server).register_model(run_id, name)
+    mv = res.get("model_version", res)
 
     print(f"📦 Registered {name} v{mv['version']}")
     return ModelVersion(
@@ -74,67 +84,65 @@ def deploy(
     target: str,
     *,
     server: str | None = None,
+    sessions: int | None = None,
+    max_concurrent: int | None = None,
     wait: bool = True,
     timeout: int = 300,
-) -> dict:
+) -> Deployment:
     """Deploy a registered model version to an inference target.
 
     Args:
-        model_name:    Registered model name.
-        model_version: Version number (as returned by :func:`register`).
-        target:        Inference target name (e.g. ``iris-inference``).
-        server:        edgeflow server URL.  Defaults to ``EDGEFLOW_SERVER``
-                       env var, then ``http://localhost:5000``.
-        wait:          Block until the deployment reaches a terminal state.
-        timeout:       Seconds to wait when ``wait=True``.
+        model_name:     Registered model name.
+        model_version:  Version number (as returned by :func:`register`).
+        target:         Inference target name (e.g. ``iris-inference``).
+        server:         edgeflow server URL.  Defaults to ``EDGEFLOW_SERVER``
+                        env var, then ``http://localhost:5000``.
+        sessions:       Initial pool size to request. Optional - server picks
+                        a default if omitted. Mirrors ``edgeflow deploy --sessions``.
+        max_concurrent: Initial max in-flight cap before 429. Optional -
+                        defaults to ``sessions`` server-side.
+        wait:           Block until the deployment reaches a terminal state.
+        timeout:        Seconds to wait when ``wait=True``.
 
     Returns:
-        The final deployment dict from the server.
+        The final :class:`Deployment`.
 
     Raises:
         RuntimeError: If the deployment fails or times out.
     """
-    server = server or os.environ.get("EDGEFLOW_SERVER", _DEFAULT_SERVER)
+    api = client(server)
 
     print(f"🚀 Deploying {model_name} v{model_version} → target '{target}'")
 
-    resp = requests.post(
-        f"{server}/api/v1/deployments",
-        json={
-            "model_name": model_name,
-            "model_version": model_version,
-            "target": target,
-        },
-        timeout=10,
+    res = api.create_deployment(
+        model_name, model_version, target, sessions, max_concurrent
     )
-    resp.raise_for_status()
-    deployment = resp.json()["deployment"]
-    deployment_id = deployment["deployment_id"]
+    dep = res["deployment"]
+    deployment_id = dep["deployment_id"]
 
     print(f"   deployment_id: {deployment_id}")
 
     if not wait:
-        return deployment
+        return _deployment_from_dict(dep)
 
     deadline = time.monotonic() + timeout
-    last_state = deployment["state"]
+    last_state = dep["state"]
 
     while time.monotonic() < deadline:
         time.sleep(2)
-        resp = requests.get(f"{server}/api/v1/deployments/{deployment_id}", timeout=10)
-        resp.raise_for_status()
-        deployment = resp.json()["deployment"]
-        state = deployment["state"]
+        res = api.get_deployment(deployment_id)
+        dep = res["deployment"]
+        state = dep["state"]
         if state != last_state:
             print(f"   {last_state} → {state}")
             last_state = state
         if state in TERMINAL_STATES:
             break
 
-    state = deployment["state"]
+    state = dep["state"]
     if state == "deployed":
         print(f"✅ Deployment live on '{target}'")
-        return deployment
+        return _deployment_from_dict(dep)
     if time.monotonic() >= deadline:
         raise RuntimeError(
             f"deployment {deployment_id} timed out after {timeout}s - last state: {state}"

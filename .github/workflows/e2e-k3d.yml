@@ -38,8 +38,8 @@ jobs:
               - '.github/workflows/e2e-k3d.yml'
               - '.github/actions/build-wasm-transform/**'
 
-  smoke:
-    name: smoke
+  tests:
+    name: tests
     needs: changes
     if: needs.changes.outputs.run == 'true'
     runs-on: ubuntu-latest
@@ -81,11 +81,15 @@ jobs:
           scripts/dev/apply-server.sh
           scripts/dev/apply-inference.sh
 
-      - name: run iris smoke
+      - name: run iris quickstart
         working-directory: tests/e2e
         env:
           EDGEFLOW_E2E_SKIP_STACK: "1"
         run: uv run pytest test_01_quickstart_iris.py -v
+
+      - name: run cli/sdk parity tests
+        working-directory: tests/e2e
+        run: uv run pytest test_parity_readonly.py -v
 
       - name: dump cluster state on failure
         if: failure()

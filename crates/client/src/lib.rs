@@ -1,3 +1,15 @@
+//! Sync HTTP client for the edgeflow REST API.
+//!
+//! Used by `edgeflow-cli` directly and by the Python SDK extension via
+//! PyO3 bindings - so both clients hit the same code paths for retries,
+//! error mapping, and request shapes. The contract surface (endpoint
+//! paths, request bodies, response shapes) lives in the server; this
+//! crate is a thin typed wrapper.
+//!
+//! Sync-only: both consumers are sync (CLI is a one-shot process,
+//! Python's `requests`-style SDK is sync). No `pyo3-asyncio`
+//! complexity until there's a real async caller.
+
 use anyhow::{Context, Result};
 use reqwest::blocking::Client;
 use serde::de::DeserializeOwned;

@@ -10,7 +10,6 @@ dependencies = [
     "componentize-py>=0.13",
     "onnx>=1.16",
     "skl2onnx>=1.17",
-    "requests>=2.31",
 ]
 
 [project.optional-dependencies]

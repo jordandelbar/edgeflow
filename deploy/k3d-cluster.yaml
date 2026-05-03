@@ -32,3 +32,4 @@ registries:
 options:
   k3d:
     wait: true
+    timeout: "180s"

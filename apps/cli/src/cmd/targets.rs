@@ -1,7 +1,10 @@
-use crate::api::Api;
 use anyhow::Result;
 use clap::Subcommand;
 use comfy_table::{presets::UTF8_BORDERS_ONLY, Table};
+use edgeflow_client::Api;
+use serde_json::Value;
+
+use super::Format;
 
 #[derive(Subcommand)]
 pub enum Cmd {
@@ -50,10 +53,35 @@ pub enum Cmd {
     },
 }
 
-pub fn run(cmd: Cmd, api: &Api) -> Result<()> {
+/// Pre-fetch interaction. Returns `Ok(false)` if the user aborts and the
+/// command should exit cleanly without calling the API. Json mode is treated
+/// as non-interactive: machines won't answer y/N, so we require `--yes`
+/// explicitly for destructive ops in that mode.
+pub fn confirm(cmd: &Cmd, format: Format) -> Result<bool> {
+    let Cmd::Teardown { target, yes } = cmd else {
+        return Ok(true);
+    };
+    if *yes {
+        return Ok(true);
+    }
+    if format.is_json() {
+        anyhow::bail!("teardown requires --yes when --json is set (non-interactive)");
+    }
+    eprint!("Tear down '{target}'? This removes the pod and all deployment records. [y/N] ");
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input)?;
+    if input.trim().eq_ignore_ascii_case("y") {
+        Ok(true)
+    } else {
+        println!("Aborted.");
+        Ok(false)
+    }
+}
+
+pub fn fetch(cmd: &Cmd, api: &Api) -> Result<Value> {
     match cmd {
-        Cmd::List { health } => list(api, health.as_deref()),
-        Cmd::Inspect { target } => inspect(api, &target),
+        Cmd::List { .. } => api.list_targets(),
+        Cmd::Inspect { target } => api.get_target(target),
         Cmd::SetResources {
             target,
             sessions,
@@ -63,24 +91,36 @@ pub fn run(cmd: Cmd, api: &Api) -> Result<()> {
             memory_limit,
             replicas,
             placement,
-        } => set_resources(
-            api,
-            &target,
-            sessions,
-            max_concurrent,
+        } => api.update_target_resources(
+            target,
+            *sessions,
+            *max_concurrent,
             cpu_request.as_deref(),
             memory_request.as_deref(),
             memory_limit.as_deref(),
-            replicas,
+            *replicas,
             placement.as_deref(),
         ),
-        Cmd::Teardown { target, yes } => teardown(api, &target, yes),
+        Cmd::Teardown { target, .. } => {
+            api.teardown_target(target)?;
+            // Synthetic ack so the JSON renderer has something to emit and the
+            // shape stays uniform across mutating commands.
+            Ok(serde_json::json!({"target": target, "status": "torn_down"}))
+        }
     }
 }
 
-fn list(api: &Api, health_filter: Option<&str>) -> Result<()> {
-    let res = api.list_targets()?;
-    let mut targets = res["targets"].as_array().cloned().unwrap_or_default();
+pub fn render_table(cmd: &Cmd, value: &Value) {
+    match cmd {
+        Cmd::List { health } => render_list(value, health.as_deref()),
+        Cmd::Inspect { .. } => render_inspect(value),
+        Cmd::SetResources { target, .. } => render_set_resources(value, target),
+        Cmd::Teardown { target, .. } => println!("Target '{target}' torn down."),
+    }
+}
+
+fn render_list(value: &Value, health_filter: Option<&str>) {
+    let mut targets = value["targets"].as_array().cloned().unwrap_or_default();
 
     if let Some(state) = health_filter {
         targets.retain(|t| t["health"].as_str() == Some(state));
@@ -93,7 +133,7 @@ fn list(api: &Api, health_filter: Option<&str>) -> Result<()> {
                 .map(|s| format!(" with health '{s}'"))
                 .unwrap_or_default()
         );
-        return Ok(());
+        return;
     }
 
     let mut table = Table::new();
@@ -109,12 +149,10 @@ fn list(api: &Api, health_filter: Option<&str>) -> Result<()> {
     }
 
     println!("{table}");
-    Ok(())
 }
 
-fn inspect(api: &Api, target: &str) -> Result<()> {
-    let res = api.get_target(target)?;
-    let t = &res["target"];
+fn render_inspect(value: &Value) {
+    let t = &value["target"];
 
     println!("Target:       {}", t["target"].as_str().unwrap_or("-"));
     println!(
@@ -204,32 +242,10 @@ fn inspect(api: &Api, target: &str) -> Result<()> {
             println!("  Node selector:  {}", pairs.join(", "));
         }
     }
-
-    Ok(())
 }
 
-fn set_resources(
-    api: &Api,
-    target: &str,
-    sessions: Option<i64>,
-    max_concurrent: Option<i64>,
-    cpu_request: Option<&str>,
-    memory_request: Option<&str>,
-    memory_limit: Option<&str>,
-    replicas: Option<i64>,
-    placement: Option<&str>,
-) -> Result<()> {
-    let res = api.update_target_resources(
-        target,
-        sessions,
-        max_concurrent,
-        cpu_request,
-        memory_request,
-        memory_limit,
-        replicas,
-        placement,
-    )?;
-    let t = &res["target"];
+fn render_set_resources(value: &Value, target: &str) {
+    let t = &value["target"];
     let r = &t["resources"];
     let inf = &t["infra"];
 
@@ -270,22 +286,4 @@ fn set_resources(
                 .unwrap_or_else(|| "-".into())
         );
     }
-
-    Ok(())
-}
-
-fn teardown(api: &Api, target: &str, yes: bool) -> Result<()> {
-    if !yes {
-        eprint!("Tear down '{target}'? This removes the pod and all deployment records. [y/N] ");
-        let mut input = String::new();
-        std::io::stdin().read_line(&mut input)?;
-        if !input.trim().eq_ignore_ascii_case("y") {
-            println!("Aborted.");
-            return Ok(());
-        }
-    }
-
-    api.teardown_target(target)?;
-    println!("Target '{target}' torn down.");
-    Ok(())
 }

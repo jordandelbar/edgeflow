@@ -1,7 +1,8 @@
-use crate::api::Api;
 use anyhow::Result;
 use clap::Subcommand;
 use comfy_table::{presets::UTF8_BORDERS_ONLY, Table};
+use edgeflow_client::Api;
+use serde_json::Value;
 
 #[derive(Subcommand)]
 pub enum Cmd {
@@ -9,22 +10,30 @@ pub enum Cmd {
     List,
 }
 
-pub fn run(cmd: Cmd, api: &Api) -> Result<()> {
+/// Pure data acquisition - one API call, raw response. JSON consumers and the
+/// table renderer both start from this.
+pub fn fetch(cmd: &Cmd, api: &Api) -> Result<Value> {
     match cmd {
-        Cmd::List => list(api),
+        Cmd::List => api.list_nodes(),
     }
 }
 
-fn list(api: &Api) -> Result<()> {
-    let nodes_res = api.list_nodes()?;
-    let nodes = nodes_res["nodes"].as_array().cloned().unwrap_or_default();
+/// Table-mode rendering. Allowed to make extra API calls for join/enrichment;
+/// those joins are a presentation concern and shouldn't leak into the raw JSON
+/// contract that parity tests pin against.
+pub fn render_table(cmd: &Cmd, value: &Value, api: &Api) {
+    match cmd {
+        Cmd::List => render_list(value, api),
+    }
+}
 
+fn render_list(value: &Value, api: &Api) {
+    let nodes = value["nodes"].as_array().cloned().unwrap_or_default();
     if nodes.is_empty() {
         println!("No nodes found.");
-        return Ok(());
+        return;
     }
 
-    // Enrich with target counts per node.
     let targets_res = api
         .list_targets()
         .unwrap_or_else(|_| serde_json::json!({ "targets": [] }));
@@ -57,5 +66,4 @@ fn list(api: &Api) -> Result<()> {
     }
 
     println!("{table}");
-    Ok(())
 }

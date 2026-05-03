@@ -1,11 +1,10 @@
-mod api;
 mod cmd;
 
 use anyhow::Result;
-use api::Api;
 use clap::{Parser, Subcommand};
+use edgeflow_client::Api;
 
-const DEFAULT_SERVER: &str = "http://localhost:5000";
+use cmd::Format;
 
 #[derive(Parser)]
 #[command(
@@ -14,9 +13,14 @@ const DEFAULT_SERVER: &str = "http://localhost:5000";
     version
 )]
 struct Cli {
-    /// edgeflow server URL
-    #[arg(long, env = "EDGEFLOW_SERVER", global = true, default_value = DEFAULT_SERVER)]
-    server: String,
+    /// edgeflow server URL (required: pass --server or set EDGEFLOW_SERVER).
+    /// No localhost fallback - silent defaults mask misconfiguration.
+    #[arg(long, env = "EDGEFLOW_SERVER", global = true)]
+    server: Option<String>,
+
+    /// Emit raw JSON from the client instead of formatted tables.
+    #[arg(long, global = true)]
+    json: bool,
 
     #[command(subcommand)]
     command: Command,
@@ -73,15 +77,62 @@ enum Command {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    let api = Api::new(&cli.server);
+    let server = cli.server.ok_or_else(|| {
+        anyhow::anyhow!("no edgeflow server configured: pass --server <URL> or set EDGEFLOW_SERVER")
+    })?;
+    let api = Api::new(&server);
+    let format = if cli.json {
+        Format::Json
+    } else {
+        Format::Table
+    };
 
     match cli.command {
-        Command::Experiments(cmd) => cmd::experiments::run(cmd, &api),
-        Command::Runs(cmd) => cmd::runs::run(cmd, &api),
-        Command::Models(cmd) => cmd::models::run(cmd, &api),
-        Command::Deployments(cmd) => cmd::deployments::run(cmd, &api),
-        Command::Targets(cmd) => cmd::targets::run(cmd, &api),
-        Command::Nodes(cmd) => cmd::nodes::run(cmd, &api),
+        Command::Experiments(c) => {
+            let v = cmd::experiments::fetch(&c, &api)?;
+            match format {
+                Format::Json => cmd::emit_json(&v)?,
+                Format::Table => cmd::experiments::render_table(&c, &v, &api),
+            }
+        }
+        Command::Runs(c) => {
+            let v = cmd::runs::fetch(&c, &api)?;
+            match format {
+                Format::Json => cmd::emit_json(&v)?,
+                Format::Table => cmd::runs::render_table(&c, &v),
+            }
+        }
+        Command::Models(c) => {
+            let v = cmd::models::fetch(&c, &api)?;
+            match format {
+                Format::Json => cmd::emit_json(&v)?,
+                Format::Table => cmd::models::render_table(&c, &v),
+            }
+        }
+        Command::Deployments(c) => {
+            let v = cmd::deployments::fetch(&c, &api)?;
+            match format {
+                Format::Json => cmd::emit_json(&v)?,
+                Format::Table => cmd::deployments::render_table(&c, &v, &api),
+            }
+        }
+        Command::Targets(c) => {
+            if !cmd::targets::confirm(&c, format)? {
+                return Ok(());
+            }
+            let v = cmd::targets::fetch(&c, &api)?;
+            match format {
+                Format::Json => cmd::emit_json(&v)?,
+                Format::Table => cmd::targets::render_table(&c, &v),
+            }
+        }
+        Command::Nodes(c) => {
+            let v = cmd::nodes::fetch(&c, &api)?;
+            match format {
+                Format::Json => cmd::emit_json(&v)?,
+                Format::Table => cmd::nodes::render_table(&c, &v, &api),
+            }
+        }
         Command::Deploy {
             model_name,
             model_version,
@@ -90,68 +141,21 @@ fn main() -> Result<()> {
             max_concurrent,
             wait,
             timeout,
-        } => deploy(
-            &api,
-            &model_name,
-            &model_version,
-            &target,
-            sessions,
-            max_concurrent,
-            wait,
-            timeout,
-        ),
-    }
-}
-
-fn deploy(
-    api: &Api,
-    model_name: &str,
-    model_version: &str,
-    target: &str,
-    sessions: Option<i64>,
-    max_concurrent: Option<i64>,
-    wait: bool,
-    timeout: u64,
-) -> Result<()> {
-    println!("Deploying {model_name} v{model_version} → '{target}'");
-
-    let res = api.create_deployment(model_name, model_version, target, sessions, max_concurrent)?;
-    let dep = &res["deployment"];
-    let dep_id = dep["deployment_id"].as_str().unwrap_or("?");
-    println!("deployment_id: {dep_id}");
-
-    if !wait {
-        return Ok(());
-    }
-
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout);
-    let mut last_state = dep["state"].as_str().unwrap_or("pending").to_string();
-
-    loop {
-        if std::time::Instant::now() >= deadline {
-            anyhow::bail!("timed out after {timeout}s - last state: {last_state}");
-        }
-        std::thread::sleep(std::time::Duration::from_secs(2));
-
-        let res = api.get_deployment(dep_id)?;
-        let state = res["deployment"]["state"]
-            .as_str()
-            .unwrap_or("?")
-            .to_string();
-
-        if state != last_state {
-            println!("{last_state} → {state}");
-            last_state = state.clone();
-        }
-
-        match state.as_str() {
-            "deployed" => {
-                println!("Deployment live on '{target}'.");
-                return Ok(());
+        } => {
+            let args = cmd::deploy::Args {
+                model_name: &model_name,
+                model_version: &model_version,
+                target: &target,
+                sessions,
+                max_concurrent,
+                wait,
+                timeout,
+            };
+            match format {
+                Format::Json => cmd::deploy::render_json(&args, &api)?,
+                Format::Table => cmd::deploy::render_table(&args, &api)?,
             }
-            "failed" => anyhow::bail!("deployment failed"),
-            "superseded" => anyhow::bail!("deployment was superseded"),
-            _ => {}
         }
     }
+    Ok(())
 }
