@@ -10,44 +10,7 @@ permissions:
 
 jobs:
   build-wheels:
-    name: wheel ${{ matrix.platform.os }} / ${{ matrix.platform.target }} / py${{ matrix.python }}
-    runs-on: ${{ matrix.platform.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        platform:
-          - { os: ubuntu-latest, target: x86_64 }
-          - { os: ubuntu-latest, target: aarch64 }
-          - { os: macos-latest,  target: x86_64 }
-          - { os: macos-latest,  target: aarch64 }
-        python: ["3.12", "3.13"]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python }}
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-wasip2
-      - name: build wasm transform
-        working-directory: crates/transforms
-        run: cargo build --target wasm32-wasip2 --release
-      - name: stage wasm into sdk
-        run: |
-          mkdir -p apps/sdk/edgeflow/wasm
-          cp crates/transforms/target/wasm32-wasip2/release/_lib.wasm \
-             apps/sdk/edgeflow/wasm/standard_pipeline.wasm
-      - uses: PyO3/maturin-action@v1
-        with:
-          working-directory: apps/sdk
-          target: ${{ matrix.platform.target }}
-          args: --release --out dist --features python -i python${{ matrix.python }}
-          sccache: 'true'
-          manylinux: auto
-      - uses: actions/upload-artifact@v4
-        with:
-          name: wheels-${{ matrix.platform.os }}-${{ matrix.platform.target }}-py${{ matrix.python }}
-          path: apps/sdk/dist
+    uses: ./.github/workflows/_wheel-build.yml
 
   build-sdist:
     name: source distribution

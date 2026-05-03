@@ -1,0 +1,21 @@
+name: wheel smoke build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/sdk/**'
+      - 'crates/transforms/**'
+      - 'crates/client/**'
+      - 'Cargo.lock'
+      - '.github/workflows/wheel-smoke.yml'
+      - '.github/workflows/_wheel-build.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: wheel-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-wheels:
+    uses: ./.github/workflows/_wheel-build.yml
