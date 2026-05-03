@@ -63,7 +63,7 @@ jobs:
             inference-ort
           load: true
           set: |
-            *.args.BUILD_PROFILE=ci
+            *.args.BUILD_PROFILE=${{ github.ref == 'refs/heads/main' && 'release' || 'ci' }}
             *.cache-from=type=gha
             *.cache-to=type=gha,mode=max
 
