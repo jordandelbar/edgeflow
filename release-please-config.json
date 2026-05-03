@@ -19,6 +19,11 @@
           "type": "toml",
           "path": "apps/sdk/pyproject.toml",
           "jsonpath": "$.project.version"
+        },
+        {
+          "type": "toml",
+          "path": "apps/cli/Cargo.toml",
+          "jsonpath": "$.dependencies.edgeflow-client.version"
         }
       ],
       "changelog-sections": [
