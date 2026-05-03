@@ -132,7 +132,7 @@ addressable, promote it into the registry, then point a target at it.
    :end-before: # [docs:end:register-deploy]
 
 ``register`` creates a versioned ``ModelVersion`` from the run.
-``deploy`` tells the ``quickstart`` target to load that version, and
+``deploy`` tells the ``iris-inference`` target to load that version, and
 ``wait=True`` blocks until the inference pod confirms the new pipeline
 is live - so by the time the script exits, you can hit the endpoint.
 

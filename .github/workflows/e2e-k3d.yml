@@ -1,0 +1,104 @@
+name: E2E k3d
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: e2e-k3d-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    name: detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.filter.outputs.k3d == 'true' || github.ref == 'refs/heads/main' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            k3d:
+              - 'crates/k8s/**'
+              - 'crates/orchestrator/**'
+              - 'apps/server/**'
+              - 'apps/inference/**'
+              - 'apps/sdk/**'
+              - 'examples/01-quickstart-iris/**'
+              - 'deploy/manifests/**'
+              - 'deploy/k3d-cluster.yaml'
+              - 'deploy/docker-bake.hcl'
+              - 'deploy/server.Dockerfile'
+              - 'deploy/inference.Dockerfile'
+              - 'scripts/dev/**'
+              - 'tests/e2e/**'
+              - '.github/workflows/e2e-k3d.yml'
+              - '.github/actions/build-wasm-transform/**'
+
+  smoke:
+    name: smoke
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip2
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: ./.github/actions/build-wasm-transform
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      # Install k3d. kubectl is pre-installed on GitHub runners.
+      - name: install k3d
+        run: |
+          curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
+          k3d version
+
+      - name: create k3d cluster
+        run: scripts/dev/cluster-create.sh
+
+      - name: build server + inference images
+        run: scripts/dev/build-images.sh
+
+      - name: push app images to local registry
+        run: scripts/dev/push-images.sh app
+
+      - name: apply server + inference manifests
+        run: |
+          scripts/dev/apply-server.sh
+          scripts/dev/apply-inference.sh
+
+      - name: run iris smoke
+        working-directory: tests/e2e
+        env:
+          EDGEFLOW_E2E_SKIP_STACK: "1"
+        run: uv run pytest test_01_quickstart_iris.py -v
+
+      - name: dump cluster state on failure
+        if: failure()
+        run: |
+          echo '── pods ─────────────────────────────────────────────'
+          kubectl get pods -A
+          echo '── recent events ────────────────────────────────────'
+          kubectl get events -A --sort-by=.lastTimestamp | tail -50
+          echo '── server logs ──────────────────────────────────────'
+          kubectl logs deployment/edgeflow-server --tail=200 || true
+          echo '── inference logs (any target) ──────────────────────'
+          kubectl logs -l app.kubernetes.io/name=edgeflow-inference --tail=200 --all-containers=true || true
+
+      - name: delete cluster
+        if: always()
+        run: scripts/dev/cluster-delete.sh
