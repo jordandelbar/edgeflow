@@ -69,10 +69,13 @@ def edgeflow_stack(request: pytest.FixtureRequest):
         yield
         return
 
-    _log(
-        f"building images via {COMPOSE_FILE.relative_to(REPO_ROOT)} (cold builds take several minutes)"
-    )
-    _compose("build")
+    if os.environ.get("EDGEFLOW_E2E_SKIP_BUILD"):
+        _log("EDGEFLOW_E2E_SKIP_BUILD set, using preloaded images")
+    else:
+        _log(
+            f"building images via {COMPOSE_FILE.relative_to(REPO_ROOT)} (cold builds take several minutes)"
+        )
+        _compose("build")
     _log("starting stack")
     _compose("up", "-d")
     fixture_failed = False

@@ -69,6 +69,8 @@ jobs:
 
       - name: run tutorial e2e tests
         working-directory: tests/e2e
+        env:
+          EDGEFLOW_E2E_SKIP_BUILD: "1"
         run: uv run pytest -v
 
       - name: dump stack logs on failure
