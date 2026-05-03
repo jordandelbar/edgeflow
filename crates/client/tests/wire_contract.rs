@@ -405,7 +405,7 @@ fn resolve_experiment_prefers_by_name() {
     api(&server).resolve_experiment("iris").unwrap();
     by_name.assert();
     assert_eq!(
-        by_id.hits(),
+        by_id.calls(),
         0,
         "should not fall back when name lookup succeeds"
     );
@@ -435,14 +435,14 @@ fn resolve_run_id_passes_through_full_id() {
     // Full 32-char ids skip the network entirely.
     let server = MockServer::start();
     let any_call = server.mock(|when, then| {
-        when.method(GET).path_contains("/api/");
+        when.method(GET).path_prefix("/api/");
         then.status(500);
     });
     let full_id = "0123456789abcdef0123456789abcdef";
     let resolved = api(&server).resolve_run_id(full_id).unwrap();
     assert_eq!(resolved, full_id);
     assert_eq!(
-        any_call.hits(),
+        any_call.calls(),
         0,
         "full-length id must not hit the network"
     );
