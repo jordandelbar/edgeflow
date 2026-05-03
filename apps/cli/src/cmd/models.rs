@@ -3,6 +3,7 @@ use anyhow::Result;
 use clap::Subcommand;
 use comfy_table::{presets::UTF8_BORDERS_ONLY, Table};
 use edgeflow_client::Api;
+use serde_json::Value;
 
 #[derive(Subcommand)]
 pub enum Cmd {
@@ -43,31 +44,45 @@ pub enum Cmd {
     },
 }
 
-pub fn run(cmd: Cmd, api: &Api) -> Result<()> {
+pub fn fetch(cmd: &Cmd, api: &Api) -> Result<Value> {
     match cmd {
-        Cmd::List => list(api),
-        Cmd::Versions { name } => versions(api, &name),
-        Cmd::Register { run_id, name } => register(api, &run_id, &name),
+        Cmd::List => api.list_registered_models(),
+        Cmd::Versions { name } => api.list_model_versions(name),
+        Cmd::Register { run_id, name } => api.register_model(run_id, name),
         Cmd::Stage {
             name,
             version,
             stage,
-        } => stage_cmd(api, &name, &version, &stage),
-        Cmd::Delete { name } => delete(api, &name),
-        Cmd::DeleteVersion { name, version } => delete_version(api, &name, &version),
+        } => api.transition_stage(name, version, stage),
+        Cmd::Delete { name } => api.delete_registered_model(name),
+        Cmd::DeleteVersion { name, version } => api.delete_model_version(name, version),
     }
 }
 
-fn list(api: &Api) -> Result<()> {
-    let res = api.list_registered_models()?;
-    let models = res["registered_models"]
+pub fn render_table(cmd: &Cmd, value: &Value) {
+    match cmd {
+        Cmd::List => render_list(value),
+        Cmd::Versions { name } => render_versions(value, name),
+        Cmd::Register { name, .. } => render_register(value, name),
+        Cmd::Stage {
+            name,
+            version,
+            stage,
+        } => render_stage(value, name, version, stage),
+        Cmd::Delete { name } => println!("Deleted model '{name}'."),
+        Cmd::DeleteVersion { name, version } => println!("Deleted {name} v{version}."),
+    }
+}
+
+fn render_list(value: &Value) {
+    let models = value["registered_models"]
         .as_array()
         .cloned()
         .unwrap_or_default();
 
     if models.is_empty() {
         println!("No registered models.");
-        return Ok(());
+        return;
     }
 
     let mut table = Table::new();
@@ -104,19 +119,17 @@ fn list(api: &Api) -> Result<()> {
     }
 
     println!("{table}");
-    Ok(())
 }
 
-fn versions(api: &Api, name: &str) -> Result<()> {
-    let res = api.list_model_versions(name)?;
-    let versions = res["model_versions"]
+fn render_versions(value: &Value, name: &str) {
+    let versions = value["model_versions"]
         .as_array()
         .cloned()
         .unwrap_or_default();
 
     if versions.is_empty() {
         println!("No versions for model '{name}'.");
-        return Ok(());
+        return;
     }
 
     println!("Model: {name}\n");
@@ -137,40 +150,23 @@ fn versions(api: &Api, name: &str) -> Result<()> {
     }
 
     println!("{table}");
-    Ok(())
 }
 
-fn register(api: &Api, run_id: &str, name: &str) -> Result<()> {
-    let res = api.register_model(run_id, name)?;
-    let mv = &res["model_version"];
+fn render_register(value: &Value, name: &str) {
+    let mv = &value["model_version"];
     println!(
         "Registered: {} v{}",
         mv["name"].as_str().unwrap_or(name),
         mv["version"].as_str().unwrap_or("?"),
     );
-    Ok(())
 }
 
-fn stage_cmd(api: &Api, name: &str, version: &str, stage: &str) -> Result<()> {
-    let res = api.transition_stage(name, version, stage)?;
-    let mv = &res["model_version"];
+fn render_stage(value: &Value, name: &str, version: &str, stage: &str) {
+    let mv = &value["model_version"];
     println!(
         "{} v{} → {}",
         mv["name"].as_str().unwrap_or(name),
         mv["version"].as_str().unwrap_or(version),
         mv["current_stage"].as_str().unwrap_or(stage),
     );
-    Ok(())
-}
-
-fn delete(api: &Api, name: &str) -> Result<()> {
-    api.delete_registered_model(name)?;
-    println!("Deleted model '{name}'.");
-    Ok(())
-}
-
-fn delete_version(api: &Api, name: &str, version: &str) -> Result<()> {
-    api.delete_model_version(name, version)?;
-    println!("Deleted {name} v{version}.");
-    Ok(())
 }

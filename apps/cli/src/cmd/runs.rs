@@ -2,6 +2,7 @@ use super::fmt_ts;
 use anyhow::Result;
 use clap::Subcommand;
 use edgeflow_client::Api;
+use serde_json::Value;
 
 #[derive(Subcommand)]
 pub enum Cmd {
@@ -12,19 +13,27 @@ pub enum Cmd {
     },
 }
 
-pub fn run(cmd: Cmd, api: &Api) -> Result<()> {
+pub fn fetch(cmd: &Cmd, api: &Api) -> Result<Value> {
     match cmd {
-        Cmd::Get { run_id } => get(api, &run_id),
+        Cmd::Get { run_id } => {
+            let run_id = api.resolve_run_id(run_id)?;
+            api.get_run(&run_id)
+        }
     }
 }
 
-fn get(api: &Api, run_id: &str) -> Result<()> {
-    let run_id = api.resolve_run_id(run_id)?;
-    let res = api.get_run(&run_id)?;
-    let r = &res["run"];
+pub fn render_table(cmd: &Cmd, value: &Value) {
+    match cmd {
+        Cmd::Get { .. } => render_get(value),
+    }
+}
+
+fn render_get(value: &Value) {
+    let r = &value["run"];
     let info = &r["info"];
     let data = &r["data"];
 
+    let run_id = info["run_id"].as_str().unwrap_or("-");
     let name = info["run_name"].as_str().unwrap_or("-");
     let status = info["status"].as_str().unwrap_or("-");
     let start = info["start_time"].as_i64().unwrap_or(0);
@@ -77,6 +86,4 @@ fn get(api: &Api, run_id: &str) -> Result<()> {
             }
         }
     }
-
-    Ok(())
 }

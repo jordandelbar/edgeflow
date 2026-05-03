@@ -3,6 +3,7 @@ use anyhow::Result;
 use clap::Subcommand;
 use comfy_table::{presets::UTF8_BORDERS_ONLY, Table};
 use edgeflow_client::Api;
+use serde_json::Value;
 
 #[derive(Subcommand)]
 pub enum Cmd {
@@ -15,20 +16,31 @@ pub enum Cmd {
     },
 }
 
-pub fn run(cmd: Cmd, api: &Api) -> Result<()> {
+pub fn fetch(cmd: &Cmd, api: &Api) -> Result<Value> {
     match cmd {
-        Cmd::List => list(api),
-        Cmd::Runs { experiment } => runs(api, &experiment),
+        Cmd::List => api.list_experiments(),
+        Cmd::Runs { experiment } => {
+            let exp = api.resolve_experiment(experiment)?;
+            let exp_id = exp["experiment"]["experiment_id"]
+                .as_str()
+                .unwrap_or(experiment);
+            api.search_runs(exp_id)
+        }
     }
 }
 
-fn list(api: &Api) -> Result<()> {
-    let res = api.list_experiments()?;
-    let exps = res["experiments"].as_array().cloned().unwrap_or_default();
+pub fn render_table(cmd: &Cmd, value: &Value, api: &Api) {
+    match cmd {
+        Cmd::List => render_list(value),
+        Cmd::Runs { experiment } => render_runs(value, experiment, api),
+    }
+}
 
+fn render_list(value: &Value) {
+    let exps = value["experiments"].as_array().cloned().unwrap_or_default();
     if exps.is_empty() {
         println!("No experiments.");
-        return Ok(());
+        return;
     }
 
     let mut table = Table::new();
@@ -44,25 +56,25 @@ fn list(api: &Api) -> Result<()> {
     }
 
     println!("{table}");
-    Ok(())
 }
 
-fn runs(api: &Api, experiment: &str) -> Result<()> {
-    let exp = api.resolve_experiment(experiment)?;
-    let exp_id = exp["experiment"]["experiment_id"]
-        .as_str()
-        .unwrap_or(experiment);
-    let name = exp["experiment"]["name"].as_str().unwrap_or(experiment);
+fn render_runs(value: &Value, experiment: &str, api: &Api) {
+    let runs = value["runs"].as_array().cloned().unwrap_or_default();
 
-    let res = api.search_runs(exp_id)?;
-    let runs = res["runs"].as_array().cloned().unwrap_or_default();
+    // Re-resolve the experiment for the human-friendly header. JSON consumers
+    // didn't see this lookup; it's a presentation detail.
+    let display_name = api
+        .resolve_experiment(experiment)
+        .ok()
+        .and_then(|exp| exp["experiment"]["name"].as_str().map(|s| s.to_string()))
+        .unwrap_or_else(|| experiment.to_string());
 
     if runs.is_empty() {
-        println!("No runs in experiment '{name}'.");
-        return Ok(());
+        println!("No runs in experiment '{display_name}'.");
+        return;
     }
 
-    println!("Experiment: {name}\n");
+    println!("Experiment: {display_name}\n");
 
     let mut table = Table::new();
     table.load_preset(UTF8_BORDERS_ONLY);
@@ -90,5 +102,4 @@ fn runs(api: &Api, experiment: &str) -> Result<()> {
     }
 
     println!("{table}");
-    Ok(())
 }
