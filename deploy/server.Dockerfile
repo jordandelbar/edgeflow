@@ -5,14 +5,24 @@ RUN npm ci
 COPY apps/ui/ ./
 RUN npm run build
 
-FROM rust:1.94-trixie AS server-builder
+FROM lukemathwalker/cargo-chef:latest-rust-1.94-trixie AS chef
 WORKDIR /app
+
+FROM chef AS planner
+COPY . .
+RUN cargo chef prepare --recipe-path recipe.json
+
+FROM chef AS server-builder
+ARG BUILD_PROFILE=release
+COPY --from=planner /app/recipe.json recipe.json
+RUN --mount=type=cache,id=cargo-registry,sharing=locked,target=/usr/local/cargo/registry \
+    --mount=type=cache,id=cargo-git,sharing=locked,target=/usr/local/cargo/git \
+    cargo chef cook --profile ${BUILD_PROFILE} --recipe-path recipe.json -p edgeflow-server
 COPY . .
 RUN --mount=type=cache,id=cargo-registry,sharing=locked,target=/usr/local/cargo/registry \
     --mount=type=cache,id=cargo-git,sharing=locked,target=/usr/local/cargo/git \
-    --mount=type=cache,id=edgeflow-server-target,target=/app/target \
-    cargo build --release -p edgeflow-server && \
-    cp /app/target/release/edgeflow-server /edgeflow-server
+    cargo build --profile ${BUILD_PROFILE} -p edgeflow-server && \
+    cp /app/target/${BUILD_PROFILE}/edgeflow-server /edgeflow-server
 
 FROM debian:trixie-slim
 COPY --from=server-builder /edgeflow-server /usr/local/bin/edgeflow-server

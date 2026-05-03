@@ -51,8 +51,6 @@ jobs:
         with:
           targets: wasm32-wasip2
 
-      - uses: Swatinem/rust-cache@v2
-
       - uses: ./.github/actions/build-wasm-transform
 
       - uses: docker/setup-buildx-action@v3
@@ -71,7 +69,17 @@ jobs:
         run: scripts/dev/cluster-create.sh
 
       - name: build server + inference images
-        run: scripts/dev/build-images.sh
+        uses: docker/bake-action@v5
+        with:
+          files: deploy/docker-bake.hcl
+          targets: |
+            server
+            inference-ort
+          load: true
+          set: |
+            *.args.BUILD_PROFILE=${{ github.ref == 'refs/heads/main' && 'release' || 'ci' }}
+            *.cache-from=type=gha
+            *.cache-to=type=gha,mode=max
 
       - name: push app images to local registry
         run: scripts/dev/push-images.sh app
