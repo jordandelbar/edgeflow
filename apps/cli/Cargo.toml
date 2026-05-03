@@ -21,7 +21,7 @@ name = "edgeflow"
 path = "src/main.rs"
 
 [dependencies]
-edgeflow-client = { path = "../../crates/client", version = "0.3.0" }
+edgeflow-client = { path = "../../crates/client", version = "0.4.0" }
 clap        = { version = "4", features = ["derive", "env"] }
 serde_json  = { workspace = true }
 anyhow      = { workspace = true }
