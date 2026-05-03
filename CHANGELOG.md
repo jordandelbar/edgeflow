@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/jordandelbar/edgeflow/compare/v0.4.0...v0.4.1) (2026-05-03)
+
+
+### Bug Fixes
+
+* Bump manylinux to 2_28 and add wheel smoke ([#34](https://github.com/jordandelbar/edgeflow/issues/34)) ([298c5d7](https://github.com/jordandelbar/edgeflow/commit/298c5d72411b03fcce3b7f64d39c8074a3c319c9))
+
 ## [0.4.0](https://github.com/jordandelbar/edgeflow/compare/v0.3.0...v0.4.0) (2026-05-03)
 
 
