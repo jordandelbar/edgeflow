@@ -1,4 +1,4 @@
-name: E2E Tutorials
+name: E2E docker-compose
 
 on:
   push:
