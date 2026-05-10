@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { deployments, nodes, registeredModels, type RegisteredModel, type ModelVersion, type Deployment, type ResourceSettings, type InfraSettings } from '$lib/api';
   import DeployStateBadge from './DeployStateBadge.svelte';
 
@@ -18,13 +19,13 @@
     ondeployed: (_data: { run_id: string; targets: string[] }) => void;
   } = $props();
 
-  let resolvedVersion = $state<ModelVersion | null>(modelVersion);
+  let resolvedVersion = $state<ModelVersion | null>(untrack(() => modelVersion));
 
   let modelList     = $state<RegisteredModel[]>([]);
   let loadingModels = $state(false);
-  let pickedModel   = $state<RegisteredModel | null>(registeredModel);
+  let pickedModel   = $state<RegisteredModel | null>(untrack(() => registeredModel));
 
-  if (!registeredModel && !modelVersion) {
+  if (untrack(() => !registeredModel && !modelVersion)) {
     loadingModels = true;
     registeredModels.list()
       .then(res => { modelList = res.registered_models ?? []; })
@@ -198,7 +199,7 @@
   role="button"
   tabindex="-1"
   aria-label="Close"
-/>
+></div>
 
 <!-- Panel -->
 <div
@@ -223,7 +224,7 @@
         <p class="text-xs text-gray-400 mt-0.5">Choose a model to deploy</p>
       {/if}
     </div>
-    <button onclick={close} disabled={polling} class="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+    <button onclick={close} disabled={polling} aria-label="Close" class="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
       <i class="fa-solid fa-xmark"></i>
     </button>
   </div>
@@ -394,6 +395,7 @@
             />
             <button
               onclick={() => { addingNew = false; }}
+              aria-label="Cancel"
               class="px-2 py-1.5 rounded-lg text-gray-400 hover:bg-gray-100 transition-colors"
             >
               <i class="fa-solid fa-xmark text-sm"></i>

@@ -125,6 +125,7 @@
             </button>
             <button
               onclick={() => { registerForm = false; registerError = ''; }}
+              aria-label="Cancel"
               class="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 transition-colors"
             >
               <i class="fa-solid fa-xmark text-sm"></i>
