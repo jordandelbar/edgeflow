@@ -7,7 +7,7 @@
   import ErrorCard from '$lib/components/ErrorCard.svelte';
 
   let { data }: { data: { target: string } } = $props();
-  const t = data.target;
+  let t = $derived(data.target);
 
   let tgt         = $state<Target | null>(null);
   let deps        = $state<Deployment[]>([]);

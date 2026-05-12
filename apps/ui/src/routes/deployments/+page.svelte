@@ -216,6 +216,7 @@
                   </button>
                   <button
                     onclick={() => { confirming[t] = false; }}
+                    aria-label="Cancel teardown"
                     class="p-1.5 rounded-lg text-xs text-gray-400 hover:bg-gray-100 transition-colors"
                   >
                     <i class="fa-solid fa-xmark"></i>

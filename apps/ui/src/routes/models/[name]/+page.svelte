@@ -187,6 +187,7 @@
                     {/if}
                   </button>
                   <button onclick={() => { editingStage[k] = false; }}
+                    aria-label="Cancel"
                     class="text-gray-400 hover:text-gray-600 transition-colors">
                     <i class="fa-solid fa-xmark text-xs"></i>
                   </button>
